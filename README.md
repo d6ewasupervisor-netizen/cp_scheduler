@@ -48,9 +48,37 @@ Open http://127.0.0.1:3847
 
 Uses `Procfile` (`web: node src/server.js`). Set `PORT` automatically on Railway.
 
-Optional env:
-- `DATABASE_PATH` — JSON draft store path (default `data/schedule-drafts.json`)
-- `SAS_AUTH_STATE` — path to sas-auth token for PROD overlay
+### Auth (shared with eod-api / The Dump Bin)
+
+Uses the same magic-link session JWT and Postgres `allowed_emails` table as **eod-api**. Sign-in and access requests go through eod-api; cp_scheduler verifies the session locally.
+
+Required env (match eod-api values):
+
+| Variable | Purpose |
+|----------|---------|
+| `AUTH_MODE` | `session` |
+| `JWT_SECRET` | Same secret as eod-api |
+| `DATABASE_URL` | Same Postgres as eod-api (allowlist) |
+| `PGSSL` | `require` on Railway if needed |
+
+Optional:
+
+| Variable | Purpose |
+|----------|---------|
+| `CP_SCHEDULER_REP_EMAILS` | Comma-separated rep-layer emails (default `tgauthier2011@gmail.com`) |
+| `CP_SCHEDULER_AUTH_SKIP` | `1` on localhost only — bypass auth for dev |
+| `EOD_API_BASE_URL` | Default `https://eod-api.the-dump-bin.com` |
+| `DATABASE_PATH` | JSON draft store (default `data/schedule-drafts.json`) |
+| `SAS_AUTH_STATE` | Path to sas-auth token for PROD overlay |
+
+Also add the cp_scheduler origin to eod-api `ALLOWED_ORIGINS` if browsers call eod-api directly from sign-in.
+
+### Views
+
+- **Admin** — everyone authenticated except rep-layer emails: templates, approve, handoff exports, PROD overlay.
+- **Rep** — simplified scheduling view: drag visits, save week, no exports.
+
+Access request flow: sign-in page → eod-api `/api/access-request` → supervisor email with approve/deny link (same as Dump Bin).
 
 ## Agent handoff
 

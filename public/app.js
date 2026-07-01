@@ -1,7 +1,10 @@
 const API = '/api/central-pet';
+const AUTH_API = '/api/auth';
 const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 let state = {
+  user: null,
+  layer: 'rep',
   reps: [],
   rep: null,
   week: null,
@@ -18,14 +21,45 @@ function repKey(rep) {
   return rep?.repKey || rep?.name;
 }
 
+function isAdmin() {
+  return state.layer === 'admin';
+}
+
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await window.cpAuthFetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
     ...opts,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
+}
+
+function applyLayer() {
+  document.body.classList.toggle('rep-layer', state.layer === 'rep');
+  document.body.classList.toggle('admin-layer', state.layer === 'admin');
+
+  const badge = document.getElementById('layerBadge');
+  badge.textContent = state.layer === 'admin' ? 'Admin' : 'Rep view';
+  badge.className = 'layer-badge ' + state.layer;
+
+  document.getElementById('userEmail').textContent = state.user?.email || '';
+  document.getElementById('userBar').hidden = false;
+
+  document.getElementById('pageSubtitle').textContent =
+    state.layer === 'admin'
+      ? 'Admin — build templates, approve weeks, export handoffs'
+      : 'Your week — drag each store to a valid day, then save';
+
+  document.getElementById('guideTitle').textContent =
+    state.layer === 'admin' ? 'Admin options' : 'Your steps each week';
+
+  const guide = state.user?.help || [];
+  document.getElementById('guideList').innerHTML = guide.map((g) => `<li>${g}</li>`).join('');
+
+  if (state.user?.email && !document.getElementById('approverEmail').value) {
+    document.getElementById('approverEmail').value = state.user.email;
+  }
 }
 
 function slotKey(p) {
@@ -77,17 +111,21 @@ async function loadReps() {
   if (preferred) sel.value = encodeURIComponent(repKey(preferred));
 }
 
-async function loadWeeklyTemplateStatus() {
+async function loadWeeklyTemplateStatus(fromDefault) {
+  if (!isAdmin()) {
+    state.weeklyTemplate = fromDefault || null;
+    document.getElementById('btnClearTemplate').hidden = true;
+    return;
+  }
   const repKeyVal = repKey(state.rep);
   const data = await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKeyVal)}`);
   state.weeklyTemplate = data.template;
-  const clearBtn = document.getElementById('btnClearTemplate');
-  clearBtn.hidden = !state.weeklyTemplate;
+  document.getElementById('btnClearTemplate').hidden = !state.weeklyTemplate;
 }
 
 function renderTemplateBanner() {
   const banner = document.getElementById('templateBanner');
-  if (!state.weeklyTemplate) {
+  if (!isAdmin() || !state.weeklyTemplate) {
     banner.hidden = true;
     banner.innerHTML = '';
     return;
@@ -117,6 +155,7 @@ async function loadRepWeek() {
   state.week = (await api('/weeks')).find((w) => w.start === weekStart);
   state.slots = state.rep.visitSlots;
 
+  let defaultWeeklyTemplate = null;
   const drafts = await api(
     `/schedule/draft?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
   );
@@ -131,12 +170,13 @@ async function loadRepWeek() {
     state.placements = def.placements;
     state.draftId = null;
     state.placementSource = def.source || 'masterRoute';
+    defaultWeeklyTemplate = def.weeklyTemplate;
   }
 
-  await loadWeeklyTemplateStatus();
+  await loadWeeklyTemplateStatus(defaultWeeklyTemplate);
   renderTemplateBanner();
 
-  if (document.getElementById('showProd').checked && state.rep.employeeId) {
+  if (isAdmin() && document.getElementById('showProd').checked && state.rep.employeeId) {
     try {
       const prod = await api(
         `/schedule/prod?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
@@ -172,11 +212,14 @@ async function validateAndRender() {
 }
 
 function renderCalendar(warnings, allValid) {
-  const d8Note = state.rep.isD8Pool
-    ? ' · Proposed assignees: Brian Campbell, Kimberly Claflin, James Duchene (planning only — nothing sent)'
-    : '';
+  const d8Note =
+    state.rep.isD8Pool && isAdmin()
+      ? ' · Proposed assignees: Brian Campbell, Kimberly Claflin, James Duchene (planning only — nothing sent)'
+      : state.rep.isD8Pool
+        ? ' · Pick who should take each D8 visit'
+        : '';
   document.getElementById('weekHeader').textContent =
-    `${state.rep.name} · ${state.week.label} · ${state.placements.length} visits · ${allValid ? 'All Master Route checks pass' : 'Some placements invalid'}${d8Note}`;
+    `${state.rep.name} · ${state.week.label} · ${state.placements.length} visits · ${allValid ? 'All Master Route checks pass' : 'Some placements need fixing'}${d8Note}`;
 
   const byDay = placementsByDay();
   const cal = document.getElementById('calendar');
@@ -208,7 +251,7 @@ function renderCalendar(warnings, allValid) {
       const slot = findSlot(state.drag);
       if (!slot?.allowedDays.includes(day)) {
         alert(
-          `Store ${state.drag.storeNum} cannot be scheduled on ${day}.\nAllowed: ${slot?.allowedDays.join(', ')}`
+          `Store ${state.drag.storeNum} cannot go on ${day}.\nAllowed: ${slot?.allowedDays.join(', ')}`
         );
         return;
       }
@@ -221,7 +264,7 @@ function renderCalendar(warnings, allValid) {
       body.appendChild(makeChit(p));
     }
 
-    if (document.getElementById('showProd').checked) {
+    if (isAdmin() && document.getElementById('showProd').checked) {
       for (const s of state.prodShifts.filter((x) => dayFromDate(x.scheduledDate) === day)) {
         const ghost = document.createElement('div');
         ghost.className = 'chit prod-ghost';
@@ -240,14 +283,14 @@ function renderCalendar(warnings, allValid) {
   const allWarnings = [...(warnings || [])];
   if (d8Unassigned) {
     allWarnings.unshift({
-      message: `${d8Unassigned} D8 visit(s) have no proposed assignee selected yet.`,
+      message: `${d8Unassigned} D8 visit(s) still need a proposed assignee.`,
     });
   }
 
   if (allWarnings.length) {
     warnEl.classList.add('show');
     warnEl.innerHTML =
-      '<strong>Warnings</strong><ul>' +
+      '<strong>Fix these before saving</strong><ul>' +
       allWarnings.map((w) => `<li>${w.message}</li>`).join('') +
       '</ul>';
   } else {
@@ -272,21 +315,34 @@ function dateForDay(dayName) {
   return d.toISOString().slice(0, 10);
 }
 
+function taskLineForChit(p) {
+  const slot = findSlot(p);
+  if (!slot) return '';
+  if (slot.pickDay && slot.deliveryDay) {
+    return `Pick ${slot.pickDay} · deliver ${slot.deliveryDay}`;
+  }
+  if ((slot.visitIndex ?? 0) > 0 && !slot.pickDay && !slot.deliveryDay) {
+    return `Follow-up · anchor ${slot.anchorServiceDay}`;
+  }
+  return `Service anchor ${slot.anchorServiceDay}`;
+}
+
 function makeChit(p) {
   const tpl = document.getElementById('chitTemplate');
   const el = tpl.content.firstElementChild.cloneNode(true);
   if (!p._valid) el.classList.add('invalid');
   if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
+  el.querySelector('.chit-task').textContent = taskLineForChit(p);
   el.querySelector('.chit-account').textContent = p.account || '';
-  el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 40);
+  el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
 
   if (state.rep.isD8Pool) {
     const assigneeWrap = el.querySelector('.chit-assignee-wrap');
     assigneeWrap.hidden = false;
     const select = assigneeWrap.querySelector('.chit-assignee');
     select.innerHTML =
-      '<option value="">Proposed assignee…</option>' +
+      '<option value="">Choose proposed assignee…</option>' +
       (state.rep.proposedAssignees || [])
         .map(
           (a) =>
@@ -314,54 +370,37 @@ function makeChit(p) {
   return el;
 }
 
-function showSlotDetail(p) {
-  const slot = findSlot(p);
-  const assigneeLine = state.rep.isD8Pool
-    ? `\nProposed assignee: ${p.proposedAssignee || '(not chosen)'}`
-    : '';
-  document.getElementById('slotDetail').textContent = slot
-    ? `Store ${p.storeNum}\nAccount: ${p.account}\nAction: ${p.action}\nAnchor: ${slot.anchorServiceDay}\nAllowed: ${slot.allowedDays.join(', ')}\nPick: ${slot.pickDay || '-'}\nDelivery: ${slot.deliveryDay || '-'}\nPlaced: ${p.dayOfWeek} (${p.scheduledDate})${assigneeLine}\nValid: ${p._valid ? 'YES' : 'NO'}`
-    : 'No slot metadata';
-}
+async function showSlotDetail(p) {
+  try {
+    const detail = await api('/schedule/visit-detail', {
+      method: 'POST',
+      body: JSON.stringify({
+        repKey: repKey(state.rep),
+        storeNum: p.storeNum,
+        visitIndex: p.visitIndex ?? 0,
+        placement: p,
+      }),
+    });
 
-async function saveWeeklyTemplate() {
-  const ok = confirm(
-    `Save the current Mon–Fri layout as the weekly template for ${state.rep.name}?\n\nWeeks without their own saved draft will start from this pattern. You can change or clear it anytime.`
-  );
-  if (!ok) return;
+    const lines = [
+      `Store #${detail.storeNum} — ${detail.account}`,
+      detail.visitType,
+      '',
+      ...detail.brief,
+      '',
+      `Scheduled: ${detail.scheduledDay || '—'} (${detail.scheduledDate || '—'})`,
+      `Master Route: ${p._valid ? 'OK' : 'INVALID — move to an allowed day'}`,
+    ];
+    document.getElementById('slotDetail').textContent = lines.join('\n');
 
-  const { template } = await api('/schedule/weekly-template', {
-    method: 'POST',
-    body: JSON.stringify({
-      repKey: repKey(state.rep),
-      placements: state.placements,
-      setFromWeekLabel: state.week.label,
-      setBy: document.getElementById('approverEmail').value || 'local',
-    }),
-  });
-  state.weeklyTemplate = template;
-  document.getElementById('btnClearTemplate').hidden = false;
-  renderTemplateBanner();
-  alert(`Weekly template saved from ${state.week.label}.`);
-}
-
-async function clearWeeklyTemplate() {
-  const ok = confirm(
-    `Clear the weekly template for ${state.rep.name}?\n\nNew weeks will revert to Master Route anchor days until you save a new template.`
-  );
-  if (!ok) return;
-
-  await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKey(state.rep))}`, {
-    method: 'DELETE',
-  });
-  state.weeklyTemplate = null;
-  document.getElementById('btnClearTemplate').hidden = true;
-  if (!state.draftId) {
-    await loadRepWeek();
-  } else {
-    renderTemplateBanner();
+    document.getElementById('visitChecklist').innerHTML =
+      `<div class="visit-type">Checklist</div><ul>` +
+      detail.checklist.map((c) => `<li>${c}</li>`).join('') +
+      `</ul>`;
+  } catch {
+    document.getElementById('slotDetail').textContent = 'Could not load visit details.';
+    document.getElementById('visitChecklist').innerHTML = '';
   }
-  alert('Weekly template cleared.');
 }
 
 async function saveDraft() {
@@ -373,18 +412,53 @@ async function saveDraft() {
       weekEnd: state.week.end,
       weekLabel: state.week.label,
       placements: state.placements,
-      createdBy: document.getElementById('approverEmail').value || 'local',
+      createdBy: state.user?.email || document.getElementById('approverEmail').value || 'local',
     }),
   });
   state.draftId = draft.id;
   state.placementSource = 'draft';
   renderTemplateBanner();
-  alert(`Draft saved (${draft.id})`);
+  alert(`Week saved (${draft.id})`);
+}
+
+async function saveWeeklyTemplate() {
+  const ok = confirm(
+    `Save this Mon–Fri layout as the default starting point for ${state.rep.name}?\n\nAny week without its own saved draft will open with this pattern.`
+  );
+  if (!ok) return;
+
+  const { template } = await api('/schedule/weekly-template', {
+    method: 'POST',
+    body: JSON.stringify({
+      repKey: repKey(state.rep),
+      placements: state.placements,
+      setFromWeekLabel: state.week.label,
+      setBy: state.user?.email || 'admin',
+    }),
+  });
+  state.weeklyTemplate = template;
+  document.getElementById('btnClearTemplate').hidden = false;
+  renderTemplateBanner();
+  alert(`Weekly template saved from ${state.week.label}.`);
+}
+
+async function clearWeeklyTemplate() {
+  const ok = confirm(`Clear the weekly template for ${state.rep.name}?`);
+  if (!ok) return;
+
+  await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKey(state.rep))}`, {
+    method: 'DELETE',
+  });
+  state.weeklyTemplate = null;
+  document.getElementById('btnClearTemplate').hidden = true;
+  if (!state.draftId) await loadRepWeek();
+  else renderTemplateBanner();
+  alert('Weekly template cleared.');
 }
 
 async function approveWeek() {
   if (!state.draftId) await saveDraft();
-  const approvedBy = document.getElementById('approverEmail').value || 'supervisor';
+  const approvedBy = state.user?.email || document.getElementById('approverEmail').value || 'supervisor';
   const { handoff } = await api('/schedule/approve', {
     method: 'POST',
     body: JSON.stringify({
@@ -422,6 +496,7 @@ document.getElementById('btnDownload').addEventListener('click', () => {
   if (!state.draftId) return alert('Approve first');
   window.location.href = `${API}/schedule/export/${state.draftId}?format=handoff`;
 });
+document.getElementById('btnSignOut').addEventListener('click', () => window.cpSignOut());
 document.getElementById('districtFilter').addEventListener('change', async () => {
   await loadReps();
   await loadRepWeek();
@@ -431,6 +506,14 @@ document.getElementById('weekSelect').addEventListener('change', loadRepWeek);
 document.getElementById('showProd').addEventListener('change', loadRepWeek);
 
 (async function init() {
+  await window.cpAuth.bootPromise;
+
+  const meRes = await window.cpAuthFetch(`${AUTH_API}/me`);
+  if (!meRes.ok) throw new Error('Could not load account');
+  state.user = await meRes.json();
+  state.layer = state.user.layer || 'rep';
+  applyLayer();
+
   document.getElementById('districtFilter').value = '1';
   await loadWeeks();
   await loadReps();

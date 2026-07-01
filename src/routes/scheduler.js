@@ -19,6 +19,8 @@ const {
   enrichPlacements,
 } = require('../lib/schedule-handoff');
 const { saveDraft, getDraft, listDrafts, approveDraft, getWeeklyTemplate, saveWeeklyTemplate, clearWeeklyTemplate } = require('../db');
+const { requireAdmin } = require('../auth-middleware');
+const { buildVisitDetail } = require('../lib/visit-instructions');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
@@ -77,7 +79,18 @@ router.get('/schedule/default', (req, res) => {
   });
 });
 
-router.get('/schedule/weekly-template', (req, res) => {
+router.post('/schedule/visit-detail', (req, res) => {
+  const { repKey, storeNum, visitIndex, placement } = req.body || {};
+  const rep = getRep(repKey);
+  if (!rep) return res.status(404).json({ error: 'Rep not found' });
+  const slot = rep.visitSlots.find(
+    (s) => s.storeNum === Number(storeNum) && (s.visitIndex ?? 0) === (visitIndex ?? 0)
+  );
+  if (!slot) return res.status(404).json({ error: 'Visit slot not found' });
+  res.json(buildVisitDetail(slot, placement || {}, { isD8Pool: rep.isD8Pool }));
+});
+
+router.get('/schedule/weekly-template', requireAdmin, (req, res) => {
   const rep = getRep(req.query.rep);
   if (!rep) return res.status(404).json({ error: 'Rep not found' });
   const template = getWeeklyTemplate(rep.repKey || rep.name);
@@ -93,7 +106,7 @@ router.get('/schedule/weekly-template', (req, res) => {
   });
 });
 
-router.post('/schedule/weekly-template', (req, res) => {
+router.post('/schedule/weekly-template', requireAdmin, (req, res) => {
   try {
     const { repKey, placements, setFromWeekLabel, setBy } = req.body;
     const rep = getRep(repKey);
@@ -109,7 +122,7 @@ router.post('/schedule/weekly-template', (req, res) => {
   }
 });
 
-router.delete('/schedule/weekly-template', (req, res) => {
+router.delete('/schedule/weekly-template', requireAdmin, (req, res) => {
   const rep = getRep(req.query.rep);
   if (!rep) return res.status(404).json({ error: 'Rep not found' });
   const cleared = clearWeeklyTemplate(rep.repKey || rep.name);
@@ -129,7 +142,7 @@ router.post('/schedule/draft', (req, res) => {
   }
 });
 
-router.get('/schedule/prod', async (req, res) => {
+router.get('/schedule/prod', requireAdmin, async (req, res) => {
   const rep = getRep(req.query.rep);
   if (!rep?.employeeId) {
     return res.status(400).json({ error: 'Rep has no employeeId for PROD lookup' });
@@ -144,7 +157,7 @@ router.get('/schedule/prod', async (req, res) => {
   }
 });
 
-router.post('/schedule/approve', async (req, res) => {
+router.post('/schedule/approve', requireAdmin, async (req, res) => {
   const { draftId, approvedBy, prodShifts } = req.body;
   const draft = getDraft(draftId);
   if (!draft) return res.status(404).json({ error: 'Draft not found' });
@@ -195,7 +208,7 @@ router.post('/schedule/approve', async (req, res) => {
   }
 });
 
-router.get('/schedule/handoff/:draftId', (req, res) => {
+router.get('/schedule/handoff/:draftId', requireAdmin, (req, res) => {
   const draft = getDraft(req.params.draftId);
   if (!draft || draft.status !== 'approved') {
     return res.status(404).json({ error: 'Approved handoff not found' });
@@ -207,7 +220,7 @@ router.get('/schedule/handoff/:draftId', (req, res) => {
   });
 });
 
-router.get('/schedule/export/:draftId', (req, res) => {
+router.get('/schedule/export/:draftId', requireAdmin, (req, res) => {
   const draft = getDraft(req.params.draftId);
   if (!draft) return res.status(404).json({ error: 'Draft not found' });
   const format = req.query.format || 'json';

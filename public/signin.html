@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Central Pet Scheduler — Sign in</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body.signin-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem; }
+    .signin-card {
+      width: 100%; max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+    }
+    .signin-card h1 { margin: 0 0 .35rem; font-size: 1.35rem; color: var(--accent); }
+    .signin-card .lead { color: var(--muted); margin: 0 0 1.25rem; line-height: 1.5; font-size: .92rem; }
+    .signin-card label { display: block; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .35rem; }
+    .signin-card input {
+      width: 100%; background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; padding: .65rem .75rem; font-size: 1rem; margin-bottom: .75rem;
+    }
+    .signin-card button.primary {
+      width: 100%; margin-top: .5rem; background: #1f3a5f; border-color: var(--accent); color: var(--accent);
+      padding: .75rem; font-weight: 600; border-radius: 8px; cursor: pointer;
+    }
+    .signin-card button.primary:disabled { opacity: .6; cursor: not-allowed; }
+    .notice { padding: .65rem .75rem; border-radius: 8px; font-size: .88rem; margin-bottom: .75rem; }
+    .notice.ok { background: rgba(61, 214, 140, 0.12); border: 1px solid rgba(61, 214, 140, 0.35); color: var(--accent2); }
+    .notice.err { background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.35); color: var(--bad); }
+    .hidden { display: none !important; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 20; }
+    .overlay-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 440px; width: 100%; }
+    .overlay-panel h2 { margin: 0 0 .5rem; color: var(--accent); font-size: 1.1rem; }
+    .overlay-panel p { color: var(--muted); font-size: .88rem; line-height: 1.45; }
+    .overlay-panel button.secondary { background: transparent; border: none; color: var(--muted); margin-top: .5rem; cursor: pointer; }
+  </style>
+</head>
+<body class="signin-page">
+  <main class="signin-card">
+    <h1>Central Pet Scheduler</h1>
+    <p class="lead">Sign in with the same email magic link used for The Dump Bin tools. One link works across both for 45 days on this device.</p>
+    <div id="status" class="notice hidden" role="status"></div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+    <button id="send-btn" class="primary" type="button">Send sign-in link</button>
+    <p class="lead" style="margin-top:1rem;margin-bottom:0;font-size:.8rem;">Not on the access list yet? We'll prompt you to request access — a supervisor gets an email to approve or deny.</p>
+  </main>
+
+  <div id="access-overlay" class="overlay hidden" role="dialog">
+    <div class="overlay-panel">
+      <h2>Request access</h2>
+      <p>Your email isn't on the allowlist yet. Submit your details and a supervisor will review. If approved, you'll receive a sign-in link by email.</p>
+      <div id="overlay-status" class="notice hidden"></div>
+      <div id="overlay-form">
+        <label for="overlay-name">Full name</label>
+        <input id="overlay-name" type="text" autocomplete="name" />
+        <label for="overlay-email">Email</label>
+        <input id="overlay-email" type="email" autocomplete="email" />
+        <label for="overlay-reason">Reason (optional)</label>
+        <input id="overlay-reason" type="text" placeholder="e.g. Central Pet D8 coverage" />
+        <button id="overlay-submit" class="primary" type="button">Submit request</button>
+        <button id="overlay-cancel" class="secondary" type="button">Cancel</button>
+      </div>
+      <div id="overlay-success" class="hidden">
+        <p style="color:var(--accent2);font-weight:600;">Request sent — watch your inbox after approval.</p>
+        <button id="overlay-close" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const EOD_API = (function () {
+        const hashApi = (location.hash.match(/eod=([^&]+)/) || [])[1];
+        if (hashApi) return decodeURIComponent(hashApi).replace(/\/+$/, '');
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:3001';
+        return 'https://eod-api.the-dump-bin.com';
+      })();
+      const SESSION_KEY = 'dumpBinSession';
+      const ACCESS_ERR = 'not on the access list';
+
+      function resolveNext() {
+        const next = new URLSearchParams(location.search).get('next');
+        return next && next.startsWith('/') ? next : '/';
+      }
+
+      try {
+        if (localStorage.getItem(SESSION_KEY)) {
+          location.replace(resolveNext());
+          return;
+        }
+      } catch (_) {}
+
+      const emailEl = document.getElementById('email');
+      const sendBtn = document.getElementById('send-btn');
+      const statusEl = document.getElementById('status');
+      const overlay = document.getElementById('access-overlay');
+
+      try {
+        const err = sessionStorage.getItem('cpSignInError');
+        if (err) {
+          sessionStorage.removeItem('cpSignInError');
+          showStatus('err', err);
+        }
+      } catch (_) {}
+
+      function showStatus(kind, msg) {
+        statusEl.className = 'notice ' + (kind === 'err' ? 'err' : 'ok');
+        statusEl.textContent = msg;
+        statusEl.classList.remove('hidden');
+      }
+
+      function openOverlay(email) {
+        document.getElementById('overlay-email').value = email || '';
+        document.getElementById('overlay-form').classList.remove('hidden');
+        document.getElementById('overlay-success').classList.add('hidden');
+        overlay.classList.remove('hidden');
+      }
+
+      async function sendLink() {
+        const email = (emailEl.value || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          showStatus('err', 'Enter a valid email address.');
+          return;
+        }
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending…';
+        try {
+          const res = await fetch(EOD_API + '/api/request-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, returnTo: location.origin + resolveNext() }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            const msg = data.error || 'Could not send link.';
+            showStatus('err', msg);
+            if (msg.toLowerCase().includes(ACCESS_ERR)) openOverlay(email);
+            return;
+          }
+          showStatus('ok', 'Check your email for the sign-in link.');
+          emailEl.value = '';
+        } catch (_) {
+          showStatus('err', 'Network error. Try again.');
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send sign-in link';
+        }
+      }
+
+      async function submitAccess() {
+        const name = document.getElementById('overlay-name').value.trim();
+        const email = document.getElementById('overlay-email').value.trim().toLowerCase();
+        const reason = document.getElementById('overlay-reason').value.trim();
+        if (!name || !email) return;
+        const btn = document.getElementById('overlay-submit');
+        btn.disabled = true;
+        try {
+          const res = await fetch(EOD_API + '/api/access-request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, reason }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            document.getElementById('overlay-status').className = 'notice err';
+            document.getElementById('overlay-status').textContent = data.error || 'Request failed.';
+            document.getElementById('overlay-status').classList.remove('hidden');
+            return;
+          }
+          document.getElementById('overlay-form').classList.add('hidden');
+          document.getElementById('overlay-success').classList.remove('hidden');
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      sendBtn.addEventListener('click', sendLink);
+      emailEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendLink(); });
+      document.getElementById('overlay-submit').addEventListener('click', submitAccess);
+      document.getElementById('overlay-cancel').addEventListener('click', () => overlay.classList.add('hidden'));
+      document.getElementById('overlay-close').addEventListener('click', () => overlay.classList.add('hidden'));
+    })();
+  </script>
+</body>
+</html>

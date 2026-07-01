@@ -5,12 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Central Pet Scheduler</title>
   <link rel="stylesheet" href="/styles.css">
+  <script src="/auth-gate.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <h1>Central Pet Scheduler</h1>
-    <p class="subtitle">Master Route planning — D1/D8 — project 9293</p>
+    <div class="topbar-row">
+      <div>
+        <h1>Central Pet Scheduler</h1>
+        <p class="subtitle" id="pageSubtitle">Master Route planning — D1/D8 — project 9293</p>
+      </div>
+      <div class="user-bar" id="userBar" hidden>
+        <span class="layer-badge" id="layerBadge"></span>
+        <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnSignOut" class="subtle">Sign out</button>
+      </div>
+    </div>
   </header>
+
+  <section class="guide-panel" id="guidePanel">
+    <h2 id="guideTitle">How this works</h2>
+    <ul id="guideList"></ul>
+  </section>
 
   <section class="controls">
     <label>District
@@ -20,49 +35,59 @@
         <option value="8">D8</option>
       </select>
     </label>
-    <label>Rep
+    <label>Schedule for
       <select id="repSelect"></select>
     </label>
     <label>Week
       <select id="weekSelect"></select>
     </label>
-    <label>Approver email
+    <label class="admin-only">Approver email
       <input id="approverEmail" type="email" placeholder="you@example.com">
     </label>
     <div class="btn-row">
       <button id="btnReload" type="button">Reload</button>
-      <button id="btnSave" type="button">Save draft</button>
-      <button id="btnSaveTemplate" type="button" title="Use this Mon–Fri layout as the starting point for every week without its own saved draft">Save as weekly template</button>
-      <button id="btnClearTemplate" type="button" class="subtle" hidden>Clear weekly template</button>
-      <button id="btnApprove" type="button" class="primary">Approve week</button>
-      <button id="btnCopyMd" type="button">Copy Markdown</button>
-      <button id="btnCopyJson" type="button">Copy JSON</button>
-      <button id="btnDownload" type="button">Download bundle</button>
+      <button id="btnSave" type="button">Save my week</button>
+      <button id="btnSaveTemplate" type="button" class="admin-only" title="Use this Mon–Fri layout as the starting point for every week without its own saved draft">Save as weekly template</button>
+      <button id="btnClearTemplate" type="button" class="subtle admin-only" hidden>Clear weekly template</button>
+      <button id="btnApprove" type="button" class="primary admin-only">Approve week</button>
+      <button id="btnCopyMd" type="button" class="admin-only">Copy Markdown</button>
+      <button id="btnCopyJson" type="button" class="admin-only">Copy JSON</button>
+      <button id="btnDownload" type="button" class="admin-only">Download bundle</button>
     </div>
-    <label class="toggle"><input type="checkbox" id="showProd"> Show PROD overlay</label>
+    <label class="toggle admin-only"><input type="checkbox" id="showProd"> Show PROD overlay</label>
   </section>
 
   <main class="layout">
     <section class="calendar-panel">
       <div id="weekHeader" class="week-meta"></div>
-      <div id="templateBanner" class="template-banner" hidden></div>
+      <div id="templateBanner" class="template-banner admin-only" hidden></div>
+      <div class="calendar-legend">
+        <span><i class="legend-swatch allowed"></i> Valid drop day</span>
+        <span><i class="legend-swatch invalid"></i> Master Route conflict</span>
+        <span class="d8-legend admin-only"><i class="legend-swatch unassigned"></i> D8 — pick proposed assignee</span>
+      </div>
       <div id="calendar" class="calendar"></div>
       <div id="warnings" class="warnings"></div>
     </section>
     <aside class="side-panel">
-      <h2>Visit detail</h2>
-      <div id="slotDetail" class="slot-detail">Select a chit card</div>
-      <h2>Review / Handoff</h2>
-      <div id="reviewPane" class="review-pane"></div>
+      <h2>Selected visit — what to do</h2>
+      <div id="slotDetail" class="slot-detail">Click a store card to see pick/delivery rules and your task list.</div>
+      <div id="visitChecklist" class="visit-checklist"></div>
+      <section class="admin-only">
+        <h2>Review / Handoff</h2>
+        <div id="reviewPane" class="review-pane"></div>
+      </section>
     </aside>
   </main>
 
   <template id="chitTemplate">
     <div class="chit" draggable="true">
       <div class="chit-store"></div>
+      <div class="chit-task"></div>
       <div class="chit-account"></div>
       <div class="chit-action"></div>
       <label class="chit-assignee-wrap" hidden>
+        <span class="chit-assignee-label">Proposed assignee</span>
         <select class="chit-assignee"></select>
       </label>
     </div>
