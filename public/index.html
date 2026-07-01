@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Central Pet Scheduler</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Central Pet Scheduler</h1>
+    <p class="subtitle">Master Route planning — D1/D8 — project 9293</p>
+  </header>
+
+  <section class="controls">
+    <label>District
+      <select id="districtFilter">
+        <option value="">All</option>
+        <option value="1">D1</option>
+        <option value="8">D8</option>
+      </select>
+    </label>
+    <label>Rep
+      <select id="repSelect"></select>
+    </label>
+    <label>Week
+      <select id="weekSelect"></select>
+    </label>
+    <label>Approver email
+      <input id="approverEmail" type="email" placeholder="you@example.com">
+    </label>
+    <div class="btn-row">
+      <button id="btnReload" type="button">Reload</button>
+      <button id="btnSave" type="button">Save draft</button>
+      <button id="btnApprove" type="button" class="primary">Approve week</button>
+      <button id="btnCopyMd" type="button">Copy Markdown</button>
+      <button id="btnCopyJson" type="button">Copy JSON</button>
+      <button id="btnDownload" type="button">Download bundle</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="showProd"> Show PROD overlay</label>
+  </section>
+
+  <main class="layout">
+    <section class="calendar-panel">
+      <div id="weekHeader" class="week-meta"></div>
+      <div id="calendar" class="calendar"></div>
+      <div id="warnings" class="warnings"></div>
+    </section>
+    <aside class="side-panel">
+      <h2>Visit detail</h2>
+      <div id="slotDetail" class="slot-detail">Select a chit card</div>
+      <h2>Review / Handoff</h2>
+      <div id="reviewPane" class="review-pane"></div>
+    </aside>
+  </main>
+
+  <template id="chitTemplate">
+    <div class="chit" draggable="true">
+      <div class="chit-store"></div>
+      <div class="chit-account"></div>
+      <div class="chit-action"></div>
+    </div>
+  </template>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

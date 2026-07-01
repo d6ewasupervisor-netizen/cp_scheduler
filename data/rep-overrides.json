@@ -1,0 +1,10 @@
+{
+  "Patricia Marks Z": {
+    "employeeId": 233541,
+    "workdayId": "800137639",
+    "email": "patricia.marks@youradv.com",
+    "district": 1,
+    "inheritFrom": ["Carr, Jim", "Preston, Amy"],
+    "extraStoreNums": [360]
+  }
+}
