@@ -109,10 +109,14 @@ router.post('/schedule/approve', async (req, res) => {
     approvedBy: approvedBy || 'supervisor',
     rep: {
       name: rep.name,
+      repKey: rep.repKey || rep.name,
       employeeId: rep.employeeId,
       workdayId: rep.workdayId,
       district: rep.district,
       email: rep.email,
+      isD8Pool: !!rep.isD8Pool,
+      proposedAssignees: rep.proposedAssignees || [],
+      proposedAssigneeNote: rep.proposedAssigneeNote || null,
     },
     week: {
       label: draft.weekLabel,

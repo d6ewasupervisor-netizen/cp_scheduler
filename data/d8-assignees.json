@@ -1,0 +1,23 @@
+{
+  "district": 8,
+  "virtualRepKey": "__D8_CENTRAL_PET__",
+  "displayName": "District 8 — Central Pet",
+  "description": "Proposed assignees for D8 Central Pet visits (planning only — no notifications sent).",
+  "proposedAssignees": [
+    {
+      "id": "brian-campbell",
+      "name": "Brian Campbell",
+      "label": "Brian Campbell (proposed)"
+    },
+    {
+      "id": "kimberly-claflin",
+      "name": "Kimberly Claflin",
+      "label": "Kimberly Claflin (proposed)"
+    },
+    {
+      "id": "james-ducheene",
+      "name": "James Duchene",
+      "label": "James Duchene (proposed)"
+    }
+  ]
+}

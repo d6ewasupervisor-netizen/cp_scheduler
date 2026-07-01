@@ -12,6 +12,10 @@ let state = {
   drag: null,
 };
 
+function repKey(rep) {
+  return rep?.repKey || rep?.name;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
@@ -58,24 +62,36 @@ async function loadReps() {
   const q = district ? `?district=${district}` : '';
   state.reps = await api(`/reps${q}`);
   const sel = document.getElementById('repSelect');
-  sel.innerHTML = state.reps.map((r) => `<option value="${r.name}">${r.name} (D${r.district})</option>`).join('');
-  const patricia = state.reps.find((r) => r.name.includes('Patricia'));
-  if (patricia) sel.value = patricia.name;
+  sel.innerHTML = state.reps
+    .map((r) => `<option value="${encodeURIComponent(repKey(r))}">${r.name} (D${r.district})</option>`)
+    .join('');
+
+  const districtNum = district ? Number(district) : null;
+  const preferred =
+    (districtNum === 8 && state.reps.find((r) => r.isD8Pool)) ||
+    (districtNum === 1 && state.reps.find((r) => r.name.includes('Patricia'))) ||
+    state.reps.find((r) => r.name.includes('Patricia')) ||
+    state.reps[0];
+  if (preferred) sel.value = encodeURIComponent(repKey(preferred));
 }
 
 async function loadRepWeek() {
-  const repName = document.getElementById('repSelect').value;
+  const repKeyVal = decodeURIComponent(document.getElementById('repSelect').value);
   const weekStart = document.getElementById('weekSelect').value;
-  state.rep = await api(`/reps/${encodeURIComponent(repName)}`);
+  state.rep = await api(`/reps/${encodeURIComponent(repKeyVal)}`);
   state.week = (await api('/weeks')).find((w) => w.start === weekStart);
   state.slots = state.rep.visitSlots;
 
-  const drafts = await api(`/schedule/draft?rep=${encodeURIComponent(repName)}&weekStart=${weekStart}`);
+  const drafts = await api(
+    `/schedule/draft?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
+  );
   if (drafts.length) {
     state.placements = drafts[0].placements;
     state.draftId = drafts[0].id;
   } else {
-    const def = await api(`/schedule/default?rep=${encodeURIComponent(repName)}&weekStart=${weekStart}`);
+    const def = await api(
+      `/schedule/default?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
+    );
     state.placements = def.placements;
     state.draftId = null;
   }
@@ -83,7 +99,7 @@ async function loadRepWeek() {
   if (document.getElementById('showProd').checked && state.rep.employeeId) {
     try {
       const prod = await api(
-        `/schedule/prod?rep=${encodeURIComponent(repName)}&weekStart=${weekStart}`
+        `/schedule/prod?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
       );
       state.prodShifts = prod.shifts || [];
     } catch {
@@ -100,7 +116,7 @@ async function validateAndRender() {
   const { results, warnings, allValid } = await api('/schedule/validate', {
     method: 'POST',
     body: JSON.stringify({
-      repKey: state.rep.name,
+      repKey: repKey(state.rep),
       weekStart: state.week.start,
       placements: state.placements,
     }),
@@ -116,8 +132,11 @@ async function validateAndRender() {
 }
 
 function renderCalendar(warnings, allValid) {
+  const d8Note = state.rep.isD8Pool
+    ? ' · Proposed assignees: Brian Campbell, Kimberly Claflin, James Duchene (planning only — nothing sent)'
+    : '';
   document.getElementById('weekHeader').textContent =
-    `${state.rep.name} · ${state.week.label} · ${state.placements.length} visits · ${allValid ? 'All Master Route checks pass' : 'Some placements invalid'}`;
+    `${state.rep.name} · ${state.week.label} · ${state.placements.length} visits · ${allValid ? 'All Master Route checks pass' : 'Some placements invalid'}${d8Note}`;
 
   const byDay = placementsByDay();
   const cal = document.getElementById('calendar');
@@ -148,7 +167,9 @@ function renderCalendar(warnings, allValid) {
       if (!state.drag) return;
       const slot = findSlot(state.drag);
       if (!slot?.allowedDays.includes(day)) {
-        alert(`Store ${state.drag.storeNum} cannot be scheduled on ${day}.\nAllowed: ${slot?.allowedDays.join(', ')}`);
+        alert(
+          `Store ${state.drag.storeNum} cannot be scheduled on ${day}.\nAllowed: ${slot?.allowedDays.join(', ')}`
+        );
         return;
       }
       state.drag.dayOfWeek = day;
@@ -173,9 +194,22 @@ function renderCalendar(warnings, allValid) {
   }
 
   const warnEl = document.getElementById('warnings');
-  if (warnings?.length) {
+  const d8Unassigned = state.rep.isD8Pool
+    ? state.placements.filter((p) => !p.proposedAssignee).length
+    : 0;
+  const allWarnings = [...(warnings || [])];
+  if (d8Unassigned) {
+    allWarnings.unshift({
+      message: `${d8Unassigned} D8 visit(s) have no proposed assignee selected yet.`,
+    });
+  }
+
+  if (allWarnings.length) {
     warnEl.classList.add('show');
-    warnEl.innerHTML = '<strong>Warnings</strong><ul>' + warnings.map((w) => `<li>${w.message}</li>`).join('') + '</ul>';
+    warnEl.innerHTML =
+      '<strong>Warnings</strong><ul>' +
+      allWarnings.map((w) => `<li>${w.message}</li>`).join('') +
+      '</ul>';
   } else {
     warnEl.classList.remove('show');
     warnEl.innerHTML = '';
@@ -202,23 +236,51 @@ function makeChit(p) {
   const tpl = document.getElementById('chitTemplate');
   const el = tpl.content.firstElementChild.cloneNode(true);
   if (!p._valid) el.classList.add('invalid');
+  if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
   el.querySelector('.chit-account').textContent = p.account || '';
   el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 40);
+
+  if (state.rep.isD8Pool) {
+    const assigneeWrap = el.querySelector('.chit-assignee-wrap');
+    assigneeWrap.hidden = false;
+    const select = assigneeWrap.querySelector('.chit-assignee');
+    select.innerHTML =
+      '<option value="">Proposed assignee…</option>' +
+      (state.rep.proposedAssignees || [])
+        .map(
+          (a) =>
+            `<option value="${a.name}"${p.proposedAssignee === a.name ? ' selected' : ''}>${a.label || a.name}</option>`
+        )
+        .join('');
+    select.addEventListener('mousedown', (e) => e.stopPropagation());
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', () => {
+      p.proposedAssignee = select.value;
+      validateAndRender();
+    });
+  }
+
   el.addEventListener('dragstart', () => {
     state.drag = p;
   });
   el.addEventListener('dragend', () => {
     state.drag = null;
   });
-  el.addEventListener('click', () => showSlotDetail(p));
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('.chit-assignee')) return;
+    showSlotDetail(p);
+  });
   return el;
 }
 
 function showSlotDetail(p) {
   const slot = findSlot(p);
+  const assigneeLine = state.rep.isD8Pool
+    ? `\nProposed assignee: ${p.proposedAssignee || '(not chosen)'}`
+    : '';
   document.getElementById('slotDetail').textContent = slot
-    ? `Store ${p.storeNum}\nAccount: ${p.account}\nAction: ${p.action}\nAnchor: ${slot.anchorServiceDay}\nAllowed: ${slot.allowedDays.join(', ')}\nPick: ${slot.pickDay || '-'}\nDelivery: ${slot.deliveryDay || '-'}\nPlaced: ${p.dayOfWeek} (${p.scheduledDate})\nValid: ${p._valid ? 'YES' : 'NO'}`
+    ? `Store ${p.storeNum}\nAccount: ${p.account}\nAction: ${p.action}\nAnchor: ${slot.anchorServiceDay}\nAllowed: ${slot.allowedDays.join(', ')}\nPick: ${slot.pickDay || '-'}\nDelivery: ${slot.deliveryDay || '-'}\nPlaced: ${p.dayOfWeek} (${p.scheduledDate})${assigneeLine}\nValid: ${p._valid ? 'YES' : 'NO'}`
     : 'No slot metadata';
 }
 
@@ -226,7 +288,7 @@ async function saveDraft() {
   const draft = await api('/schedule/draft', {
     method: 'POST',
     body: JSON.stringify({
-      repKey: state.rep.name,
+      repKey: repKey(state.rep),
       weekStart: state.week.start,
       weekEnd: state.week.end,
       weekLabel: state.week.label,
@@ -285,6 +347,7 @@ document.getElementById('weekSelect').addEventListener('change', loadRepWeek);
 document.getElementById('showProd').addEventListener('change', loadRepWeek);
 
 (async function init() {
+  document.getElementById('districtFilter').value = '1';
   await loadWeeks();
   await loadReps();
   await loadRepWeek();

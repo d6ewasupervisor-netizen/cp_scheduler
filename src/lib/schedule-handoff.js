@@ -54,14 +54,37 @@ function buildHandoffMarkdown(json) {
   lines.push(`**Approved:** ${json.approvedAt} by ${json.approvedBy}`);
   lines.push('');
 
+  if (json.rep?.isD8Pool) {
+    lines.push('## D8 proposed assignees (planning only)');
+    lines.push('');
+    lines.push('No notifications are sent. Pick one proposed assignee per visit in the app.');
+    lines.push('');
+    for (const a of json.rep.proposedAssignees || []) {
+      lines.push(`- ${a.name}`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Week grid');
   lines.push('');
-  lines.push('| Date | DOW | Store | Account | Action | Start–End | MR OK |');
-  lines.push('|------|-----|-------|---------|--------|-----------|-------|');
+  const showAssignee = json.rep?.isD8Pool || json.placements.some((p) => p.proposedAssignee);
+  if (showAssignee) {
+    lines.push('| Date | DOW | Store | Proposed assignee | Account | Action | Start–End | MR OK |');
+    lines.push('|------|-----|-------|-------------------|---------|--------|-----------|-------|');
+  } else {
+    lines.push('| Date | DOW | Store | Account | Action | Start–End | MR OK |');
+    lines.push('|------|-----|-------|---------|--------|-----------|-------|');
+  }
   for (const p of json.placements) {
-    lines.push(
-      `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.account || ''} | ${p.action || ''} | ${p.shiftStart}–${p.shiftEnd} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
-    );
+    if (showAssignee) {
+      lines.push(
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.proposedAssignee || '—'} | ${p.account || ''} | ${p.action || ''} | ${p.shiftStart}–${p.shiftEnd} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+      );
+    } else {
+      lines.push(
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.account || ''} | ${p.action || ''} | ${p.shiftStart}–${p.shiftEnd} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+      );
+    }
   }
   lines.push('');
 
@@ -110,11 +133,14 @@ function buildHandoffMarkdown(json) {
 }
 
 function buildReviewHtml(json) {
+  const showAssignee = json.rep?.isD8Pool || json.placements.some((p) => p.proposedAssignee);
   const rows = json.placements
-    .map(
-      (p) =>
-        `<tr><td>${escapeHtml(p.scheduledDate)}</td><td>${escapeHtml(p.dayOfWeek)}</td><td>${p.storeNum}</td><td>${escapeHtml(p.account)}</td><td>${escapeHtml(p.action)}</td><td>${escapeHtml(p.shiftStart)}–${escapeHtml(p.shiftEnd)}</td><td class="${p.masterRouteValid ? 'ok' : 'bad'}">${p.masterRouteValid ? 'PASS' : 'FAIL'}</td></tr>`
-    )
+    .map((p) => {
+      const assigneeCell = showAssignee
+        ? `<td>${escapeHtml(p.proposedAssignee || '—')}</td>`
+        : '';
+      return `<tr><td>${escapeHtml(p.scheduledDate)}</td><td>${escapeHtml(p.dayOfWeek)}</td><td>${p.storeNum}</td>${assigneeCell}<td>${escapeHtml(p.account)}</td><td>${escapeHtml(p.action)}</td><td>${escapeHtml(p.shiftStart)}–${escapeHtml(p.shiftEnd)}</td><td class="${p.masterRouteValid ? 'ok' : 'bad'}">${p.masterRouteValid ? 'PASS' : 'FAIL'}</td></tr>`;
+    })
     .join('');
 
   const warnings = (json.warnings || [])
@@ -137,7 +163,8 @@ th{background:#161b22}.ok{color:#3fb950}.bad{color:#f85149}
 <p><strong>Approved:</strong> ${escapeHtml(json.approvedAt)} by ${escapeHtml(json.approvedBy)}</p>
 </div>
 <h2>Week grid</h2>
-<table><thead><tr><th>Date</th><th>Day</th><th>Store</th><th>Account</th><th>Action</th><th>Shift</th><th>MR</th></tr></thead><tbody>${rows}</tbody></table>
+<table><thead><tr><th>Date</th><th>Day</th><th>Store</th>${showAssignee ? '<th>Proposed assignee</th>' : ''}<th>Account</th><th>Action</th><th>Shift</th><th>MR</th></tr></thead><tbody>${rows}</tbody></table>
+${json.rep?.isD8Pool ? '<p><em>D8 proposed assignees are planning labels only — no notifications are sent.</em></p>' : ''}
 ${warnings ? `<h2>Warnings</h2><ul>${warnings}</ul>` : ''}
 </body></html>`;
 }

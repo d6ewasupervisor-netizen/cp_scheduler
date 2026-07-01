@@ -134,6 +134,22 @@ button.primary { background: #1f3a5f; border-color: var(--accent); color: var(--
 }
 .chit-store { font-weight: 700; font-size: 1rem; }
 .chit-account, .chit-action { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
+.chit.unassigned { border-left-color: var(--warn); }
+.chit-assignee-wrap {
+  display: block;
+  margin-top: .45rem;
+}
+.chit-assignee {
+  width: 100%;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .25rem .35rem;
+  font-size: .68rem;
+  cursor: pointer;
+}
+.chit-assignee:focus { border-color: var(--accent); outline: none; }
 
 .warnings {
   margin-top: 1rem;

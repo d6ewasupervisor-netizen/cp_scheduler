@@ -4,7 +4,8 @@
     "workdayId": "800137639",
     "email": "patricia.marks@youradv.com",
     "district": 1,
+    "exclusiveDistrictRep": true,
     "inheritFrom": ["Carr, Jim", "Preston, Amy"],
-    "extraStoreNums": [360]
+    "storeNums": [40, 60, 143, 220, 240, 360]
   }
 }
