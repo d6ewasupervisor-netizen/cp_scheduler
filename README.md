@@ -27,6 +27,10 @@ npm start
 
 Open http://127.0.0.1:3847
 
+**Production (Railway):** https://cpscheduler-production.up.railway.app
+
+**GitHub:** https://github.com/d6ewasupervisor-netizen/cp_scheduler
+
 ## API
 
 | Method | Path | Description |
