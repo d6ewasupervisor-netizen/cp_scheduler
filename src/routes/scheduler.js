@@ -8,9 +8,9 @@ const {
   loadMasterRoute,
   listReps,
   getRep,
-  defaultPlacementsForWeek,
 } = require('../lib/master-route');
 const { listWeeks, getWeekByStart } = require('../lib/fiscal-calendar');
+const { resolveInitialPlacements, toTemplatePlacements } = require('../lib/weekly-template');
 const { fetchProdSchedule } = require('../lib/prod-schedule');
 const {
   buildHandoffJson,
@@ -18,7 +18,7 @@ const {
   buildReviewHtml,
   enrichPlacements,
 } = require('../lib/schedule-handoff');
-const { saveDraft, getDraft, listDrafts, approveDraft } = require('../db');
+const { saveDraft, getDraft, listDrafts, approveDraft, getWeeklyTemplate, saveWeeklyTemplate, clearWeeklyTemplate } = require('../db');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
@@ -62,7 +62,58 @@ router.get('/schedule/default', (req, res) => {
   if (!rep) return res.status(404).json({ error: 'Rep not found' });
   const week = getWeekByStart(weekStart);
   if (!week) return res.status(400).json({ error: 'Unknown week' });
-  res.json({ placements: defaultPlacementsForWeek(rep, week.start) });
+  const template = getWeeklyTemplate(rep.repKey || rep.name);
+  const resolved = resolveInitialPlacements(rep, week.start, template);
+  res.json({
+    placements: resolved.placements,
+    source: resolved.source,
+    weeklyTemplate: resolved.template
+      ? {
+          updatedAt: resolved.template.updatedAt,
+          setFromWeekLabel: resolved.template.setFromWeekLabel,
+          setBy: resolved.template.setBy,
+        }
+      : null,
+  });
+});
+
+router.get('/schedule/weekly-template', (req, res) => {
+  const rep = getRep(req.query.rep);
+  if (!rep) return res.status(404).json({ error: 'Rep not found' });
+  const template = getWeeklyTemplate(rep.repKey || rep.name);
+  if (!template) return res.json({ template: null });
+  res.json({
+    template: {
+      repKey: template.repKey,
+      placements: template.placements,
+      updatedAt: template.updatedAt,
+      setFromWeekLabel: template.setFromWeekLabel,
+      setBy: template.setBy,
+    },
+  });
+});
+
+router.post('/schedule/weekly-template', (req, res) => {
+  try {
+    const { repKey, placements, setFromWeekLabel, setBy } = req.body;
+    const rep = getRep(repKey);
+    if (!rep) return res.status(404).json({ error: 'Rep not found' });
+    if (!placements?.length) return res.status(400).json({ error: 'No placements to save' });
+    const template = saveWeeklyTemplate(rep.repKey || rep.name, toTemplatePlacements(placements), {
+      setFromWeekLabel,
+      setBy,
+    });
+    res.json({ template });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/schedule/weekly-template', (req, res) => {
+  const rep = getRep(req.query.rep);
+  if (!rep) return res.status(404).json({ error: 'Rep not found' });
+  const cleared = clearWeeklyTemplate(rep.repKey || rep.name);
+  res.json({ cleared });
 });
 
 router.get('/schedule/draft', (req, res) => {

@@ -68,6 +68,19 @@ button {
 }
 button:hover { border-color: var(--accent); }
 button.primary { background: #1f3a5f; border-color: var(--accent); color: var(--accent); }
+button.subtle { opacity: 0.85; font-size: 0.9em; }
+
+.template-banner {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(108, 182, 255, 0.08);
+  border: 1px solid rgba(108, 182, 255, 0.25);
+  color: var(--accent);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.template-banner strong { color: var(--text); }
 
 .toggle { flex-direction: row !important; align-items: center; text-transform: none; letter-spacing: 0; }
 

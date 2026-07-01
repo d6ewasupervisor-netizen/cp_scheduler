@@ -1,17 +1,8 @@
 'use strict';
 
 const FISCAL_2026 = {
-  '05': {
-    weeks: {
-      '1': { start: '2026-05-24', end: '2026-05-30', label: 'P05W1' },
-      '2': { start: '2026-05-31', end: '2026-06-06', label: 'P05W2' },
-      '3': { start: '2026-06-07', end: '2026-06-13', label: 'P05W3' },
-      '4': { start: '2026-06-14', end: '2026-06-20', label: 'P05W4' },
-    },
-  },
   '06': {
     weeks: {
-      '1': { start: '2026-06-21', end: '2026-06-27', label: 'P06W1' },
       '2': { start: '2026-06-28', end: '2026-07-04', label: 'P06W2' },
       '3': { start: '2026-07-05', end: '2026-07-11', label: 'P06W3' },
       '4': { start: '2026-07-12', end: '2026-07-18', label: 'P06W4' },
@@ -25,7 +16,17 @@ const FISCAL_2026 = {
       '4': { start: '2026-08-09', end: '2026-08-15', label: 'P07W4' },
     },
   },
+  '08': {
+    weeks: {
+      '1': { start: '2026-08-16', end: '2026-08-22', label: 'P08W1' },
+      '2': { start: '2026-08-23', end: '2026-08-29', label: 'P08W2' },
+      '3': { start: '2026-08-30', end: '2026-09-05', label: 'P08W3' },
+      '4': { start: '2026-09-06', end: '2026-09-12', label: 'P08W4' },
+    },
+  },
 };
+
+const MIN_WEEK_LABEL = 'P06W2';
 
 function listWeeks() {
   const out = [];
@@ -71,6 +72,8 @@ function dayToDateInWeek(weekStart, dayName) {
 }
 
 module.exports = {
+  FISCAL_2026,
+  MIN_WEEK_LABEL,
   listWeeks,
   getWeekByStart,
   getWeekForDate,

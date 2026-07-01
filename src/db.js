@@ -6,8 +6,10 @@ const path = require('path');
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../../data/schedule-drafts.json');
 
 function readDb() {
-  if (!fs.existsSync(DB_PATH)) return { drafts: [] };
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  if (!fs.existsSync(DB_PATH)) return { drafts: [], weeklyTemplates: [] };
+  const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  if (!Array.isArray(data.weeklyTemplates)) data.weeklyTemplates = [];
+  return data;
 }
 
 function writeDb(data) {
@@ -16,7 +18,7 @@ function writeDb(data) {
 }
 
 function initDb() {
-  if (!fs.existsSync(DB_PATH)) writeDb({ drafts: [] });
+  if (!fs.existsSync(DB_PATH)) writeDb({ drafts: [], weeklyTemplates: [] });
 }
 
 function listDrafts(repKey, weekStart) {
@@ -82,4 +84,46 @@ function approveDraft(id, approver, handoff) {
   return draft;
 }
 
-module.exports = { initDb, listDrafts, getDraft, saveDraft, approveDraft, DB_PATH };
+function getWeeklyTemplate(repKey) {
+  return readDb().weeklyTemplates.find((t) => t.repKey === repKey) || null;
+}
+
+function saveWeeklyTemplate(repKey, placements, meta = {}) {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const existing = db.weeklyTemplates.find((t) => t.repKey === repKey);
+  const record = {
+    repKey,
+    placements,
+    updatedAt: now,
+    setFromWeekLabel: meta.setFromWeekLabel || null,
+    setBy: meta.setBy || 'local',
+  };
+  if (existing) {
+    Object.assign(existing, record);
+  } else {
+    db.weeklyTemplates.push(record);
+  }
+  writeDb(db);
+  return record;
+}
+
+function clearWeeklyTemplate(repKey) {
+  const db = readDb();
+  const before = db.weeklyTemplates.length;
+  db.weeklyTemplates = db.weeklyTemplates.filter((t) => t.repKey !== repKey);
+  writeDb(db);
+  return before !== db.weeklyTemplates.length;
+}
+
+module.exports = {
+  initDb,
+  listDrafts,
+  getDraft,
+  saveDraft,
+  approveDraft,
+  getWeeklyTemplate,
+  saveWeeklyTemplate,
+  clearWeeklyTemplate,
+  DB_PATH,
+};

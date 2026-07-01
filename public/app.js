@@ -10,6 +10,8 @@ let state = {
   draftId: null,
   prodShifts: [],
   drag: null,
+  placementSource: null,
+  weeklyTemplate: null,
 };
 
 function repKey(rep) {
@@ -75,6 +77,39 @@ async function loadReps() {
   if (preferred) sel.value = encodeURIComponent(repKey(preferred));
 }
 
+async function loadWeeklyTemplateStatus() {
+  const repKeyVal = repKey(state.rep);
+  const data = await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKeyVal)}`);
+  state.weeklyTemplate = data.template;
+  const clearBtn = document.getElementById('btnClearTemplate');
+  clearBtn.hidden = !state.weeklyTemplate;
+}
+
+function renderTemplateBanner() {
+  const banner = document.getElementById('templateBanner');
+  if (!state.weeklyTemplate) {
+    banner.hidden = true;
+    banner.innerHTML = '';
+    return;
+  }
+
+  const fromWeek = state.weeklyTemplate.setFromWeekLabel
+    ? ` (saved from ${state.weeklyTemplate.setFromWeekLabel})`
+    : '';
+  const updated = state.weeklyTemplate.updatedAt
+    ? new Date(state.weeklyTemplate.updatedAt).toLocaleString()
+    : '';
+
+  banner.hidden = false;
+  if (state.placementSource === 'weeklyTemplate' && !state.draftId) {
+    banner.innerHTML = `<strong>Weekly template active.</strong> This week started from your saved Mon–Fri layout${fromWeek}. Per-week drafts still override the template.`;
+  } else if (state.draftId) {
+    banner.innerHTML = `<strong>Weekly template on file${fromWeek}.</strong> This week has its own saved draft. New weeks without a draft will use the template. Last updated ${updated}.`;
+  } else {
+    banner.innerHTML = `<strong>Weekly template on file${fromWeek}.</strong> Weeks without a saved draft use this layout. Last updated ${updated}.`;
+  }
+}
+
 async function loadRepWeek() {
   const repKeyVal = decodeURIComponent(document.getElementById('repSelect').value);
   const weekStart = document.getElementById('weekSelect').value;
@@ -88,13 +123,18 @@ async function loadRepWeek() {
   if (drafts.length) {
     state.placements = drafts[0].placements;
     state.draftId = drafts[0].id;
+    state.placementSource = 'draft';
   } else {
     const def = await api(
       `/schedule/default?rep=${encodeURIComponent(repKeyVal)}&weekStart=${weekStart}`
     );
     state.placements = def.placements;
     state.draftId = null;
+    state.placementSource = def.source || 'masterRoute';
   }
+
+  await loadWeeklyTemplateStatus();
+  renderTemplateBanner();
 
   if (document.getElementById('showProd').checked && state.rep.employeeId) {
     try {
@@ -284,6 +324,46 @@ function showSlotDetail(p) {
     : 'No slot metadata';
 }
 
+async function saveWeeklyTemplate() {
+  const ok = confirm(
+    `Save the current Mon–Fri layout as the weekly template for ${state.rep.name}?\n\nWeeks without their own saved draft will start from this pattern. You can change or clear it anytime.`
+  );
+  if (!ok) return;
+
+  const { template } = await api('/schedule/weekly-template', {
+    method: 'POST',
+    body: JSON.stringify({
+      repKey: repKey(state.rep),
+      placements: state.placements,
+      setFromWeekLabel: state.week.label,
+      setBy: document.getElementById('approverEmail').value || 'local',
+    }),
+  });
+  state.weeklyTemplate = template;
+  document.getElementById('btnClearTemplate').hidden = false;
+  renderTemplateBanner();
+  alert(`Weekly template saved from ${state.week.label}.`);
+}
+
+async function clearWeeklyTemplate() {
+  const ok = confirm(
+    `Clear the weekly template for ${state.rep.name}?\n\nNew weeks will revert to Master Route anchor days until you save a new template.`
+  );
+  if (!ok) return;
+
+  await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKey(state.rep))}`, {
+    method: 'DELETE',
+  });
+  state.weeklyTemplate = null;
+  document.getElementById('btnClearTemplate').hidden = true;
+  if (!state.draftId) {
+    await loadRepWeek();
+  } else {
+    renderTemplateBanner();
+  }
+  alert('Weekly template cleared.');
+}
+
 async function saveDraft() {
   const draft = await api('/schedule/draft', {
     method: 'POST',
@@ -297,6 +377,8 @@ async function saveDraft() {
     }),
   });
   state.draftId = draft.id;
+  state.placementSource = 'draft';
+  renderTemplateBanner();
   alert(`Draft saved (${draft.id})`);
 }
 
@@ -323,6 +405,8 @@ async function copyText(text) {
 
 document.getElementById('btnReload').addEventListener('click', loadRepWeek);
 document.getElementById('btnSave').addEventListener('click', saveDraft);
+document.getElementById('btnSaveTemplate').addEventListener('click', saveWeeklyTemplate);
+document.getElementById('btnClearTemplate').addEventListener('click', clearWeeklyTemplate);
 document.getElementById('btnApprove').addEventListener('click', approveWeek);
 document.getElementById('btnCopyMd').addEventListener('click', async () => {
   if (!state.draftId) return alert('Approve first');

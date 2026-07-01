@@ -32,6 +32,8 @@
     <div class="btn-row">
       <button id="btnReload" type="button">Reload</button>
       <button id="btnSave" type="button">Save draft</button>
+      <button id="btnSaveTemplate" type="button" title="Use this Mon–Fri layout as the starting point for every week without its own saved draft">Save as weekly template</button>
+      <button id="btnClearTemplate" type="button" class="subtle" hidden>Clear weekly template</button>
       <button id="btnApprove" type="button" class="primary">Approve week</button>
       <button id="btnCopyMd" type="button">Copy Markdown</button>
       <button id="btnCopyJson" type="button">Copy JSON</button>
@@ -43,6 +45,7 @@
   <main class="layout">
     <section class="calendar-panel">
       <div id="weekHeader" class="week-meta"></div>
+      <div id="templateBanner" class="template-banner" hidden></div>
       <div id="calendar" class="calendar"></div>
       <div id="warnings" class="warnings"></div>
     </section>
