@@ -27,6 +27,8 @@ npm start
 
 Open http://127.0.0.1:3847
 
+**Mobile:** On phones, the week scrolls horizontally, controls stack full-width, and each visit card has a **Move to** day picker (drag-and-drop is unreliable on touch screens).
+
 **Production (Railway):** https://cpscheduler-production.up.railway.app
 
 **GitHub:** https://github.com/d6ewasupervisor-netizen/cp_scheduler
@@ -71,7 +73,13 @@ Optional:
 | `DATABASE_PATH` | JSON draft store (default `data/schedule-drafts.json`) |
 | `SAS_AUTH_STATE` | Path to sas-auth token for PROD overlay |
 
-Also add the cp_scheduler origin to eod-api `ALLOWED_ORIGINS` if browsers call eod-api directly from sign-in.
+Also add the cp_scheduler origin to eod-api `ALLOWED_ORIGINS` if browsers call eod-api directly from sign-in (already includes `https://cpscheduler-production.up.railway.app` when synced via `scripts/railway-sync-auth-vars.py`).
+
+Sync auth vars from eod-api to cp_scheduler (local, requires Railway CLI login):
+
+```bash
+python scripts/railway-sync-auth-vars.py
+```
 
 ### Views
 

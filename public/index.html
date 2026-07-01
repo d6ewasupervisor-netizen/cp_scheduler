@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Central Pet Scheduler</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
@@ -23,11 +23,16 @@
   </header>
 
   <section class="guide-panel" id="guidePanel">
-    <h2 id="guideTitle">How this works</h2>
-    <ul id="guideList"></ul>
+    <button type="button" class="guide-toggle" id="guideToggle" aria-expanded="true" aria-controls="guideBody">
+      <span id="guideTitle">How this works</span>
+      <span class="guide-chevron" aria-hidden="true">▼</span>
+    </button>
+    <div id="guideBody" class="guide-body">
+      <ul id="guideList"></ul>
+    </div>
   </section>
 
-  <section class="controls">
+  <section class="controls" id="controlsPanel">
     <label>District
       <select id="districtFilter">
         <option value="">All</option>
@@ -44,9 +49,11 @@
     <label class="admin-only">Approver email
       <input id="approverEmail" type="email" placeholder="you@example.com">
     </label>
-    <div class="btn-row">
+    <div class="btn-row btn-row-primary">
+      <button id="btnSave" type="button" class="primary">Save my week</button>
       <button id="btnReload" type="button">Reload</button>
-      <button id="btnSave" type="button">Save my week</button>
+    </div>
+    <div class="btn-row btn-row-secondary">
       <button id="btnSaveTemplate" type="button" class="admin-only" title="Use this Mon–Fri layout as the starting point for every week without its own saved draft">Save as weekly template</button>
       <button id="btnClearTemplate" type="button" class="subtle admin-only" hidden>Clear weekly template</button>
       <button id="btnApprove" type="button" class="primary admin-only">Approve week</button>
@@ -66,7 +73,10 @@
         <span><i class="legend-swatch invalid"></i> Master Route conflict</span>
         <span class="d8-legend admin-only"><i class="legend-swatch unassigned"></i> D8 — pick proposed assignee</span>
       </div>
-      <div id="calendar" class="calendar"></div>
+      <div class="calendar-scroll">
+        <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
+      </div>
+      <p class="mobile-hint">Swipe the calendar left/right · tap a store, or use Move to on each card</p>
       <div id="warnings" class="warnings"></div>
     </section>
     <aside class="side-panel">
@@ -89,6 +99,10 @@
       <label class="chit-assignee-wrap" hidden>
         <span class="chit-assignee-label">Proposed assignee</span>
         <select class="chit-assignee"></select>
+      </label>
+      <label class="chit-move-wrap" hidden>
+        <span class="chit-move-label">Move to</span>
+        <select class="chit-move-day"></select>
       </label>
     </div>
   </template>

@@ -2,6 +2,8 @@ const API = '/api/central-pet';
 const AUTH_API = '/api/auth';
 const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
+const isMobileLayout = () => window.matchMedia('(max-width: 720px)').matches;
+
 let state = {
   user: null,
   layer: 'rep',
@@ -48,8 +50,12 @@ function applyLayer() {
 
   document.getElementById('pageSubtitle').textContent =
     state.layer === 'admin'
-      ? 'Admin — build templates, approve weeks, export handoffs'
-      : 'Your week — drag each store to a valid day, then save';
+      ? isMobileLayout()
+        ? 'Admin — schedule, template, approve'
+        : 'Admin — build templates, approve weeks, export handoffs'
+      : isMobileLayout()
+        ? 'Place each store on a valid day, then save'
+        : 'Your week — drag each store to a valid day, then save';
 
   document.getElementById('guideTitle').textContent =
     state.layer === 'admin' ? 'Admin options' : 'Your steps each week';
@@ -59,6 +65,11 @@ function applyLayer() {
 
   if (state.user?.email && !document.getElementById('approverEmail').value) {
     document.getElementById('approverEmail').value = state.user.email;
+  }
+
+  if (isMobileLayout()) {
+    document.getElementById('guidePanel').classList.add('collapsed');
+    document.getElementById('guideToggle').setAttribute('aria-expanded', 'false');
   }
 }
 
@@ -357,6 +368,33 @@ function makeChit(p) {
     });
   }
 
+  const slot = findSlot(p);
+  const moveWrap = el.querySelector('.chit-move-wrap');
+  if (isMobileLayout() && slot) {
+    moveWrap.hidden = false;
+    const moveSelect = moveWrap.querySelector('.chit-move-day');
+    moveSelect.innerHTML = WORK_DAYS.map((day) => {
+      const allowed = slot.allowedDays.includes(day);
+      const label = allowed ? day : `${day} (not allowed)`;
+      return `<option value="${day}"${p.dayOfWeek === day ? ' selected' : ''}${allowed ? '' : ' disabled'}>${label}</option>`;
+    }).join('');
+    moveSelect.addEventListener('mousedown', (e) => e.stopPropagation());
+    moveSelect.addEventListener('click', (e) => e.stopPropagation());
+    moveSelect.addEventListener('change', () => {
+      const day = moveSelect.value;
+      if (!slot.allowedDays.includes(day)) {
+        alert(`Store ${p.storeNum} cannot go on ${day}.\nAllowed: ${slot.allowedDays.join(', ')}`);
+        moveSelect.value = p.dayOfWeek;
+        return;
+      }
+      p.dayOfWeek = day;
+      p.scheduledDate = dateForDay(day);
+      validateAndRender();
+    });
+  } else {
+    moveWrap.hidden = true;
+  }
+
   el.addEventListener('dragstart', () => {
     state.drag = p;
   });
@@ -364,7 +402,7 @@ function makeChit(p) {
     state.drag = null;
   });
   el.addEventListener('click', (e) => {
-    if (e.target.closest('.chit-assignee')) return;
+    if (e.target.closest('.chit-assignee') || e.target.closest('.chit-move-day')) return;
     showSlotDetail(p);
   });
   return el;
@@ -497,6 +535,12 @@ document.getElementById('btnDownload').addEventListener('click', () => {
   window.location.href = `${API}/schedule/export/${state.draftId}?format=handoff`;
 });
 document.getElementById('btnSignOut').addEventListener('click', () => window.cpSignOut());
+document.getElementById('guideToggle').addEventListener('click', () => {
+  const panel = document.getElementById('guidePanel');
+  const btn = document.getElementById('guideToggle');
+  const collapsed = panel.classList.toggle('collapsed');
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+});
 document.getElementById('districtFilter').addEventListener('change', async () => {
   await loadReps();
   await loadRepWeek();
