@@ -12,6 +12,7 @@ initDb();
 const app = express();
 const PORT = process.env.PORT || 3847;
 
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => {

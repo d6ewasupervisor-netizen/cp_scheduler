@@ -73,12 +73,6 @@
 
   <script>
     (function () {
-      const EOD_API = (function () {
-        const hashApi = (location.hash.match(/eod=([^&]+)/) || [])[1];
-        if (hashApi) return decodeURIComponent(hashApi).replace(/\/+$/, '');
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:3001';
-        return 'https://eod-api.the-dump-bin.com';
-      })();
       const SESSION_KEY = 'dumpBinSession';
       const ACCESS_ERR = 'not on the access list';
 
@@ -129,7 +123,7 @@
         sendBtn.disabled = true;
         sendBtn.textContent = 'Sending…';
         try {
-          const res = await fetch(EOD_API + '/api/request-link', {
+          const res = await fetch('/api/auth/request-link', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, returnTo: location.origin + resolveNext() }),
@@ -144,7 +138,7 @@
           showStatus('ok', 'Check your email for the sign-in link.');
           emailEl.value = '';
         } catch (_) {
-          showStatus('err', 'Network error. Try again.');
+          showStatus('err', 'Could not reach the sign-in service. Check your connection and try again.');
         } finally {
           sendBtn.disabled = false;
           sendBtn.textContent = 'Send sign-in link';
@@ -159,7 +153,7 @@
         const btn = document.getElementById('overlay-submit');
         btn.disabled = true;
         try {
-          const res = await fetch(EOD_API + '/api/access-request', {
+          const res = await fetch('/api/auth/access-request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, email, reason }),
