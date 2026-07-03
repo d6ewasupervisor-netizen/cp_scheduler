@@ -97,6 +97,42 @@ export function taskLine(slot) {
   return `Default ${slot.anchorServiceDay}`;
 }
 
+/** Prior visit at the same store — delivery day for work-load follow-ups. */
+export function priorVisitDeliveryDay(slots, slot) {
+  if (!slot || !slots?.length) return null;
+  const idx = slot.visitIndex ?? 0;
+  if (idx === 0) return slot.deliveryDay || null;
+  const prev = slots.find(
+    (s) => s.storeNum === slot.storeNum && (s.visitIndex ?? 0) === idx - 1
+  );
+  return prev?.deliveryDay || null;
+}
+
+export function isWorkLoadVisit(slot) {
+  if (!slot || slot.pickDay || slot.deliveryDay) return false;
+  const action = (slot.action || '').toUpperCase();
+  return action.includes('WORK LOAD') || (slot.visitIndex ?? 0) > 0;
+}
+
+export function isWriteOrderVisit(slot) {
+  if (!slot?.pickDay) return false;
+  const action = (slot.action || '').toUpperCase();
+  return action.includes('WRITE ORDER') || action.includes('WORK LOAD/WRITE ORDER');
+}
+
+/** Card subtitle: pick day for write-order visits, delivery day for work-load visits. */
+export function orderTimingLine(slot, slots) {
+  if (!slot) return '';
+  if (isWriteOrderVisit(slot)) {
+    return `Order picks ${slot.pickDay}`;
+  }
+  if (isWorkLoadVisit(slot)) {
+    const delivered = priorVisitDeliveryDay(slots, slot);
+    if (delivered) return `Order delivered ${delivered}`;
+  }
+  return taskLine(slot);
+}
+
 /* ---------- Dates ---------- */
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

@@ -11,7 +11,7 @@ import {
   slotKey,
   findSlot,
   placementsByDay,
-  taskLine,
+  orderTimingLine,
   dateForDay,
   shortDate,
   isMobileLayout,
@@ -255,7 +255,7 @@ function makeChit(p) {
 
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
   el.querySelector('.chit-flag').textContent = chitFlagLabel(p, state.rep);
-  el.querySelector('.chit-task').textContent = taskLine(slot);
+  el.querySelector('.chit-task').textContent = orderTimingLine(slot, state.slots);
   el.querySelector('.chit-account').textContent = p.account || '';
   el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
 
