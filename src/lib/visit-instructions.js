@@ -34,12 +34,16 @@ function shiftExpectations(placement) {
   return `Lead shift ${start}–${end} (~${placement?.estimatedHours ?? 8}h). Complete the store action below, then sign out in SAS when finished.`;
 }
 
+const { loadD8Assignees } = require('./master-route');
+
 function proposedAssigneeNote(isD8Pool, placement) {
   if (!isD8Pool) return null;
   if (placement?.proposedAssignee) {
     return `Proposed for ${placement.proposedAssignee} (planning label only — not notified).`;
   }
-  return 'Choose a proposed D8 assignee: Brian Campbell, Kimberly Claflin, or James Duchene.';
+  const names = (loadD8Assignees().proposedAssignees || []).map((a) => a.name);
+  const list = names.length ? names.join(', ') : 'a proposed assignee';
+  return `Choose a proposed D8 assignee: ${list}.`;
 }
 
 function buildVisitBrief(slot, placement, { isD8Pool = false } = {}) {
