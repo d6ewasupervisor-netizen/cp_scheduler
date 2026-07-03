@@ -27,7 +27,7 @@ npm start
 
 Open http://127.0.0.1:3847
 
-**Mobile:** On phones, the week scrolls horizontally, controls stack full-width, and each visit card has a **Move to** day picker (drag-and-drop is unreliable on touch screens).
+**Mobile:** Days swipe horizontally with snap scrolling. Controls stack full-width, touch targets are 48px+, and each visit card has a **Move to** day picker (drag-and-drop is desktop-only on admin).
 
 **Production (Railway):** https://cpscheduler-production.up.railway.app
 

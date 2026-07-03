@@ -25,8 +25,9 @@ describe('visit-instructions', () => {
       deliveryDay: 'Wed',
       allowedDays: ['Tue', 'Wed', 'Thu'],
     };
-    const brief = buildVisitBrief(slot, { shiftStart: '06:00', shiftEnd: '14:30' });
-    assert.ok(brief.some((l) => /pick/i.test(l)));
-    assert.ok(brief.some((l) => l.includes('06:00')));
+    const brief = buildVisitBrief(slot, { action: 'Service surge' });
+    assert.ok(brief.some((l) => /Place on one of/i.test(l)));
+    assert.ok(brief.some((l) => /1–2 hours/i.test(l)));
+    assert.ok(!brief.some((l) => /06:00|14:30|8h/i.test(l)));
   });
 });

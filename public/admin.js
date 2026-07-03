@@ -15,10 +15,14 @@ import {
   dayFromDate,
   dateForDay,
   shortDate,
+  isMobileLayout,
   validatePlacements,
   toast,
   armButton,
   setSaveState,
+  isCoverageNeeded,
+  coverageNeededCount,
+  REP_AVAILABILITY,
 } from '/shared.js';
 
 const state = {
@@ -143,8 +147,12 @@ function render(warnings, allValid) {
   $('weekTitle').textContent = `${state.rep.name} · ${state.week.label}`;
   $('weekDates').textContent = `${shortDate(state.week.start)} – ${shortDate(state.week.end)}`;
   $('d8Legend').hidden = !state.rep.isD8Pool;
+  $('d1CoverageLegend').hidden = !state.rep.allowsRepAvailability;
 
   const invalidCount = state.placements.filter((p) => !p._valid).length;
+  const coverageCount = state.rep.allowsRepAvailability
+    ? coverageNeededCount(state.placements)
+    : 0;
   const src =
     state.placementSource === 'draft'
       ? 'saved draft'
@@ -155,7 +163,8 @@ function render(warnings, allValid) {
     `${state.placements.length} visits · from ${src} · ` +
     (allValid
       ? '<span class="pass">All Master Route checks pass</span>'
-      : `<span class="fail">${invalidCount} placement(s) conflict</span>`);
+      : `<span class="fail">${invalidCount} placement(s) conflict</span>`) +
+    (coverageCount ? ` · <span class="warn">${coverageCount} need coverage</span>` : '');
 
   renderTemplateBanner();
 
@@ -223,6 +232,13 @@ function render(warnings, allValid) {
   renderWarnings(warnings);
 }
 
+function scrollDayIntoView(day) {
+  if (!isMobileLayout()) return;
+  document
+    .querySelector(`.day-col[data-day="${day}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+}
+
 function moveTo(p, slot, day, clearSelection) {
   if (!slot?.allowedDays.includes(day)) {
     toast(
@@ -235,6 +251,7 @@ function moveTo(p, slot, day, clearSelection) {
   p.scheduledDate = dateForDay(state.week.start, day);
   if (clearSelection) state.selected = null;
   markDirty();
+  scrollDayIntoView(day);
   revalidate();
 }
 
@@ -267,15 +284,18 @@ function makeChit(p) {
   const slot = findSlot(state.slots, p);
 
   if (!p._valid) el.classList.add('invalid');
-  if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
+  else if (isCoverageNeeded(p)) el.classList.add('needs-coverage');
+  else if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
   if (state.selected && slotKey(state.selected) === slotKey(p)) el.classList.add('selected');
 
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
   el.querySelector('.chit-flag').textContent = !p._valid
     ? 'Conflict'
-    : state.rep.isD8Pool && !p.proposedAssignee
-      ? 'Unassigned'
-      : '';
+    : isCoverageNeeded(p)
+      ? 'Needs coverage'
+      : state.rep.isD8Pool && !p.proposedAssignee
+        ? 'Unassigned'
+        : '';
   el.querySelector('.chit-task').textContent = taskLine(slot);
   el.querySelector('.chit-account').textContent = p.account || '';
   el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
@@ -301,6 +321,23 @@ function makeChit(p) {
     });
   }
 
+  if (state.rep.allowsRepAvailability) {
+    const wrap = el.querySelector('.chit-availability-wrap');
+    wrap.hidden = false;
+    const select = wrap.querySelector('.chit-availability');
+    const current = p.repAvailability || REP_AVAILABILITY.AVAILABLE;
+    select.innerHTML = `
+      <option value="${REP_AVAILABILITY.AVAILABLE}"${current !== REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Available</option>
+      <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
+    select.addEventListener('mousedown', (e) => e.stopPropagation());
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', () => {
+      p.repAvailability = select.value;
+      markDirty();
+      revalidate();
+    });
+  }
+
   const moveSelect = el.querySelector('.chit-move-day');
   moveSelect.innerHTML = WORK_DAYS.map((day) => {
     const allowed = slot?.allowedDays.includes(day);
@@ -310,13 +347,21 @@ function makeChit(p) {
   moveSelect.addEventListener('click', (e) => e.stopPropagation());
   moveSelect.addEventListener('change', () => moveTo(p, slot, moveSelect.value, false));
 
-  el.addEventListener('dragstart', () => (state.drag = p));
+  el.draggable = !isMobileLayout();
+  el.addEventListener('dragstart', (e) => {
+    if (isMobileLayout()) {
+      e.preventDefault();
+      return;
+    }
+    state.drag = p;
+  });
   el.addEventListener('dragend', () => (state.drag = null));
   el.addEventListener('click', (e) => {
     if (e.target.closest('select')) return;
     state.selected =
       state.selected && slotKey(state.selected) === slotKey(p) ? null : p;
     showDetail(p);
+    if (state.selected) scrollDayIntoView(p.dayOfWeek);
     revalidate();
   });
 
@@ -328,7 +373,15 @@ function renderWarnings(warnings) {
   const d8Unassigned = state.rep.isD8Pool
     ? state.placements.filter((p) => !p.proposedAssignee).length
     : 0;
+  const coverageCount = state.rep.allowsRepAvailability
+    ? coverageNeededCount(state.placements)
+    : 0;
   const all = [...warnings];
+  if (coverageCount) {
+    all.unshift({
+      message: `${coverageCount} visit(s) marked Not Available for ${state.rep.name} — arrange coverage before execution.`,
+    });
+  }
   if (d8Unassigned) {
     all.unshift({ message: `${d8Unassigned} D8 visit(s) still need a proposed assignee.` });
   }

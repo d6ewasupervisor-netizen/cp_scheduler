@@ -55,10 +55,14 @@
       </div>
 
       <p class="week-status" id="weekStatus"></p>
+      <p class="calendar-legend compact" id="repCoverageLegend" hidden>
+        <span><i class="legend-swatch coverage"></i> Not Available — needs coverage from someone else</span>
+      </p>
 
       <div class="layout">
         <section>
-          <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
+          <p class="calendar-scroll-hint">Swipe sideways to see each day →</p>
+        <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
           <div id="warnings" class="warnings"></div>
         </section>
         <aside class="side-col">
@@ -91,6 +95,9 @@
       <div class="chit-row">
         <label class="chit-assignee-wrap" hidden>Who takes this
           <select class="chit-assignee"></select>
+        </label>
+        <label class="chit-availability-wrap" hidden>Your availability
+          <select class="chit-availability"></select>
         </label>
         <label class="chit-move-wrap">Move to
           <select class="chit-move-day"></select>

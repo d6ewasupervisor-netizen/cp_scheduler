@@ -6,6 +6,19 @@ const AUTH_API = '/api/auth';
 
 export const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
+export const REP_AVAILABILITY = {
+  AVAILABLE: 'available',
+  NOT_AVAILABLE: 'not_available',
+};
+
+export function isCoverageNeeded(p) {
+  return p?.repAvailability === REP_AVAILABILITY.NOT_AVAILABLE;
+}
+
+export function coverageNeededCount(placements) {
+  return (placements || []).filter(isCoverageNeeded).length;
+}
+
 export const isMobileLayout = () =>
   window.matchMedia('(max-width: 760px)').matches;
 
@@ -57,13 +70,10 @@ export function placementsByDay(placements) {
 
 export function taskLine(slot) {
   if (!slot) return '';
-  if (slot.pickDay && slot.deliveryDay) {
-    return `Pick ${slot.pickDay} · deliver ${slot.deliveryDay}`;
-  }
   if ((slot.visitIndex ?? 0) > 0 && !slot.pickDay && !slot.deliveryDay) {
-    return `Follow-up · anchor ${slot.anchorServiceDay}`;
+    return `Follow-up · default ${slot.anchorServiceDay}`;
   }
-  return `Service anchor ${slot.anchorServiceDay}`;
+  return `Default ${slot.anchorServiceDay}`;
 }
 
 /* ---------- Dates ---------- */

@@ -55,7 +55,9 @@
           <span><i class="legend-swatch allowed"></i> Valid day for selected visit</span>
           <span><i class="legend-swatch invalid"></i> Master Route conflict</span>
           <span id="d8Legend" hidden><i class="legend-swatch unassigned"></i> Needs proposed assignee</span>
+          <span id="d1CoverageLegend" hidden><i class="legend-swatch coverage"></i> Not Available — needs coverage</span>
         </div>
+        <p class="calendar-scroll-hint">Swipe sideways to see each day →</p>
         <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
         <div id="warnings" class="warnings"></div>
       </section>
@@ -63,7 +65,7 @@
       <aside class="side-col">
         <section class="detail-panel">
           <h2>Selected visit</h2>
-          <div id="slotDetail" class="slot-detail">Click a store card to see pick/delivery rules and the task list.</div>
+          <div id="slotDetail" class="slot-detail">Tap a store card for the action and allowed days.</div>
           <div id="visitChecklist" class="visit-checklist"></div>
         </section>
 
@@ -121,6 +123,9 @@
       <div class="chit-row">
         <label class="chit-assignee-wrap" hidden>Proposed assignee
           <select class="chit-assignee"></select>
+        </label>
+        <label class="chit-availability-wrap" hidden>Rep availability
+          <select class="chit-availability"></select>
         </label>
         <label class="chit-move-wrap">Move to
           <select class="chit-move-day"></select>

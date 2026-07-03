@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildVisitSlots } = require('./master-route-constraints');
 const { districtForStore } = require('./constants');
+const { REP_AVAILABILITY } = require('./rep-availability');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const D8_VIRTUAL_KEY = '__D8_CENTRAL_PET__';
@@ -142,6 +143,7 @@ function buildRepProfile(repName, rows, override = {}) {
     visitSlots,
     isD8Pool: false,
     proposedAssignees: [],
+    allowsRepAvailability: !!override.exclusiveDistrictRep,
   };
 }
 
@@ -216,6 +218,7 @@ function defaultPlacementsForWeek(rep, weekStart) {
       estimatedHours: 8,
       isLead: true,
       proposedAssignee: rep.isD8Pool ? '' : undefined,
+      repAvailability: rep.allowsRepAvailability ? REP_AVAILABILITY.AVAILABLE : undefined,
     };
   });
 }

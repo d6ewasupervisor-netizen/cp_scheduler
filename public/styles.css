@@ -322,6 +322,10 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chit.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .chit.invalid { border-color: var(--bad); background: var(--bad-soft); }
 .chit.unassigned { border-color: var(--warn); }
+.chit.needs-coverage {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface-2));
+}
 .chit[draggable="true"] { cursor: grab; }
 .chit[draggable="true"]:active { cursor: grabbing; }
 
@@ -335,6 +339,9 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chit-flag { font-size: 0.72rem; font-weight: 700; }
 .chit.invalid .chit-flag { color: var(--bad); }
 .chit.unassigned .chit-flag { color: var(--warn); }
+.chit.needs-coverage .chit-flag { color: var(--warn); font-weight: 800; }
+
+.week-status .warn { color: var(--warn); font-weight: 700; }
 
 .chit-task { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
 .chit-account { color: var(--faint); font-size: 0.78rem; }
@@ -524,6 +531,12 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .legend-swatch.allowed { background: var(--ok); }
 .legend-swatch.invalid { background: var(--bad); }
 .legend-swatch.unassigned { background: var(--warn); }
+.legend-swatch.coverage { background: var(--warn); box-shadow: inset 0 0 0 2px var(--surface); }
+
+.calendar-legend.compact {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
 
 /* ---------- Toasts ---------- */
 
@@ -587,7 +600,152 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 
 @media (max-width: 1023px) {
-  .side-col { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.9rem; }
+  .page {
+    padding: 0.75rem 0.85rem 2rem;
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+  }
+
+  .topbar {
+    padding: 0.65rem max(0.85rem, env(safe-area-inset-left)) 0.65rem max(0.85rem, env(safe-area-inset-right));
+  }
+
+  .topbar-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .topbar h1 { font-size: 1rem; }
+
+  .user-bar {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.5rem;
+  }
+
+  .user-email { max-width: min(52vw, 220px); }
+
+  button.subtle { min-height: 44px; padding: 0.45rem 0.65rem; }
+
+  .steps-strip {
+    font-size: 0.8rem;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .week-nav {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .week-nav .nav-btns button {
+    min-width: 52px;
+    min-height: 48px;
+    font-size: 1.25rem;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar select,
+  label.field select {
+    width: 100%;
+  }
+
+  .calendar-scroll-hint {
+    display: block;
+    margin: 0 0 0.45rem;
+    font-size: 0.78rem;
+    color: var(--faint);
+  }
+
+  .calendar {
+    flex-direction: row;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.65rem;
+    margin: 0 calc(-1 * max(0.85rem, env(safe-area-inset-left)));
+    padding: 0.15rem max(0.85rem, env(safe-area-inset-right)) 0.5rem max(0.85rem, env(safe-area-inset-left));
+  }
+
+  .day-col {
+    flex: 0 0 min(88vw, 320px);
+    scroll-snap-align: start;
+    max-height: min(68vh, 540px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .day-body {
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .day-col.eligible .day-head::after {
+    content: 'Tap header to place here';
+  }
+
+  .chit-row label {
+    flex: 1 1 100%;
+  }
+
+  .chit-row select {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    margin-top: 0.9rem;
+  }
+
+  .detail-panel,
+  .action-panel {
+    padding: 0.85rem;
+  }
+
+  .action-group .btn-stack button {
+    min-height: 48px;
+    text-align: center;
+  }
+
+  .sticky-bar {
+    padding: 0.65rem max(0.85rem, env(safe-area-inset-right)) calc(0.65rem + env(safe-area-inset-bottom, 0px)) max(0.85rem, env(safe-area-inset-left));
+  }
+
+  .sticky-bar .primary {
+    max-width: none;
+    flex: 1;
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .toast-host {
+    width: min(94vw, 480px);
+    bottom: calc(var(--sticky-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  }
+
+  .review-pane {
+    max-height: 240px;
+    font-size: 0.72rem;
+  }
+
+  .calendar-legend {
+    gap: 0.55rem 0.85rem;
+    font-size: 0.76rem;
+  }
+}
+
+.calendar-scroll-hint { display: none; }
+
+@media (min-width: 1024px) {
+  .calendar-scroll-hint { display: none !important; }
 }
 
 /* ---------- Reduced motion ---------- */

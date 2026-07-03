@@ -105,7 +105,10 @@ router.post('/schedule/visit-detail', (req, res) => {
     (s) => s.storeNum === Number(storeNum) && (s.visitIndex ?? 0) === (visitIndex ?? 0)
   );
   if (!slot) return res.status(404).json({ error: 'Visit slot not found' });
-  res.json(buildVisitDetail(slot, placement || {}, { isD8Pool: rep.isD8Pool }));
+  res.json(buildVisitDetail(slot, placement || {}, {
+    isD8Pool: rep.isD8Pool,
+    allowsRepAvailability: rep.allowsRepAvailability,
+  }));
 });
 
 router.get('/schedule/weekly-template', requireAdmin, (req, res) => {
@@ -197,6 +200,7 @@ router.post('/schedule/approve', requireAdmin, async (req, res) => {
       district: rep.district,
       email: rep.email,
       isD8Pool: !!rep.isD8Pool,
+      allowsRepAvailability: !!rep.allowsRepAvailability,
       proposedAssignees: rep.proposedAssignees || [],
       proposedAssigneeNote: rep.proposedAssigneeNote || null,
     },

@@ -9,32 +9,25 @@ function visitTypeLabel(slot) {
     return 'Follow-up visit (work load only)';
   }
   if (hasPick && hasDelivery) {
-    return 'Full service visit (pick + delivery window)';
+    return 'Full service visit';
   }
   return 'Single service visit';
 }
 
 function schedulingRule(slot) {
   const allowed = (slot.allowedDays || []).join(', ') || 'Mon–Fri';
-  const hasPick = !!slot.pickDay;
-  const hasDelivery = !!slot.deliveryDay;
-
-  if (!hasPick && !hasDelivery && (slot.visitIndex ?? 0) > 0) {
-    return `Schedule on ${allowed}. Anchor day is ${slot.anchorServiceDay}; this is the lighter follow-up stop for the week.`;
+  if (!slot.pickDay && !slot.deliveryDay && (slot.visitIndex ?? 0) > 0) {
+    return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay} (lighter follow-up stop).`;
   }
-  if (hasPick && hasDelivery) {
-    return `Must fall between prior delivery (${slot.deliveryDay || '—'}) and pick (${slot.pickDay}). Allowed days: ${allowed}.`;
-  }
-  return `Anchor service day is ${slot.anchorServiceDay}. Allowed days this week: ${allowed}.`;
+  return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay}.`;
 }
 
-function shiftExpectations(placement) {
-  const start = placement?.shiftStart || '06:00';
-  const end = placement?.shiftEnd || '14:30';
-  return `Lead shift ${start}–${end} (~${placement?.estimatedHours ?? 8}h). Complete the store action below, then sign out in SAS when finished.`;
+function fieldTimeNote() {
+  return 'Most visits take about 1–2 hours on site.';
 }
 
 const { loadD8Assignees } = require('./master-route');
+const { isCoverageNeeded, REP_AVAILABILITY_LABELS } = require('./rep-availability');
 
 function proposedAssigneeNote(isD8Pool, placement) {
   if (!isD8Pool) return null;
@@ -46,19 +39,29 @@ function proposedAssigneeNote(isD8Pool, placement) {
   return `Choose a proposed D8 assignee: ${list}.`;
 }
 
-function buildVisitBrief(slot, placement, { isD8Pool = false } = {}) {
+function repAvailabilityNote(allowsRepAvailability, placement) {
+  if (!allowsRepAvailability) return null;
+  if (isCoverageNeeded(placement)) {
+    return 'Marked Not Available — supervisor must arrange coverage from someone else.';
+  }
+  return 'If you cannot work a visit, set availability to Not Available so coverage can be planned.';
+}
+
+function buildVisitBrief(slot, placement, { isD8Pool = false, allowsRepAvailability = false } = {}) {
   const lines = [];
   lines.push(visitTypeLabel(slot));
   if (slot.action) lines.push(`Do: ${slot.action}`);
   lines.push(schedulingRule(slot));
-  lines.push(shiftExpectations(placement));
+  lines.push(fieldTimeNote());
   const assignee = proposedAssigneeNote(isD8Pool, placement);
   if (assignee) lines.push(assignee);
+  const availability = repAvailabilityNote(allowsRepAvailability, placement);
+  if (availability) lines.push(availability);
   return lines;
 }
 
-function buildVisitDetail(slot, placement, { isD8Pool = false } = {}) {
-  const brief = buildVisitBrief(slot, placement, { isD8Pool });
+function buildVisitDetail(slot, placement, { isD8Pool = false, allowsRepAvailability = false } = {}) {
+  const brief = buildVisitBrief(slot, placement, { isD8Pool, allowsRepAvailability });
   return {
     storeNum: slot.storeNum,
     account: slot.account || placement?.account || '',
@@ -74,11 +77,17 @@ function buildVisitDetail(slot, placement, { isD8Pool = false } = {}) {
     shiftStart: placement?.shiftStart || '06:00',
     shiftEnd: placement?.shiftEnd || '14:30',
     proposedAssignee: placement?.proposedAssignee || '',
+    repAvailability: placement?.repAvailability || null,
+    repAvailabilityLabel:
+      REP_AVAILABILITY_LABELS[placement?.repAvailability] || REP_AVAILABILITY_LABELS.available,
+    coverageNeeded: isCoverageNeeded(placement),
     brief,
     checklist: [
-      'Drag the visit to a valid day (highlighted columns accept drops).',
+      'Place the visit on a valid day (green columns accept it).',
       isD8Pool ? 'Select who should take this D8 visit (proposed assignee).' : null,
-      'Confirm pick/delivery timing matches the Master Route window.',
+      allowsRepAvailability
+        ? 'If you cannot work a visit, choose Not Available so coverage can be planned.'
+        : null,
       'Save your week when the layout looks right.',
     ].filter(Boolean),
   };
@@ -89,13 +98,14 @@ function layerHelpText(layer) {
     return [
       'Your job: place each store on the correct day and save your draft.',
       'Green-bordered days accept that visit; invalid drops are blocked.',
-      'Click a visit card for full pick/delivery instructions.',
+      'Tap a visit card for store action and allowed-day details.',
     ];
   }
   return [
     'Admin: build the week, optionally save as a weekly template, then approve for handoff.',
     'Rep view hides export/approve controls — reps only schedule and save drafts.',
     'D8 visits need a proposed assignee before approval.',
+    'D1 rep weeks may mark visits Not Available — those shifts need coverage from someone else.',
   ];
 }
 

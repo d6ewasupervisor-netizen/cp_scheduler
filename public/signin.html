@@ -2,40 +2,104 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <title>Central Pet Scheduler — Sign in</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
-    body.signin-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem; }
+    body.signin-page {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    }
     .signin-card {
-      width: 100%; max-width: 480px;
+      width: 100%;
+      max-width: 480px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.75rem;
+      border-radius: var(--radius);
+      padding: 1.5rem;
     }
-    .signin-card h1 { margin: 0 0 .35rem; font-size: 1.35rem; color: var(--accent); }
-    .signin-card .lead { color: var(--muted); margin: 0 0 1.25rem; line-height: 1.5; font-size: .92rem; }
-    .signin-card label { display: block; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .35rem; }
+    .signin-card h1 { margin: 0 0 .35rem; font-size: 1.25rem; color: var(--accent); }
+    .signin-card .lead { color: var(--muted); margin: 0 0 1.1rem; line-height: 1.5; font-size: .92rem; }
+    .signin-card label {
+      display: block;
+      font-size: .75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: .35rem;
+    }
     .signin-card input {
-      width: 100%; background: var(--surface2); color: var(--text);
-      border: 1px solid var(--border); border-radius: 8px; padding: .65rem .75rem; font-size: 1rem; margin-bottom: .75rem;
+      width: 100%;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: .75rem .85rem;
+      font-size: 1rem;
+      min-height: 48px;
+      margin-bottom: .75rem;
     }
     .signin-card button.primary {
-      width: 100%; margin-top: .5rem; background: #1f3a5f; border-color: var(--accent); color: var(--accent);
-      padding: .75rem; font-weight: 600; border-radius: 8px; cursor: pointer;
+      width: 100%;
+      margin-top: .35rem;
+      min-height: 48px;
+      font-size: 1rem;
     }
-    .signin-card button.primary:disabled { opacity: .6; cursor: not-allowed; }
-    .notice { padding: .65rem .75rem; border-radius: 8px; font-size: .88rem; margin-bottom: .75rem; }
-    .notice.ok { background: rgba(61, 214, 140, 0.12); border: 1px solid rgba(61, 214, 140, 0.35); color: var(--accent2); }
-    .notice.err { background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.35); color: var(--bad); }
+    .notice { padding: .65rem .75rem; border-radius: var(--radius-sm); font-size: .88rem; margin-bottom: .75rem; }
+    .notice.ok { background: var(--ok-soft); border: 1px solid rgba(52, 201, 138, 0.35); color: var(--ok); }
+    .notice.err { background: var(--bad-soft); border: 1px solid rgba(240, 101, 90, 0.35); color: var(--bad); }
     .hidden { display: none !important; }
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 20; }
-    .overlay-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 440px; width: 100%; }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+      z-index: 20;
+    }
+    @media (min-width: 640px) {
+      .overlay { align-items: center; padding: 1rem; }
+    }
+    .overlay-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
+      max-width: 440px;
+      width: 100%;
+      max-height: 92dvh;
+      overflow-y: auto;
+    }
+    @media (min-width: 640px) {
+      .overlay-panel { border-radius: var(--radius); padding: 1.5rem; }
+    }
     .overlay-panel h2 { margin: 0 0 .5rem; color: var(--accent); font-size: 1.1rem; }
     .overlay-panel p { color: var(--muted); font-size: .88rem; line-height: 1.45; }
-    .overlay-panel button.secondary { background: transparent; border: none; color: var(--muted); margin-top: .5rem; cursor: pointer; }
+    .overlay-panel button.secondary {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      margin-top: .5rem;
+      min-height: 44px;
+    }
+    .overlay-panel input {
+      width: 100%;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: .75rem .85rem;
+      font-size: 1rem;
+      min-height: 48px;
+      margin-bottom: .75rem;
+    }
   </style>
 </head>
 <body class="signin-page">
@@ -44,7 +108,7 @@
     <p class="lead">Sign in with the same email magic link used for The Dump Bin tools. One link works across both for 45 days on this device.</p>
     <div id="status" class="notice hidden" role="status"></div>
     <label for="email">Email</label>
-    <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+    <input id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" />
     <button id="send-btn" class="primary" type="button">Send sign-in link</button>
     <p class="lead" style="margin-top:1rem;margin-bottom:0;font-size:.8rem;">Not on the access list yet? We'll prompt you to request access — a supervisor gets an email to approve or deny.</p>
   </main>
@@ -58,14 +122,14 @@
         <label for="overlay-name">Full name</label>
         <input id="overlay-name" type="text" autocomplete="name" />
         <label for="overlay-email">Email</label>
-        <input id="overlay-email" type="email" autocomplete="email" />
+        <input id="overlay-email" type="email" autocomplete="email" inputmode="email" />
         <label for="overlay-reason">Reason (optional)</label>
         <input id="overlay-reason" type="text" placeholder="e.g. Central Pet D8 coverage" />
         <button id="overlay-submit" class="primary" type="button">Submit request</button>
         <button id="overlay-cancel" class="secondary" type="button">Cancel</button>
       </div>
       <div id="overlay-success" class="hidden">
-        <p style="color:var(--accent2);font-weight:600;">Request sent — watch your inbox after approval.</p>
+        <p style="color:var(--ok);font-weight:600;">Request sent — watch your inbox after approval.</p>
         <button id="overlay-close" class="secondary" type="button">Close</button>
       </div>
     </div>

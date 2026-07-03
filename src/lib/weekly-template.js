@@ -2,6 +2,7 @@
 
 const { dayToDateInWeek } = require('./fiscal-calendar');
 const { defaultPlacementsForWeek } = require('./master-route');
+const { REP_AVAILABILITY } = require('./rep-availability');
 
 function toTemplatePlacements(placements) {
   return placements.map((p) => {
@@ -18,6 +19,9 @@ function toTemplatePlacements(placements) {
     };
     if (p.proposedAssignee !== undefined) {
       row.proposedAssignee = p.proposedAssignee || '';
+    }
+    if (p.repAvailability !== undefined) {
+      row.repAvailability = p.repAvailability || REP_AVAILABILITY.AVAILABLE;
     }
     return row;
   });
@@ -44,6 +48,9 @@ function applyWeeklyTemplate(templatePlacements, rep, weekStart) {
       estimatedHours: tpl?.estimatedHours ?? 8,
       isLead: tpl?.isLead ?? true,
       proposedAssignee: rep.isD8Pool ? tpl?.proposedAssignee || '' : undefined,
+      repAvailability: rep.allowsRepAvailability
+        ? tpl?.repAvailability || REP_AVAILABILITY.AVAILABLE
+        : undefined,
     };
   });
 }

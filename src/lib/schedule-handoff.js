@@ -2,6 +2,12 @@
 
 const { PROJECT_ID, PROJECT_NAME } = require('./constants');
 const { dateToDayOfWeek } = require('./fiscal-calendar');
+const {
+  isCoverageNeeded,
+  countCoverageNeeded,
+  REP_AVAILABILITY_LABELS,
+  normalizeRepAvailability,
+} = require('./rep-availability');
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -65,24 +71,57 @@ function buildHandoffMarkdown(json) {
     lines.push('');
   }
 
+  const coverageCount = countCoverageNeeded(json.placements);
+  if (coverageCount) {
+    lines.push('## Coverage needed');
+    lines.push('');
+    lines.push(
+      `${json.rep.name} marked **${coverageCount}** visit(s) as Not Available. Arrange another rep to cover these shifts before execution.`
+    );
+    lines.push('');
+    for (const p of json.placements.filter(isCoverageNeeded)) {
+      lines.push(
+        `- Store **${p.storeNum}** on ${p.scheduledDate} (${p.dayOfWeek}) — ${p.account || 'no account'}`
+      );
+    }
+    lines.push('');
+  }
+
   lines.push('## Week grid');
   lines.push('');
   const showAssignee = json.rep?.isD8Pool || json.placements.some((p) => p.proposedAssignee);
-  if (showAssignee) {
-    lines.push('| Date | DOW | Store | Proposed assignee | Account | Action | Start–End | MR OK |');
-    lines.push('|------|-----|-------|-------------------|---------|--------|-----------|-------|');
+  const showAvailability =
+    json.rep?.allowsRepAvailability || json.placements.some((p) => isCoverageNeeded(p));
+  if (showAssignee && showAvailability) {
+    lines.push('| Date | DOW | Store | Rep availability | Proposed assignee | Account | Action | MR OK |');
+    lines.push('|------|-----|-------|------------------|-------------------|---------|--------|-------|');
+  } else if (showAvailability) {
+    lines.push('| Date | DOW | Store | Rep availability | Account | Action | MR OK |');
+    lines.push('|------|-----|-------|------------------|---------|--------|-------|');
+  } else if (showAssignee) {
+    lines.push('| Date | DOW | Store | Proposed assignee | Account | Action | MR OK |');
+    lines.push('|------|-----|-------|-------------------|---------|--------|-------|');
   } else {
-    lines.push('| Date | DOW | Store | Account | Action | Start–End | MR OK |');
-    lines.push('|------|-----|-------|---------|--------|-----------|-------|');
+    lines.push('| Date | DOW | Store | Account | Action | MR OK |');
+    lines.push('|------|-----|-------|---------|--------|-------|');
   }
   for (const p of json.placements) {
-    if (showAssignee) {
+    const availability = REP_AVAILABILITY_LABELS[normalizeRepAvailability(p.repAvailability)] || 'Available';
+    if (showAssignee && showAvailability) {
       lines.push(
-        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.proposedAssignee || '—'} | ${p.account || ''} | ${p.action || ''} | ${p.shiftStart}–${p.shiftEnd} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${availability} | ${p.proposedAssignee || '—'} | ${p.account || ''} | ${p.action || ''} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+      );
+    } else if (showAvailability) {
+      lines.push(
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${availability} | ${p.account || ''} | ${p.action || ''} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+      );
+    } else if (showAssignee) {
+      lines.push(
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.proposedAssignee || '—'} | ${p.account || ''} | ${p.action || ''} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
       );
     } else {
       lines.push(
-        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.account || ''} | ${p.action || ''} | ${p.shiftStart}–${p.shiftEnd} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
+        `| ${p.scheduledDate} | ${p.dayOfWeek} | ${p.storeNum} | ${p.account || ''} | ${p.action || ''} | ${p.masterRouteValid ? 'yes' : 'NO'} |`
       );
     }
   }
@@ -134,18 +173,32 @@ function buildHandoffMarkdown(json) {
 
 function buildReviewHtml(json) {
   const showAssignee = json.rep?.isD8Pool || json.placements.some((p) => p.proposedAssignee);
+  const showAvailability =
+    json.rep?.allowsRepAvailability || json.placements.some((p) => isCoverageNeeded(p));
   const rows = json.placements
     .map((p) => {
       const assigneeCell = showAssignee
         ? `<td>${escapeHtml(p.proposedAssignee || '—')}</td>`
         : '';
-      return `<tr><td>${escapeHtml(p.scheduledDate)}</td><td>${escapeHtml(p.dayOfWeek)}</td><td>${p.storeNum}</td>${assigneeCell}<td>${escapeHtml(p.account)}</td><td>${escapeHtml(p.action)}</td><td>${escapeHtml(p.shiftStart)}–${escapeHtml(p.shiftEnd)}</td><td class="${p.masterRouteValid ? 'ok' : 'bad'}">${p.masterRouteValid ? 'PASS' : 'FAIL'}</td></tr>`;
+      const availabilityCell = showAvailability
+        ? `<td class="${isCoverageNeeded(p) ? 'bad' : ''}">${escapeHtml(REP_AVAILABILITY_LABELS[normalizeRepAvailability(p.repAvailability)])}</td>`
+        : '';
+      return `<tr><td>${escapeHtml(p.scheduledDate)}</td><td>${escapeHtml(p.dayOfWeek)}</td><td>${p.storeNum}</td>${availabilityCell}${assigneeCell}<td>${escapeHtml(p.account)}</td><td>${escapeHtml(p.action)}</td><td class="${p.masterRouteValid ? 'ok' : 'bad'}">${p.masterRouteValid ? 'PASS' : 'FAIL'}</td></tr>`;
     })
     .join('');
+
+  const coverageCount = countCoverageNeeded(json.placements);
+  const coverageNote = coverageCount
+    ? `<p><strong>Coverage needed:</strong> ${coverageCount} visit(s) marked Not Available for ${escapeHtml(json.rep.name)}.</p>`
+    : '';
 
   const warnings = (json.warnings || [])
     .map((w) => `<li>${escapeHtml(w.message)}</li>`)
     .join('');
+
+  const availabilityHeader = showAvailability ? '<th>Rep availability</th>' : '';
+
+  const assigneeHeader = showAssignee ? '<th>Proposed assignee</th>' : '';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Schedule Review — ${escapeHtml(json.rep.name)} ${escapeHtml(json.week.label)}</title>
 <style>
@@ -162,8 +215,9 @@ th{background:#161b22}.ok{color:#3fb950}.bad{color:#f85149}
 <p><strong>Master Route:</strong> ${escapeHtml(json.masterRouteVersion)}</p>
 <p><strong>Approved:</strong> ${escapeHtml(json.approvedAt)} by ${escapeHtml(json.approvedBy)}</p>
 </div>
+${coverageNote}
 <h2>Week grid</h2>
-<table><thead><tr><th>Date</th><th>Day</th><th>Store</th>${showAssignee ? '<th>Proposed assignee</th>' : ''}<th>Account</th><th>Action</th><th>Shift</th><th>MR</th></tr></thead><tbody>${rows}</tbody></table>
+<table><thead><tr><th>Date</th><th>Day</th><th>Store</th>${availabilityHeader}${assigneeHeader}<th>Account</th><th>Action</th><th>MR</th></tr></thead><tbody>${rows}</tbody></table>
 ${json.rep?.isD8Pool ? '<p><em>D8 proposed assignees are planning labels only — no notifications are sent.</em></p>' : ''}
 ${warnings ? `<h2>Warnings</h2><ul>${warnings}</ul>` : ''}
 </body></html>`;
@@ -190,6 +244,8 @@ function enrichPlacements(placements, validationResults, prodShifts = []) {
     return {
       ...p,
       dayOfWeek: p.dayOfWeek || dateToDayOfWeek(p.scheduledDate),
+      repAvailability: normalizeRepAvailability(p.repAvailability),
+      coverageNeeded: isCoverageNeeded(p),
       masterRoute: vr?.slot
         ? {
             anchorServiceDay: vr.slot.anchorServiceDay,
