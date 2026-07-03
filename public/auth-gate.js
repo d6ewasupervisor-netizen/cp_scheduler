@@ -79,9 +79,11 @@
 
     hidePage();
     try {
-      var res = await fetch(
-        EOD_API_BASE + '/api/verify-token?token=' + encodeURIComponent(linkToken)
-      );
+      var verifyUrl =
+        (location.origin || '').replace(/\/+$/, '') +
+        '/api/auth/verify-token?token=' +
+        encodeURIComponent(linkToken);
+      var res = await fetch(verifyUrl);
       var data = await res.json().catch(function () {
         return {};
       });

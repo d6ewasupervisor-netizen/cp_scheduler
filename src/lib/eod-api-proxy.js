@@ -31,10 +31,14 @@ async function forwardToEodApi(req, path, body) {
   });
 
   let data = {};
+  const text = await resp.text();
   try {
-    data = await resp.json();
+    data = text ? JSON.parse(text) : {};
   } catch {
-    data = { ok: false, error: resp.statusText || 'Unexpected response from sign-in service.' };
+    data = {
+      ok: false,
+      error: text?.slice(0, 200) || resp.statusText || 'Unexpected response from sign-in service.',
+    };
   }
 
   return { status: resp.status, data };

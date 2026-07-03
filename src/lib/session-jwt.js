@@ -24,4 +24,12 @@ function verifySessionToken(token) {
   return payload;
 }
 
-module.exports = { verifySessionToken, SESSION_TYP };
+function issueSessionToken(email) {
+  const jti = crypto.randomBytes(16).toString('hex');
+  return jwt.sign({ email, typ: SESSION_TYP }, ensureSecret(), {
+    expiresIn: SESSION_TTL,
+    jwtid: jti,
+  });
+}
+
+module.exports = { verifySessionToken, issueSessionToken, SESSION_TYP };

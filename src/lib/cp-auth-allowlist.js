@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { REP_LAYER_EMAILS } = require('./cp-roles');
-const { isCorporateWorkDomainEmail } = require('./allowed-emails');
+const { isCorporateWorkDomainEmail, isEmailAllowed } = require('./allowed-emails');
 
 function parseList(envVal) {
   return (envVal || '')
@@ -37,4 +37,9 @@ function isCpSchedulerAllowed(email) {
   return false;
 }
 
-module.exports = { isCpSchedulerAllowed, ADMIN_EMAILS };
+async function isCpSchedulerEmailAllowed(email) {
+  if (isCpSchedulerAllowed(email)) return true;
+  return isEmailAllowed(email);
+}
+
+module.exports = { isCpSchedulerAllowed, isCpSchedulerEmailAllowed, ADMIN_EMAILS };

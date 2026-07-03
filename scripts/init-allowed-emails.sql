@@ -16,3 +16,16 @@ INSERT INTO allowed_emails (email, note) VALUES
 ON CONFLICT (email) DO UPDATE SET
   note = EXCLUDED.note,
   updated_at = NOW();
+
+CREATE TABLE IF NOT EXISTS link_requests (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  jti TEXT NOT NULL UNIQUE,
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at TIMESTAMPTZ,
+  ip TEXT,
+  user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_link_requests_email ON link_requests(email);
+CREATE INDEX IF NOT EXISTS idx_link_requests_jti ON link_requests(jti);
