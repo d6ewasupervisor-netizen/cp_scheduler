@@ -67,7 +67,7 @@ Optional:
 
 | Variable | Purpose |
 |----------|---------|
-| `CP_SCHEDULER_REP_EMAILS` | Comma-separated rep-layer emails (default `tgauthier2011@gmail.com`) |
+| `CP_SCHEDULER_REP_EMAILS` | Comma-separated rep-layer emails (default `d6ewa.supervisor@gmail.com` for rep UI testing) |
 | `CP_SCHEDULER_AUTH_SKIP` | `1` on localhost only — bypass auth for dev |
 | `EOD_API_BASE_URL` | Default `https://eod-api.the-dump-bin.com` |
 | `DATABASE_PATH` | JSON draft store (default `data/schedule-drafts.json`) |
@@ -84,7 +84,9 @@ python scripts/railway-sync-auth-vars.py
 ### Views
 
 - **Admin** — everyone authenticated except rep-layer emails: templates, approve, handoff exports, PROD overlay.
-- **Rep** — simplified scheduling view: drag visits, save week, no exports.
+- **Rep** — simplified scheduling view: tap-to-place visits, save week, no exports.
+
+**Rep vs admin testing:** Sign in as `d6ewa.supervisor@gmail.com` for the rep experience (`/rep.html`). Sign in with any other allowed account (e.g. your work email) for admin (`/`). The tester account has no fixed rep mapping — on first visit pick Patricia (D1) or District 8 from the one-time device picker to preview each rep’s view.
 
 Access request flow: sign-in page → eod-api `/api/access-request` → supervisor email with approve/deny link (same as Dump Bin).
 

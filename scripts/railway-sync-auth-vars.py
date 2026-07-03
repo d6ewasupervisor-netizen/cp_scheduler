@@ -30,7 +30,7 @@ def main():
     pairs = [
         ("AUTH_MODE", "session"),
         ("PGSSL", "require"),
-        ("CP_SCHEDULER_REP_EMAILS", "tgauthier2011@gmail.com"),
+        ("CP_SCHEDULER_REP_EMAILS", "patricia.marks@youradv.com,bcampb9565@sbcglobal.net,kimberlyjanellclaf@gmail.com,james.duchene@retailodyssey.com,d6ewa.supervisor@gmail.com"),
         ("EOD_API_BASE_URL", "https://eod-api.the-dump-bin.com"),
         ("JWT_SECRET", jwt),
         ("DATABASE_URL", db),

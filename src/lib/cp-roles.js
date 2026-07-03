@@ -8,9 +8,10 @@ function parseEmailList(envVal) {
 }
 
 // Rep-layer accounts see a simplified schedule view (no handoff / admin outputs).
-// Default: tgauthier2011@gmail.com — everyone else authenticated is admin.
+// Default: d6ewa.supervisor@gmail.com — cp_scheduler rep UI tester only; all other
+// authenticated users are admin unless listed in CP_SCHEDULER_REP_EMAILS.
 const REP_LAYER_EMAILS = parseEmailList(
-  process.env.CP_SCHEDULER_REP_EMAILS || 'tgauthier2011@gmail.com'
+  process.env.CP_SCHEDULER_REP_EMAILS || 'd6ewa.supervisor@gmail.com'
 );
 
 function cpSchedulerLayer(email) {

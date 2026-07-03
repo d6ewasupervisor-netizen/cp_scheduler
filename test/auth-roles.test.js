@@ -6,9 +6,10 @@ const { cpSchedulerLayer, REP_LAYER_EMAILS } = require('../src/lib/cp-roles');
 const { buildVisitBrief } = require('../src/lib/visit-instructions');
 
 describe('cp-roles', () => {
-  it('defaults rep layer to tgauthier2011@gmail.com', () => {
-    assert.ok(REP_LAYER_EMAILS.includes('tgauthier2011@gmail.com'));
-    assert.equal(cpSchedulerLayer('tgauthier2011@gmail.com'), 'rep');
+  it('defaults rep layer to d6ewa.supervisor@gmail.com tester account', () => {
+    assert.ok(REP_LAYER_EMAILS.includes('d6ewa.supervisor@gmail.com'));
+    assert.equal(cpSchedulerLayer('d6ewa.supervisor@gmail.com'), 'rep');
+    assert.equal(cpSchedulerLayer('tgauthier2011@gmail.com'), 'admin');
     assert.equal(cpSchedulerLayer('tyson.gauthier@retailodyssey.com'), 'admin');
   });
 });
