@@ -86,7 +86,7 @@ python scripts/railway-sync-auth-vars.py
 - **Admin** — everyone authenticated except rep-layer emails: templates, approve, handoff exports, PROD overlay.
 - **Rep** — simplified scheduling view: tap-to-place visits, save week, no exports.
 
-**Rep vs admin testing:** Sign in as `d6ewa.supervisor@gmail.com` for the rep experience (`/rep.html`). Sign in with any other allowed account (e.g. your work email) for admin (`/`). The tester account has no fixed rep mapping — on first visit pick Patricia (D1) or District 8 from the one-time device picker to preview each rep’s view.
+**Rep vs admin testing:** Sign in as `d6ewa.supervisor@gmail.com` to see **exactly Patricia’s rep view** (mapped to Patricia Marks Z, 11 D1 visits, Not Available coverage picker). Sign in with any other allowed account (e.g. `tgauthier2011@gmail.com` or your work email) for admin Planning Desk (`/`). Patricia’s real account is `patricia.marks@youradv.com` — same schedule mapping.
 
 Access request flow: sign-in page → eod-api `/api/access-request` → supervisor email with approve/deny link (same as Dump Bin).
 
