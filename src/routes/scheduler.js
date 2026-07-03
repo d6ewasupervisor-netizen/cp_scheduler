@@ -37,6 +37,7 @@ function repScope(req, _res, next) {
     if (mine) {
       if (req.query && 'rep' in req.query) req.query.rep = mine;
       if (req.body && 'repKey' in req.body) req.body.repKey = mine;
+      if (req.params && 'name' in req.params) req.params.name = encodeURIComponent(mine);
     }
     if (req.body) req.body.createdBy = req.user.email;
   }
@@ -61,13 +62,13 @@ router.get('/reps', (req, res) => {
   res.json(listReps(district));
 });
 
-router.get('/reps/:name', (req, res) => {
+router.get('/reps/:name', repScope, (req, res) => {
   const rep = getRep(decodeURIComponent(req.params.name));
   if (!rep) return res.status(404).json({ error: 'Rep not found' });
   res.json(rep);
 });
 
-router.post('/schedule/validate', (req, res) => {
+router.post('/schedule/validate', repScope, (req, res) => {
   const { repKey, weekStart, placements } = req.body;
   const rep = getRep(repKey);
   if (!rep) return res.status(404).json({ error: 'Rep not found' });
@@ -97,7 +98,7 @@ router.get('/schedule/default', repScope, (req, res) => {
   });
 });
 
-router.post('/schedule/visit-detail', (req, res) => {
+router.post('/schedule/visit-detail', repScope, (req, res) => {
   const { repKey, storeNum, visitIndex, placement } = req.body || {};
   const rep = getRep(repKey);
   if (!rep) return res.status(404).json({ error: 'Rep not found' });

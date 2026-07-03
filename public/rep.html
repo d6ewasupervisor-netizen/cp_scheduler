@@ -12,7 +12,7 @@
     <div class="topbar-row">
       <div>
         <h1>My Week</h1>
-        <p class="subtitle">Central Pet visits</p>
+        <p class="subtitle" id="repSubtitle">Central Pet visits</p>
       </div>
       <div class="user-bar" id="userBar" hidden>
         <span class="layer-badge rep">Rep</span>
@@ -23,28 +23,39 @@
   </header>
 
   <div class="page">
-    <section class="steps-strip" aria-label="How to build your week">
-      <span class="step"><b>1</b> Tap a store</span>
-      <span class="sep">→</span>
-      <span class="step"><b>2</b> Tap a green day</span>
-      <span class="sep">→</span>
-      <span class="step"><b>3</b> Save</span>
-    </section>
+    <div id="repLoading" class="rep-loading">Loading your schedule…</div>
+    <div id="repError" class="rep-error" hidden></div>
 
     <section id="repPicker" class="tray" hidden>
-      <h2>Whose schedule is this?</h2>
-      <p class="week-status">One-time setup on this device — pick your name.</p>
-      <label class="field">Your schedule
+      <h2>Preview a rep schedule</h2>
+      <p class="week-status">Choose whose week to open on this device. Real reps with a mapped email skip this step.</p>
+      <label class="field">Schedule to open
         <select id="repPickerSelect"></select>
       </label>
       <div style="margin-top:.7rem">
-        <button type="button" id="btnRepPickerSave" class="primary">That's me</button>
+        <button type="button" id="btnRepPickerSave" class="primary">Open this schedule</button>
       </div>
     </section>
 
     <div id="repApp" hidden>
+      <section class="rep-banner" id="repBanner" hidden>
+        <div class="rep-banner-title" id="repBannerTitle"></div>
+        <div class="rep-banner-meta" id="repBannerMeta"></div>
+      </section>
+
+      <section class="steps-strip" aria-label="How to build your week">
+        <span class="step"><b>1</b> Tap a store card</span>
+        <span class="sep">→</span>
+        <span class="step"><b>2</b> Use <b>Move to</b> or tap a green day</span>
+        <span class="sep">→</span>
+        <span class="step"><b>3</b> Save</span>
+      </section>
+
       <div class="week-nav">
-        <div>
+        <div class="week-nav-main">
+          <label class="field week-picker-field">Week
+            <select id="weekSelect"></select>
+          </label>
           <div class="week-title" id="weekTitle"></div>
           <div class="week-dates" id="weekDates"></div>
         </div>
@@ -61,8 +72,7 @@
 
       <div class="layout">
         <section>
-          <p class="calendar-scroll-hint">Swipe sideways to see each day →</p>
-        <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
+          <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
           <div id="warnings" class="warnings"></div>
         </section>
         <aside class="side-col">
@@ -93,7 +103,7 @@
       <div class="chit-account"></div>
       <div class="chit-action"></div>
       <div class="chit-row">
-        <label class="chit-assignee-wrap" hidden>Who takes this
+        <label class="chit-assignee-wrap" hidden>Suggested lead (planning)
           <select class="chit-assignee"></select>
         </label>
         <label class="chit-availability-wrap" hidden>Your availability

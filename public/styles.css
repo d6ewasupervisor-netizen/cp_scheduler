@@ -204,6 +204,58 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .steps-strip .step b { color: var(--text); font-weight: 700; }
 .steps-strip .sep { color: var(--faint); }
 
+.week-nav-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.week-picker-field {
+  margin-bottom: 0.45rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.week-picker-field select {
+  width: 100%;
+  font-size: 1rem;
+}
+
+.rep-banner {
+  background: var(--ok-soft);
+  border: 1px solid rgba(52, 201, 138, 0.35);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.85rem;
+}
+
+.rep-banner-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rep-banner-meta {
+  margin-top: 0.25rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.rep-loading,
+.rep-error {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 0.9rem;
+  color: var(--muted);
+}
+
+.rep-error {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
 /* ---------- Week header / nav ---------- */
 
 .week-nav {
@@ -606,6 +658,26 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
     padding-right: max(0.85rem, env(safe-area-inset-right));
   }
 
+  /* Rep view: stack days vertically so every visit is visible without sideways hunt */
+  body.mode-rep .calendar {
+    flex-direction: column;
+    overflow-x: visible;
+    margin: 0;
+    padding: 0;
+    gap: 0.65rem;
+  }
+
+  body.mode-rep .day-col {
+    flex: 1 1 auto;
+    width: 100%;
+    max-height: none;
+    scroll-snap-align: none;
+  }
+
+  body.mode-rep .calendar-scroll-hint {
+    display: none !important;
+  }
+
   .topbar {
     padding: 0.65rem max(0.85rem, env(safe-area-inset-left)) 0.65rem max(0.85rem, env(safe-area-inset-right));
   }
@@ -660,7 +732,8 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
     color: var(--faint);
   }
 
-  .calendar {
+  /* Admin only: horizontal day swipe on mobile */
+  body.mode-admin .calendar {
     flex-direction: row;
     overflow-x: auto;
     overscroll-behavior-x: contain;
@@ -671,7 +744,7 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
     padding: 0.15rem max(0.85rem, env(safe-area-inset-right)) 0.5rem max(0.85rem, env(safe-area-inset-left));
   }
 
-  .day-col {
+  body.mode-admin .day-col {
     flex: 0 0 min(88vw, 320px);
     scroll-snap-align: start;
     max-height: min(68vh, 540px);
@@ -679,7 +752,7 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
     flex-direction: column;
   }
 
-  .day-body {
+  body.mode-admin .day-body {
     overflow-y: auto;
     flex: 1;
     -webkit-overflow-scrolling: touch;

@@ -40,17 +40,22 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- Rep identity ---------- */
 
+const isPreview = () => new URLSearchParams(location.search).has('preview');
+
 async function resolveRepKey() {
   if (state.user.repKey) return state.user.repKey;
   const saved = localStorage.getItem('cp_my_rep');
   if (saved) return saved;
 
-  // One-time picker fallback until the server-side mapping exists.
   const reps = await api('/reps');
   const sel = $('repPickerSelect');
   sel.innerHTML = reps
-    .map((r) => `<option value="${encodeURIComponent(repKeyOf(r))}">${r.name} (D${r.district})</option>`)
+    .map(
+      (r) =>
+        `<option value="${encodeURIComponent(repKeyOf(r))}">${r.name} · ${r.visitSlots?.length || r.storeCount || 0} visits (D${r.district})</option>`
+    )
     .join('');
+  $('repLoading').hidden = true;
   $('repPicker').hidden = false;
 
   return new Promise((resolve) => {
@@ -61,6 +66,36 @@ async function resolveRepKey() {
       resolve(key);
     });
   });
+}
+
+function populateWeekSelect() {
+  const sel = $('weekSelect');
+  sel.innerHTML = state.weeks
+    .map(
+      (w, i) =>
+        `<option value="${i}">${w.label} (${shortDate(w.start)} – ${shortDate(w.end)})</option>`
+    )
+    .join('');
+  sel.value = String(state.weekIndex);
+}
+
+function updateRepBanner() {
+  const banner = $('repBanner');
+  if (!state.rep) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  $('repBannerTitle').textContent = state.rep.name;
+  const parts = [
+    `District ${state.rep.district}`,
+    `${state.placements.length} visit${state.placements.length === 1 ? '' : 's'} this week`,
+  ];
+  if (state.rep.isD8Pool) {
+    parts.push('pick a suggested lead per store (planning only)');
+  }
+  $('repBannerMeta').textContent = parts.join(' · ');
+  $('repSubtitle').textContent = state.rep.name;
 }
 
 /* ---------- Week loading ---------- */
@@ -116,11 +151,16 @@ async function revalidate() {
 
 function render(warnings, allValid) {
   const week = currentWeek();
+  if (!week) return;
 
+  populateWeekSelect();
   $('weekTitle').textContent = week.label;
   $('weekDates').textContent = `${shortDate(week.start)} – ${shortDate(week.end)}`;
   $('btnPrevWeek').disabled = state.weekIndex === 0;
   $('btnNextWeek').disabled = state.weekIndex === state.weeks.length - 1;
+  $('weekSelect').value = String(state.weekIndex);
+
+  updateRepBanner();
 
   const invalidCount = state.placements.filter((p) => !p._valid).length;
   const coverageCount = state.rep.allowsRepAvailability
@@ -387,31 +427,65 @@ async function changeWeek(delta) {
   await loadWeek();
 }
 
+async function jumpToWeek(index) {
+  if (state.dirty) {
+    toast('Save your week first (or your changes will be lost)', 'warn');
+    $('weekSelect').value = String(state.weekIndex);
+    return;
+  }
+  const next = Number(index);
+  if (!Number.isFinite(next) || next < 0 || next >= state.weeks.length) return;
+  state.weekIndex = next;
+  await loadWeek();
+}
+
+function showInitError(err) {
+  $('repLoading').hidden = true;
+  $('repApp').hidden = true;
+  $('repPicker').hidden = true;
+  const el = $('repError');
+  el.hidden = false;
+  el.textContent = `Could not load your schedule: ${err.message || err}. Try signing out and back in.`;
+}
+
 /* ---------- Init ---------- */
 
 (async function init() {
-  await window.cpAuth.bootPromise;
-  state.user = await loadMe();
+  try {
+    await window.cpAuth.bootPromise;
+    state.user = await loadMe();
 
-  $('userEmail').textContent = state.user.email || '';
-  $('userBar').hidden = false;
+    if (state.user.layer === 'admin' && !isPreview()) {
+      window.location.replace('/');
+      return;
+    }
 
-  state.weeks = await api('/weeks');
-  state.weekIndex = defaultWeekIndex(state.weeks);
+    $('userEmail').textContent = state.user.email || '';
+    $('userBar').hidden = false;
 
-  state.repKey = await resolveRepKey();
+    state.weeks = await api('/weeks');
+    state.weekIndex = defaultWeekIndex(state.weeks);
+    populateWeekSelect();
 
-  $('repApp').hidden = false;
-  $('stickyBar').hidden = false;
+    state.repKey = await resolveRepKey();
 
-  $('btnSave').addEventListener('click', saveWeek);
-  $('btnPrevWeek').addEventListener('click', () => changeWeek(-1));
-  $('btnNextWeek').addEventListener('click', () => changeWeek(1));
-  $('btnSignOut').addEventListener('click', signOut);
+    $('repLoading').hidden = true;
+    $('repApp').hidden = false;
+    $('stickyBar').hidden = false;
 
-  window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) e.preventDefault();
-  });
+    $('btnSave').addEventListener('click', saveWeek);
+    $('btnPrevWeek').addEventListener('click', () => changeWeek(-1));
+    $('btnNextWeek').addEventListener('click', () => changeWeek(1));
+    $('weekSelect').addEventListener('change', (e) => jumpToWeek(e.target.value));
+    $('btnSignOut').addEventListener('click', signOut);
 
-  await loadWeek();
+    window.addEventListener('beforeunload', (e) => {
+      if (state.dirty) e.preventDefault();
+    });
+
+    await loadWeek();
+  } catch (err) {
+    console.error('[rep]', err);
+    showInitError(err);
+  }
 })();

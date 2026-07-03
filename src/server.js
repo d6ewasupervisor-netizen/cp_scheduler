@@ -25,6 +25,10 @@ app.use('/api/central-pet', requireAuth, schedulerRoutes);
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+app.get('/rep.html', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../public/rep.html'));
+});
+
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });

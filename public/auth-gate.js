@@ -163,6 +163,19 @@
           var me = await meRes.json();
           if (me.layer === 'rep') {
             location.replace('/rep.html' + location.search);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    if (path === '/rep.html') {
+      try {
+        var meRes2 = await cpAuthFetch('/api/auth/me', { noBounceOn401: true });
+        if (meRes2.ok) {
+          var me2 = await meRes2.json();
+          if (me2.layer === 'admin' && !new URLSearchParams(location.search).has('preview')) {
+            location.replace('/');
+            return;
           }
         }
       } catch (_) {}

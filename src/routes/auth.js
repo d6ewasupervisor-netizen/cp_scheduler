@@ -7,6 +7,7 @@ const { REP_LAYER_EMAILS } = require('../lib/cp-roles');
 const { layerHelpText } = require('../lib/visit-instructions');
 const { forwardToEodApi, eodApiBase } = require('../lib/eod-api-proxy');
 const { repKeyForEmail } = require('../lib/rep-emails');
+const { getRep } = require('../lib/master-route');
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,13 +57,24 @@ router.post('/access-request', async (req, res) => {
 });
 
 router.get('/me', requireAuth, (req, res) => {
+  const repKey = req.user.layer === 'rep' ? repKeyForEmail(req.user.email) : null;
+  const rep = repKey ? getRep(repKey) : null;
   res.json({
     ok: true,
     email: req.user.email,
     layer: req.user.layer,
     isAdmin: req.user.layer === 'admin',
     isRep: req.user.layer === 'rep',
-    repKey: req.user.layer === 'rep' ? repKeyForEmail(req.user.email) : null,
+    repKey,
+    rep: rep
+      ? {
+          name: rep.name,
+          district: rep.district,
+          visitCount: rep.visitSlots?.length || 0,
+          isD8Pool: !!rep.isD8Pool,
+          allowsRepAvailability: !!rep.allowsRepAvailability,
+        }
+      : null,
     help: layerHelpText(req.user.layer),
     repLayerEmails: REP_LAYER_EMAILS,
   });

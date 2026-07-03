@@ -565,7 +565,7 @@ async function copyHandoff(kind) {
     if (!state.draftId) return toast('Approve the week first', 'warn');
     window.location.href = `/api/central-pet/schedule/export/${state.draftId}?format=handoff`;
   });
-  $('btnRepView').addEventListener('click', () => (window.location.href = '/rep.html'));
+  $('btnRepView').addEventListener('click', () => (window.location.href = '/rep.html?preview=1'));
   $('btnSignOut').addEventListener('click', signOut);
 
   const reload = async () => {
