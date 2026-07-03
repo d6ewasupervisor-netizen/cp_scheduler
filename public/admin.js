@@ -51,7 +51,11 @@ function currentRepKey() {
 /* ---------- Loaders ---------- */
 
 async function loadWeeks() {
-  state.weeks = await api('/weeks');
+  const data = await api('/weeks');
+  if (!Array.isArray(data) || !data.length) {
+    throw new Error('No schedule weeks are available right now');
+  }
+  state.weeks = data;
   const sel = $('weekSelect');
   sel.innerHTML = state.weeks
     .map((w) => `<option value="${w.start}">${w.label} (${shortDate(w.start)} – ${shortDate(w.end)})</option>`)
@@ -67,8 +71,16 @@ async function loadWeeks() {
 async function loadReps() {
   const district = $('districtFilter').value;
   const q = district ? `?district=${district}` : '';
-  state.reps = await api(`/reps${q}`);
+  const data = await api(`/reps${q}`);
+  if (!Array.isArray(data)) {
+    throw new Error('Could not load rep list');
+  }
+  state.reps = data;
   const sel = $('repSelect');
+  if (!state.reps.length) {
+    sel.innerHTML = '';
+    throw new Error(`No reps found for district ${district || 'All'}`);
+  }
   sel.innerHTML = state.reps
     .map((r) => `<option value="${encodeURIComponent(repKeyOf(r))}">${r.name} (D${r.district})</option>`)
     .join('');
@@ -83,6 +95,8 @@ async function loadReps() {
 async function loadRepWeek() {
   const repKey = currentRepKey();
   const weekStart = $('weekSelect').value;
+  if (!repKey) throw new Error('Choose who you are scheduling for');
+  if (!weekStart) throw new Error('Choose a week');
   state.rep = await api(`/reps/${encodeURIComponent(repKey)}`);
   state.week = state.weeks.find((w) => w.start === weekStart);
   state.slots = state.rep.visitSlots;
@@ -105,7 +119,9 @@ async function loadRepWeek() {
     defaultWeeklyTemplate = def.weeklyTemplate;
   }
 
-  const tpl = await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKey)}`);
+  const tpl = await api(`/schedule/weekly-template?rep=${encodeURIComponent(repKey)}`).catch(
+    () => ({ template: null })
+  );
   state.weeklyTemplate = tpl.template || defaultWeeklyTemplate || null;
   $('btnClearTemplate').hidden = !state.weeklyTemplate;
 
@@ -541,53 +557,75 @@ async function copyHandoff(kind) {
 
 /* ---------- Init ---------- */
 
-(async function init() {
-  await window.cpAuth.bootPromise;
-  state.user = await loadMe();
-
-  if (state.user.layer === 'rep') {
-    // Reps don't belong here — server will also enforce this (Step 4).
-    window.location.replace('/rep.html');
-    return;
+function showInitError(err) {
+  const el = $('initError');
+  if (el) {
+    el.hidden = false;
+    el.textContent = `Could not load the schedule: ${err.message || err}. Try signing out and back in.`;
+  } else {
+    toast(`Could not load: ${err.message || err}`, 'bad', 8000);
   }
+}
 
-  $('userEmail').textContent = state.user.email || '';
-  $('userBar').hidden = false;
-  $('stickyBar').hidden = false;
+(async function init() {
+  try {
+    await window.cpAuth.bootPromise;
+    state.user = await loadMe();
 
-  $('btnSave').addEventListener('click', saveDraft);
-  $('btnApprove').addEventListener('click', approveWeek);
-  armButton($('btnSaveTemplate'), 'Tap again to confirm', saveWeeklyTemplate);
-  armButton($('btnClearTemplate'), 'Tap again to clear', clearWeeklyTemplate);
-  $('btnCopyMd').addEventListener('click', () => copyHandoff('md'));
-  $('btnCopyJson').addEventListener('click', () => copyHandoff('json'));
-  $('btnDownload').addEventListener('click', () => {
-    if (!state.draftId) return toast('Approve the week first', 'warn');
-    window.location.href = `/api/central-pet/schedule/export/${state.draftId}?format=handoff`;
-  });
-  $('btnRepView').addEventListener('click', () => (window.location.href = '/rep.html?preview=1'));
-  $('btnSignOut').addEventListener('click', signOut);
-
-  const reload = async () => {
-    if (state.dirty) {
-      toast('Unsaved changes discarded on switch', 'warn', 2200);
+    if (state.user.layer === 'rep') {
+      window.location.replace('/rep.html');
+      return;
     }
-    await loadRepWeek();
-  };
-  $('districtFilter').addEventListener('change', async () => {
+
+    $('userEmail').textContent = state.user.email || '';
+    $('userBar').hidden = false;
+    $('stickyBar').hidden = false;
+
+    $('btnSave').addEventListener('click', saveDraft);
+    $('btnApprove').addEventListener('click', approveWeek);
+    armButton($('btnSaveTemplate'), 'Tap again to confirm', saveWeeklyTemplate);
+    armButton($('btnClearTemplate'), 'Tap again to clear', clearWeeklyTemplate);
+    $('btnCopyMd').addEventListener('click', () => copyHandoff('md'));
+    $('btnCopyJson').addEventListener('click', () => copyHandoff('json'));
+    $('btnDownload').addEventListener('click', () => {
+      if (!state.draftId) return toast('Approve the week first', 'warn');
+      window.location.href = `/api/central-pet/schedule/export/${state.draftId}?format=handoff`;
+    });
+    $('btnRepView').addEventListener('click', () => (window.location.href = '/rep.html?preview=1'));
+    $('btnSignOut').addEventListener('click', signOut);
+
+    const reload = async () => {
+      if (state.dirty) {
+        toast('Unsaved changes discarded on switch', 'warn', 2200);
+      }
+      try {
+        await loadRepWeek();
+      } catch (err) {
+        showInitError(err);
+      }
+    };
+    $('districtFilter').addEventListener('change', async () => {
+      try {
+        await loadReps();
+        await reload();
+      } catch (err) {
+        showInitError(err);
+      }
+    });
+    $('repSelect').addEventListener('change', reload);
+    $('weekSelect').addEventListener('change', reload);
+    $('showProd').addEventListener('change', reload);
+
+    window.addEventListener('beforeunload', (e) => {
+      if (state.dirty) e.preventDefault();
+    });
+
+    $('districtFilter').value = '1';
+    await loadWeeks();
     await loadReps();
-    await reload();
-  });
-  $('repSelect').addEventListener('change', reload);
-  $('weekSelect').addEventListener('change', reload);
-  $('showProd').addEventListener('change', reload);
-
-  window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) e.preventDefault();
-  });
-
-  $('districtFilter').value = '1';
-  await loadWeeks();
-  await loadReps();
-  await loadRepWeek();
+    await loadRepWeek();
+  } catch (err) {
+    console.error('[admin]', err);
+    showInitError(err);
+  }
 })();

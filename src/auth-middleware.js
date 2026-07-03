@@ -2,6 +2,7 @@
 
 const { verifySessionToken } = require('./lib/session-jwt');
 const { isEmailAllowed } = require('./lib/allowed-emails');
+const { isCpSchedulerAllowed } = require('./lib/cp-auth-allowlist');
 const { cpSchedulerLayer } = require('./lib/cp-roles');
 
 const AUTH_MODE = (process.env.AUTH_MODE || 'session').trim().toLowerCase();
@@ -64,7 +65,8 @@ async function authenticateRequest(req, res) {
 
   const email = (payload.email || '').toString().trim().toLowerCase();
   try {
-    const allowed = await isEmailAllowed(email);
+    const allowed =
+      isCpSchedulerAllowed(email) || (await isEmailAllowed(email));
     if (!allowed) {
       res.status(403).json({ error: 'Access is not enabled for this account' });
       return null;

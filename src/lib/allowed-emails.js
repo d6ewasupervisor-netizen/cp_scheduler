@@ -29,11 +29,16 @@ async function isEmailAllowed(email) {
   if (isCorporateWorkDomainEmail(normalized)) return true;
   if (!getPool()) return false;
 
-  const { rows } = await query(
-    'SELECT 1 FROM allowed_emails WHERE email = $1 LIMIT 1',
-    [normalized]
-  );
-  return rows.length > 0;
+  try {
+    const { rows } = await query(
+      'SELECT 1 FROM allowed_emails WHERE email = $1 LIMIT 1',
+      [normalized]
+    );
+    return rows.length > 0;
+  } catch (err) {
+    console.error('[allowed-emails] DB query failed:', err.message);
+    return false;
+  }
 }
 
 module.exports = {
