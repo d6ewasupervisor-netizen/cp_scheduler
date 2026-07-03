@@ -19,6 +19,27 @@ export function coverageNeededCount(placements) {
   return (placements || []).filter(isCoverageNeeded).length;
 }
 
+export function d8UnassignedCount(rep, placements) {
+  return rep?.isD8Pool ? (placements || []).filter((p) => !p.proposedAssignee).length : 0;
+}
+
+/** Stop card tap/drag from swallowing native <select> interaction (mobile). */
+export function stopSelectBubble(el) {
+  for (const evt of ['mousedown', 'click', 'touchstart']) {
+    el.addEventListener(evt, (e) => e.stopPropagation());
+  }
+}
+
+export function chitFlagLabel(p, rep, { admin = false } = {}) {
+  if (!p._valid) return admin ? 'Conflict' : 'Wrong day';
+  if (isCoverageNeeded(p)) return 'Needs coverage';
+  if (rep?.isD8Pool) {
+    if (p.proposedAssignee) return `Lead: ${p.proposedAssignee}`;
+    return admin ? 'Unassigned' : 'Pick a lead';
+  }
+  return '';
+}
+
 export const isMobileLayout = () =>
   window.matchMedia('(max-width: 760px)').matches;
 

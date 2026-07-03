@@ -374,6 +374,7 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chit.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .chit.invalid { border-color: var(--bad); background: var(--bad-soft); }
 .chit.unassigned { border-color: var(--warn); }
+.chit.assigned { border-color: rgba(52, 201, 138, 0.5); }
 .chit.needs-coverage {
   border-color: var(--warn);
   background: color-mix(in srgb, var(--warn) 12%, var(--surface-2));
@@ -391,6 +392,7 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chit-flag { font-size: 0.72rem; font-weight: 700; }
 .chit.invalid .chit-flag { color: var(--bad); }
 .chit.unassigned .chit-flag { color: var(--warn); }
+.chit.assigned .chit-flag { color: var(--ok); }
 .chit.needs-coverage .chit-flag { color: var(--warn); font-weight: 800; }
 
 .week-status .warn { color: var(--warn); font-weight: 700; }
@@ -416,7 +418,7 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.chit-row select { min-height: 40px; font-size: 0.88rem; }
+.chit-row select { min-height: 40px; font-size: 0.88rem; position: relative; z-index: 2; }
 
 .prod-ghost {
   opacity: 0.55;

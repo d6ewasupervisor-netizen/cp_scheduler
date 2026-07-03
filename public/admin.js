@@ -22,6 +22,9 @@ import {
   setSaveState,
   isCoverageNeeded,
   coverageNeededCount,
+  d8UnassignedCount,
+  stopSelectBubble,
+  chitFlagLabel,
   REP_AVAILABILITY,
 } from '/shared.js';
 
@@ -169,6 +172,7 @@ function render(warnings, allValid) {
   const coverageCount = state.rep.allowsRepAvailability
     ? coverageNeededCount(state.placements)
     : 0;
+  const d8Unassigned = d8UnassignedCount(state.rep, state.placements);
   const src =
     state.placementSource === 'draft'
       ? 'saved draft'
@@ -180,7 +184,8 @@ function render(warnings, allValid) {
     (allValid
       ? '<span class="pass">All Master Route checks pass</span>'
       : `<span class="fail">${invalidCount} placement(s) conflict</span>`) +
-    (coverageCount ? ` · <span class="warn">${coverageCount} need coverage</span>` : '');
+    (coverageCount ? ` · <span class="warn">${coverageCount} need coverage</span>` : '') +
+    (d8Unassigned ? ` · <span class="warn">${d8Unassigned} need proposed assignee</span>` : '');
 
   renderTemplateBanner();
 
@@ -302,16 +307,11 @@ function makeChit(p) {
   if (!p._valid) el.classList.add('invalid');
   else if (isCoverageNeeded(p)) el.classList.add('needs-coverage');
   else if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
+  else if (state.rep.isD8Pool && p.proposedAssignee) el.classList.add('assigned');
   if (state.selected && slotKey(state.selected) === slotKey(p)) el.classList.add('selected');
 
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
-  el.querySelector('.chit-flag').textContent = !p._valid
-    ? 'Conflict'
-    : isCoverageNeeded(p)
-      ? 'Needs coverage'
-      : state.rep.isD8Pool && !p.proposedAssignee
-        ? 'Unassigned'
-        : '';
+  el.querySelector('.chit-flag').textContent = chitFlagLabel(p, state.rep, { admin: true });
   el.querySelector('.chit-task').textContent = taskLine(slot);
   el.querySelector('.chit-account').textContent = p.account || '';
   el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
@@ -320,19 +320,25 @@ function makeChit(p) {
     const wrap = el.querySelector('.chit-assignee-wrap');
     wrap.hidden = false;
     const select = wrap.querySelector('.chit-assignee');
+    const assignees = state.rep.proposedAssignees?.length
+      ? state.rep.proposedAssignees
+      : [];
     select.innerHTML =
       '<option value="">Choose proposed assignee…</option>' +
-      (state.rep.proposedAssignees || [])
+      assignees
         .map(
           (a) =>
             `<option value="${a.name}"${p.proposedAssignee === a.name ? ' selected' : ''}>${a.label || a.name}</option>`
         )
         .join('');
-    select.addEventListener('mousedown', (e) => e.stopPropagation());
-    select.addEventListener('click', (e) => e.stopPropagation());
+    stopSelectBubble(select);
     select.addEventListener('change', () => {
       p.proposedAssignee = select.value;
       markDirty();
+      if (p.proposedAssignee) {
+        toast(`Proposed assignee: ${p.proposedAssignee}`, 'ok', 2200);
+      }
+      if (state.selected && slotKey(state.selected) === slotKey(p)) showDetail(p);
       revalidate();
     });
   }
@@ -345,8 +351,7 @@ function makeChit(p) {
     select.innerHTML = `
       <option value="${REP_AVAILABILITY.AVAILABLE}"${current !== REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Available</option>
       <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
-    select.addEventListener('mousedown', (e) => e.stopPropagation());
-    select.addEventListener('click', (e) => e.stopPropagation());
+    stopSelectBubble(select);
     select.addEventListener('change', () => {
       p.repAvailability = select.value;
       markDirty();
@@ -359,8 +364,7 @@ function makeChit(p) {
     const allowed = slot?.allowedDays.includes(day);
     return `<option value="${day}"${p.dayOfWeek === day ? ' selected' : ''}${allowed ? '' : ' disabled'}>${allowed ? day : day + ' — not allowed'}</option>`;
   }).join('');
-  moveSelect.addEventListener('mousedown', (e) => e.stopPropagation());
-  moveSelect.addEventListener('click', (e) => e.stopPropagation());
+  stopSelectBubble(moveSelect);
   moveSelect.addEventListener('change', () => moveTo(p, slot, moveSelect.value, false));
 
   el.draggable = !isMobileLayout();
@@ -386,9 +390,7 @@ function makeChit(p) {
 
 function renderWarnings(warnings) {
   const warnEl = $('warnings');
-  const d8Unassigned = state.rep.isD8Pool
-    ? state.placements.filter((p) => !p.proposedAssignee).length
-    : 0;
+  const d8Unassigned = d8UnassignedCount(state.rep, state.placements);
   const coverageCount = state.rep.allowsRepAvailability
     ? coverageNeededCount(state.placements)
     : 0;
