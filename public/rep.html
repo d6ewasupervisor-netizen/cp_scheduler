@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>My Week — Central Pet</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/auth-gate.js"></script>
+</head>
+<body class="mode-rep has-sticky-bar">
+  <header class="topbar">
+    <div class="topbar-row">
+      <div>
+        <h1>My Week</h1>
+        <p class="subtitle">Central Pet visits</p>
+      </div>
+      <div class="user-bar" id="userBar" hidden>
+        <span class="layer-badge rep">Rep</span>
+        <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnSignOut" class="subtle">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="page">
+    <section class="steps-strip" aria-label="How to build your week">
+      <span class="step"><b>1</b> Tap a store</span>
+      <span class="sep">→</span>
+      <span class="step"><b>2</b> Tap a green day</span>
+      <span class="sep">→</span>
+      <span class="step"><b>3</b> Save</span>
+    </section>
+
+    <section id="repPicker" class="tray" hidden>
+      <h2>Whose schedule is this?</h2>
+      <p class="week-status">One-time setup on this device — pick your name.</p>
+      <label class="field">Your schedule
+        <select id="repPickerSelect"></select>
+      </label>
+      <div style="margin-top:.7rem">
+        <button type="button" id="btnRepPickerSave" class="primary">That's me</button>
+      </div>
+    </section>
+
+    <div id="repApp" hidden>
+      <div class="week-nav">
+        <div>
+          <div class="week-title" id="weekTitle"></div>
+          <div class="week-dates" id="weekDates"></div>
+        </div>
+        <div class="nav-btns">
+          <button type="button" id="btnPrevWeek" aria-label="Previous week">‹</button>
+          <button type="button" id="btnNextWeek" aria-label="Next week">›</button>
+        </div>
+      </div>
+
+      <p class="week-status" id="weekStatus"></p>
+
+      <div class="layout">
+        <section>
+          <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
+          <div id="warnings" class="warnings"></div>
+        </section>
+        <aside class="side-col">
+          <section class="detail-panel">
+            <h2>Selected visit</h2>
+            <div id="slotDetail" class="slot-detail">Tap a store card to see what to do at that visit.</div>
+            <div id="visitChecklist" class="visit-checklist"></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <div class="sticky-bar" id="stickyBar" hidden>
+    <div class="sticky-bar-inner">
+      <button type="button" id="btnSave" class="primary">Save my week</button>
+      <span class="save-state" id="saveState" data-state="saved">Saved</span>
+    </div>
+  </div>
+
+  <template id="chitTemplate">
+    <div class="chit">
+      <div class="chit-top">
+        <span class="chit-store"></span>
+        <span class="chit-flag"></span>
+      </div>
+      <div class="chit-task"></div>
+      <div class="chit-account"></div>
+      <div class="chit-action"></div>
+      <div class="chit-row">
+        <label class="chit-assignee-wrap" hidden>Who takes this
+          <select class="chit-assignee"></select>
+        </label>
+        <label class="chit-move-wrap">Move to
+          <select class="chit-move-day"></select>
+        </label>
+      </div>
+    </div>
+  </template>
+
+  <script src="/rep.js" type="module"></script>
+</body>
+</html>

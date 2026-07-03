@@ -21,9 +21,27 @@ const {
 const { saveDraft, getDraft, listDrafts, approveDraft, getWeeklyTemplate, saveWeeklyTemplate, clearWeeklyTemplate } = require('../db');
 const { requireAdmin } = require('../auth-middleware');
 const { buildVisitDetail } = require('../lib/visit-instructions');
+const { repKeyForEmail } = require('../lib/rep-emails');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
+
+// Rep-layer users may only touch their own schedule.
+// If a rep email has a mapping in data/rep-emails.json, any rep value they
+// send (query or body) is overwritten with their mapped repKey — they cannot
+// read or write another rep's drafts. Unmapped rep emails pass through
+// unchanged (device-picker fallback) until a mapping is added.
+function repScope(req, _res, next) {
+  if (req.user?.layer === 'rep') {
+    const mine = repKeyForEmail(req.user.email);
+    if (mine) {
+      if (req.query && 'rep' in req.query) req.query.rep = mine;
+      if (req.body && 'repKey' in req.body) req.body.repKey = mine;
+    }
+    if (req.body) req.body.createdBy = req.user.email;
+  }
+  next();
+}
 
 router.get('/weeks', (_req, res) => {
   res.json(listWeeks());
@@ -57,7 +75,7 @@ router.post('/schedule/validate', (req, res) => {
   res.json({ results, warnings, allValid });
 });
 
-router.get('/schedule/default', (req, res) => {
+router.get('/schedule/default', repScope, (req, res) => {
   const repKey = req.query.rep;
   const weekStart = req.query.weekStart;
   const rep = getRep(repKey);
@@ -129,11 +147,11 @@ router.delete('/schedule/weekly-template', requireAdmin, (req, res) => {
   res.json({ cleared });
 });
 
-router.get('/schedule/draft', (req, res) => {
+router.get('/schedule/draft', repScope, (req, res) => {
   res.json(listDrafts(req.query.rep, req.query.weekStart));
 });
 
-router.post('/schedule/draft', (req, res) => {
+router.post('/schedule/draft', repScope, (req, res) => {
   try {
     const draft = saveDraft(req.body);
     res.json(draft);

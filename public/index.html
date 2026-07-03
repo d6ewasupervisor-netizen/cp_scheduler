@@ -3,110 +3,132 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Central Pet Scheduler</title>
+  <title>Planning Desk — Central Pet Scheduler</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
 </head>
-<body>
+<body class="mode-admin has-sticky-bar">
   <header class="topbar">
     <div class="topbar-row">
       <div>
-        <h1>Central Pet Scheduler</h1>
-        <p class="subtitle" id="pageSubtitle">Master Route planning — D1/D8 — project 9293</p>
+        <h1>Planning Desk</h1>
+        <p class="subtitle">Central Pet · D1 / D8 · project 9293</p>
       </div>
       <div class="user-bar" id="userBar" hidden>
-        <span class="layer-badge" id="layerBadge"></span>
+        <span class="layer-badge admin">Admin</span>
         <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnRepView" class="subtle" title="Preview the rep experience">Rep view</button>
         <button type="button" id="btnSignOut" class="subtle">Sign out</button>
       </div>
     </div>
   </header>
 
-  <section class="guide-panel" id="guidePanel">
-    <button type="button" class="guide-toggle" id="guideToggle" aria-expanded="true" aria-controls="guideBody">
-      <span id="guideTitle">How this works</span>
-      <span class="guide-chevron" aria-hidden="true">▼</span>
-    </button>
-    <div id="guideBody" class="guide-body">
-      <ul id="guideList"></ul>
-    </div>
-  </section>
-
-  <section class="controls" id="controlsPanel">
-    <label>District
-      <select id="districtFilter">
-        <option value="">All</option>
-        <option value="1">D1</option>
-        <option value="8">D8</option>
-      </select>
-    </label>
-    <label>Schedule for
-      <select id="repSelect"></select>
-    </label>
-    <label>Week
-      <select id="weekSelect"></select>
-    </label>
-    <label class="admin-only">Approver email
-      <input id="approverEmail" type="email" placeholder="you@example.com">
-    </label>
-    <div class="btn-row btn-row-primary">
-      <button id="btnSave" type="button" class="primary">Save my week</button>
-      <button id="btnReload" type="button">Reload</button>
-    </div>
-    <div class="btn-row btn-row-secondary">
-      <button id="btnSaveTemplate" type="button" class="admin-only" title="Use this Mon–Fri layout as the starting point for every week without its own saved draft">Save as weekly template</button>
-      <button id="btnClearTemplate" type="button" class="subtle admin-only" hidden>Clear weekly template</button>
-      <button id="btnApprove" type="button" class="primary admin-only">Approve week</button>
-      <button id="btnCopyMd" type="button" class="admin-only">Copy Markdown</button>
-      <button id="btnCopyJson" type="button" class="admin-only">Copy JSON</button>
-      <button id="btnDownload" type="button" class="admin-only">Download bundle</button>
-    </div>
-    <label class="toggle admin-only"><input type="checkbox" id="showProd"> Show PROD overlay</label>
-  </section>
-
-  <main class="layout">
-    <section class="calendar-panel">
-      <div id="weekHeader" class="week-meta"></div>
-      <div id="templateBanner" class="template-banner admin-only" hidden></div>
-      <div class="calendar-legend">
-        <span><i class="legend-swatch allowed"></i> Valid drop day</span>
-        <span><i class="legend-swatch invalid"></i> Master Route conflict</span>
-        <span class="d8-legend admin-only"><i class="legend-swatch unassigned"></i> D8 — pick proposed assignee</span>
-      </div>
-      <div class="calendar-scroll">
-        <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
-      </div>
-      <p class="mobile-hint">Swipe the calendar left/right · tap a store, or use Move to on each card</p>
-      <div id="warnings" class="warnings"></div>
+  <div class="page">
+    <section class="toolbar" aria-label="Schedule selection">
+      <label class="field">District
+        <select id="districtFilter">
+          <option value="">All</option>
+          <option value="1">D1</option>
+          <option value="8">D8</option>
+        </select>
+      </label>
+      <label class="field">Schedule for
+        <select id="repSelect"></select>
+      </label>
+      <label class="field">Week
+        <select id="weekSelect"></select>
+      </label>
     </section>
-    <aside class="side-panel">
-      <h2>Selected visit — what to do</h2>
-      <div id="slotDetail" class="slot-detail">Click a store card to see pick/delivery rules and your task list.</div>
-      <div id="visitChecklist" class="visit-checklist"></div>
-      <section class="admin-only">
-        <h2>Review / Handoff</h2>
-        <div id="reviewPane" class="review-pane"></div>
+
+    <div class="week-nav">
+      <div>
+        <div class="week-title" id="weekTitle"></div>
+        <div class="week-dates" id="weekDates"></div>
+      </div>
+    </div>
+    <p class="week-status" id="weekStatus"></p>
+
+    <div class="layout">
+      <section>
+        <div id="templateBanner" class="template-banner" hidden></div>
+        <div class="calendar-legend">
+          <span><i class="legend-swatch allowed"></i> Valid day for selected visit</span>
+          <span><i class="legend-swatch invalid"></i> Master Route conflict</span>
+          <span id="d8Legend" hidden><i class="legend-swatch unassigned"></i> Needs proposed assignee</span>
+        </div>
+        <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
+        <div id="warnings" class="warnings"></div>
       </section>
-    </aside>
-  </main>
+
+      <aside class="side-col">
+        <section class="detail-panel">
+          <h2>Selected visit</h2>
+          <div id="slotDetail" class="slot-detail">Click a store card to see pick/delivery rules and the task list.</div>
+          <div id="visitChecklist" class="visit-checklist"></div>
+        </section>
+
+        <section class="action-panel">
+          <h2>Admin actions</h2>
+
+          <div class="action-group">
+            <h3>Weekly template</h3>
+            <div class="btn-stack">
+              <button type="button" id="btnSaveTemplate">Save this layout as template</button>
+              <button type="button" id="btnClearTemplate" hidden>Clear template</button>
+            </div>
+          </div>
+
+          <div class="action-group">
+            <h3>Approve &amp; hand off</h3>
+            <div class="btn-stack">
+              <button type="button" id="btnApprove" class="primary">Approve week</button>
+              <button type="button" id="btnCopyMd" disabled>Copy Markdown</button>
+              <button type="button" id="btnCopyJson" disabled>Copy JSON</button>
+              <button type="button" id="btnDownload" disabled>Download bundle</button>
+            </div>
+          </div>
+
+          <div class="action-group">
+            <h3>PROD comparison</h3>
+            <label class="toggle"><input type="checkbox" id="showProd"> Show PROD overlay</label>
+          </div>
+
+          <div class="action-group">
+            <h3>Approved handoff preview</h3>
+            <div id="reviewPane" class="review-pane"></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div class="sticky-bar" id="stickyBar" hidden>
+    <div class="sticky-bar-inner">
+      <button type="button" id="btnSave" class="primary">Save week draft</button>
+      <span class="save-state" id="saveState" data-state="saved">Saved</span>
+    </div>
+  </div>
 
   <template id="chitTemplate">
     <div class="chit" draggable="true">
-      <div class="chit-store"></div>
+      <div class="chit-top">
+        <span class="chit-store"></span>
+        <span class="chit-flag"></span>
+      </div>
       <div class="chit-task"></div>
       <div class="chit-account"></div>
       <div class="chit-action"></div>
-      <label class="chit-assignee-wrap" hidden>
-        <span class="chit-assignee-label">Proposed assignee</span>
-        <select class="chit-assignee"></select>
-      </label>
-      <label class="chit-move-wrap" hidden>
-        <span class="chit-move-label">Move to</span>
-        <select class="chit-move-day"></select>
-      </label>
+      <div class="chit-row">
+        <label class="chit-assignee-wrap" hidden>Proposed assignee
+          <select class="chit-assignee"></select>
+        </label>
+        <label class="chit-move-wrap">Move to
+          <select class="chit-move-day"></select>
+        </label>
+      </div>
     </div>
   </template>
 
-  <script src="/app.js" type="module"></script>
+  <script src="/admin.js" type="module"></script>
 </body>
 </html>

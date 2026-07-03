@@ -154,6 +154,19 @@
       }
     }
     revealPage();
+
+    var path = (location.pathname || '/').toLowerCase();
+    if (path === '/' || path === '/index.html') {
+      try {
+        var meRes = await cpAuthFetch('/api/auth/me', { noBounceOn401: true });
+        if (meRes.ok) {
+          var me = await meRes.json();
+          if (me.layer === 'rep') {
+            location.replace('/rep.html' + location.search);
+          }
+        }
+      } catch (_) {}
+    }
   })();
 
   window.cpAuth = {

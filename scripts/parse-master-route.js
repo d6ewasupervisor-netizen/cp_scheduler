@@ -50,7 +50,16 @@ async function main() {
     headers[col] = String(cell.value || '').trim();
   });
 
-  const col = (name) => headers.findIndex((h) => h === name || h.trim() === name) + 1;
+  // Normalized lookup: case-insensitive, collapses internal whitespace,
+  // returns the 1-based column number (headers[] is already 1-based).
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const col = (name) => {
+    const want = norm(name);
+    for (let i = 1; i < headers.length; i++) {
+      if (norm(headers[i]) === want) return i;
+    }
+    throw new Error(`Column not found in BY STORE header row: "${name}"`);
+  };
 
   const rows = [];
   ws.eachRow((row, rowNumber) => {
@@ -79,7 +88,10 @@ async function main() {
 
   const outPath = path.join(__dirname, '../data/central-pet-master-route.json');
   const payload = {
-    versionDate: path.basename(input).match(/(\d{2}-\d{2}-\d{4})/)?.[1] || 'unknown',
+    versionDate: (() => {
+      const m = path.basename(input).match(/(\d{2})-(\d{2})-(\d{4})/);
+      return m ? `${m[3]}-${m[1]}-${m[2]}` : 'unknown';
+    })(),
     sourceFile: path.basename(input),
     sheet: 'BY STORE',
     rowCount: rows.length,

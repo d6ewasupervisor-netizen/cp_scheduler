@@ -1,0 +1,368 @@
+// rep.js — "My Week" rep experience.
+// Tap a store card to select it; eligible days light up; tap a day header to place.
+// "Move to" select on each card is the fallback. One Save button, no admin surface.
+
+import {
+  WORK_DAYS,
+  api,
+  loadMe,
+  signOut,
+  repKeyOf,
+  slotKey,
+  findSlot,
+  placementsByDay,
+  taskLine,
+  dateForDay,
+  shortDate,
+  validatePlacements,
+  toast,
+  setSaveState,
+} from '/shared.js';
+
+const state = {
+  user: null,
+  repKey: null,
+  rep: null,
+  weeks: [],
+  weekIndex: 0,
+  placements: [],
+  slots: [],
+  draftId: null,
+  selected: null, // selected placement (tap-to-place source)
+  dirty: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* ---------- Rep identity ---------- */
+
+async function resolveRepKey() {
+  if (state.user.repKey) return state.user.repKey;
+  const saved = localStorage.getItem('cp_my_rep');
+  if (saved) return saved;
+
+  // One-time picker fallback until the server-side mapping exists.
+  const reps = await api('/reps');
+  const sel = $('repPickerSelect');
+  sel.innerHTML = reps
+    .map((r) => `<option value="${encodeURIComponent(repKeyOf(r))}">${r.name} (D${r.district})</option>`)
+    .join('');
+  $('repPicker').hidden = false;
+
+  return new Promise((resolve) => {
+    $('btnRepPickerSave').addEventListener('click', () => {
+      const key = decodeURIComponent(sel.value);
+      localStorage.setItem('cp_my_rep', key);
+      $('repPicker').hidden = true;
+      resolve(key);
+    });
+  });
+}
+
+/* ---------- Week loading ---------- */
+
+function currentWeek() {
+  return state.weeks[state.weekIndex];
+}
+
+function defaultWeekIndex(weeks) {
+  const today = new Date().toISOString().slice(0, 10);
+  const containing = weeks.findIndex((w) => w.start <= today && today <= w.end);
+  if (containing >= 0) return containing;
+  const upcoming = weeks.findIndex((w) => w.start > today);
+  return upcoming >= 0 ? upcoming : 0;
+}
+
+async function loadWeek() {
+  const week = currentWeek();
+  state.rep = await api(`/reps/${encodeURIComponent(state.repKey)}`);
+  state.slots = state.rep.visitSlots;
+
+  const drafts = await api(
+    `/schedule/draft?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
+  );
+  if (drafts.length) {
+    state.placements = drafts[0].placements;
+    state.draftId = drafts[0].id;
+  } else {
+    const def = await api(
+      `/schedule/default?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
+    );
+    state.placements = def.placements;
+    state.draftId = null;
+  }
+
+  state.selected = null;
+  state.dirty = false;
+  setSaveState($('saveState'), 'saved');
+  await revalidate();
+}
+
+async function revalidate() {
+  const week = currentWeek();
+  const { warnings, allValid } = await validatePlacements(
+    state.repKey,
+    week.start,
+    state.placements
+  );
+  render(warnings, allValid);
+}
+
+/* ---------- Rendering ---------- */
+
+function render(warnings, allValid) {
+  const week = currentWeek();
+
+  $('weekTitle').textContent = week.label;
+  $('weekDates').textContent = `${shortDate(week.start)} – ${shortDate(week.end)}`;
+  $('btnPrevWeek').disabled = state.weekIndex === 0;
+  $('btnNextWeek').disabled = state.weekIndex === state.weeks.length - 1;
+
+  const invalidCount = state.placements.filter((p) => !p._valid).length;
+  $('weekStatus').innerHTML = allValid
+    ? `${state.placements.length} visits · <span class="pass">All days check out</span>`
+    : `${state.placements.length} visits · <span class="fail">${invalidCount} on a day that doesn't work — tap them to fix</span>`;
+
+  const byDay = placementsByDay(state.placements);
+  const selectedSlot = state.selected ? findSlot(state.slots, state.selected) : null;
+
+  const cal = $('calendar');
+  cal.innerHTML = '';
+
+  for (const day of WORK_DAYS) {
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    col.dataset.day = day;
+
+    if (selectedSlot) {
+      col.classList.add(selectedSlot.allowedDays.includes(day) ? 'eligible' : 'ineligible');
+    }
+
+    const date = dateForDay(week.start, day);
+    col.innerHTML = `
+      <div class="day-head">
+        <span>${day} <small>${shortDate(date)}</small></span>
+        <span class="day-count">${(byDay[day] || []).length ? byDay[day].length + ' visit' + (byDay[day].length > 1 ? 's' : '') : ''}</span>
+      </div>
+      <div class="day-body"></div>`;
+
+    col.querySelector('.day-head').addEventListener('click', () => {
+      if (!state.selected || !selectedSlot) return;
+      placeSelectedOn(day, selectedSlot);
+    });
+
+    const body = col.querySelector('.day-body');
+    for (const p of byDay[day] || []) {
+      body.appendChild(makeChit(p));
+    }
+    cal.appendChild(col);
+  }
+
+  renderWarnings(warnings);
+}
+
+function placeSelectedOn(day, slot) {
+  const p = state.selected;
+  if (!slot.allowedDays.includes(day)) {
+    toast(`Store ${p.storeNum} can't go on ${day}. Green days only.`, 'bad');
+    return;
+  }
+  p.dayOfWeek = day;
+  p.scheduledDate = dateForDay(currentWeek().start, day);
+  state.selected = null;
+  markDirty();
+  toast(`Store ${p.storeNum} moved to ${day}`, 'ok', 1800);
+  revalidate();
+}
+
+function makeChit(p) {
+  const tpl = $('chitTemplate');
+  const el = tpl.content.firstElementChild.cloneNode(true);
+  const slot = findSlot(state.slots, p);
+
+  if (!p._valid) el.classList.add('invalid');
+  if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
+  if (state.selected && slotKey(state.selected) === slotKey(p)) el.classList.add('selected');
+
+  el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
+  el.querySelector('.chit-flag').textContent = !p._valid
+    ? 'Wrong day'
+    : state.rep.isD8Pool && !p.proposedAssignee
+      ? 'Needs a name'
+      : '';
+  el.querySelector('.chit-task').textContent = taskLine(slot);
+  el.querySelector('.chit-account').textContent = p.account || '';
+  el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
+
+  // D8 pool: pick who takes the visit
+  if (state.rep.isD8Pool) {
+    const wrap = el.querySelector('.chit-assignee-wrap');
+    wrap.hidden = false;
+    const select = wrap.querySelector('.chit-assignee');
+    select.innerHTML =
+      '<option value="">Choose…</option>' +
+      (state.rep.proposedAssignees || [])
+        .map(
+          (a) =>
+            `<option value="${a.name}"${p.proposedAssignee === a.name ? ' selected' : ''}>${a.label || a.name}</option>`
+        )
+        .join('');
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', () => {
+      p.proposedAssignee = select.value;
+      markDirty();
+      revalidate();
+    });
+  }
+
+  // Move-to fallback (always available)
+  const moveSelect = el.querySelector('.chit-move-day');
+  moveSelect.innerHTML = WORK_DAYS.map((day) => {
+    const allowed = slot?.allowedDays.includes(day);
+    return `<option value="${day}"${p.dayOfWeek === day ? ' selected' : ''}${allowed ? '' : ' disabled'}>${allowed ? day : day + ' — not allowed'}</option>`;
+  }).join('');
+  moveSelect.addEventListener('click', (e) => e.stopPropagation());
+  moveSelect.addEventListener('change', () => {
+    p.dayOfWeek = moveSelect.value;
+    p.scheduledDate = dateForDay(currentWeek().start, moveSelect.value);
+    markDirty();
+    revalidate();
+  });
+
+  // Tap to select / deselect
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('select')) return;
+    state.selected =
+      state.selected && slotKey(state.selected) === slotKey(p) ? null : p;
+    showDetail(p);
+    revalidate();
+  });
+
+  return el;
+}
+
+function renderWarnings(warnings) {
+  const warnEl = $('warnings');
+  const d8Unassigned = state.rep.isD8Pool
+    ? state.placements.filter((p) => !p.proposedAssignee).length
+    : 0;
+  const all = [...warnings];
+  if (d8Unassigned) {
+    all.unshift({ message: `${d8Unassigned} visit(s) still need a name picked.` });
+  }
+  if (all.length) {
+    warnEl.classList.add('show');
+    warnEl.innerHTML =
+      '<strong>Before you save</strong><ul>' +
+      all.map((w) => `<li>${w.message}</li>`).join('') +
+      '</ul>';
+  } else {
+    warnEl.classList.remove('show');
+    warnEl.innerHTML = '';
+  }
+}
+
+async function showDetail(p) {
+  try {
+    const detail = await api('/schedule/visit-detail', {
+      method: 'POST',
+      body: JSON.stringify({
+        repKey: state.repKey,
+        storeNum: p.storeNum,
+        visitIndex: p.visitIndex ?? 0,
+        placement: p,
+      }),
+    });
+    const lines = [
+      `Store #${detail.storeNum} — ${detail.account}`,
+      detail.visitType,
+      '',
+      ...detail.brief,
+      '',
+      `Scheduled: ${detail.scheduledDay || '—'} (${detail.scheduledDate || '—'})`,
+      p._valid ? 'Day works ✓' : 'Wrong day — move it to a green day',
+    ];
+    $('slotDetail').textContent = lines.join('\n');
+    $('visitChecklist').innerHTML =
+      '<div class="visit-type">Checklist</div><ul>' +
+      detail.checklist.map((c) => `<li>${c}</li>`).join('') +
+      '</ul>';
+  } catch {
+    $('slotDetail').textContent = 'Could not load visit details.';
+    $('visitChecklist').innerHTML = '';
+  }
+}
+
+/* ---------- Save ---------- */
+
+function markDirty() {
+  state.dirty = true;
+  setSaveState($('saveState'), 'unsaved');
+}
+
+async function saveWeek() {
+  const week = currentWeek();
+  setSaveState($('saveState'), 'saving');
+  try {
+    const draft = await api('/schedule/draft', {
+      method: 'POST',
+      body: JSON.stringify({
+        repKey: state.repKey,
+        weekStart: week.start,
+        weekEnd: week.end,
+        weekLabel: week.label,
+        placements: state.placements,
+        createdBy: state.user?.email || 'rep',
+      }),
+    });
+    state.draftId = draft.id;
+    state.dirty = false;
+    setSaveState($('saveState'), 'saved');
+    toast('Week saved', 'ok');
+  } catch (err) {
+    setSaveState($('saveState'), 'unsaved');
+    toast(`Save failed: ${err.message}`, 'bad', 5000);
+  }
+}
+
+/* ---------- Week navigation ---------- */
+
+async function changeWeek(delta) {
+  if (state.dirty) {
+    toast('Save your week first (or your changes will be lost)', 'warn');
+    return;
+  }
+  const next = state.weekIndex + delta;
+  if (next < 0 || next >= state.weeks.length) return;
+  state.weekIndex = next;
+  await loadWeek();
+}
+
+/* ---------- Init ---------- */
+
+(async function init() {
+  await window.cpAuth.bootPromise;
+  state.user = await loadMe();
+
+  $('userEmail').textContent = state.user.email || '';
+  $('userBar').hidden = false;
+
+  state.weeks = await api('/weeks');
+  state.weekIndex = defaultWeekIndex(state.weeks);
+
+  state.repKey = await resolveRepKey();
+
+  $('repApp').hidden = false;
+  $('stickyBar').hidden = false;
+
+  $('btnSave').addEventListener('click', saveWeek);
+  $('btnPrevWeek').addEventListener('click', () => changeWeek(-1));
+  $('btnNextWeek').addEventListener('click', () => changeWeek(1));
+  $('btnSignOut').addEventListener('click', signOut);
+
+  window.addEventListener('beforeunload', (e) => {
+    if (state.dirty) e.preventDefault();
+  });
+
+  await loadWeek();
+})();

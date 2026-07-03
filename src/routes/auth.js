@@ -6,6 +6,7 @@ const { AUTH_MODE, AUTH_SKIP } = require('../auth-middleware');
 const { REP_LAYER_EMAILS } = require('../lib/cp-roles');
 const { layerHelpText } = require('../lib/visit-instructions');
 const { forwardToEodApi, eodApiBase } = require('../lib/eod-api-proxy');
+const { repKeyForEmail } = require('../lib/rep-emails');
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -61,6 +62,7 @@ router.get('/me', requireAuth, (req, res) => {
     layer: req.user.layer,
     isAdmin: req.user.layer === 'admin',
     isRep: req.user.layer === 'rep',
+    repKey: req.user.layer === 'rep' ? repKeyForEmail(req.user.email) : null,
     help: layerHelpText(req.user.layer),
     repLayerEmails: REP_LAYER_EMAILS,
   });
