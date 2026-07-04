@@ -11,8 +11,23 @@ export const REP_AVAILABILITY = {
   NOT_AVAILABLE: 'not_available',
 };
 
+export function normalizeRepAvailability(value) {
+  return value === REP_AVAILABILITY.NOT_AVAILABLE
+    ? REP_AVAILABILITY.NOT_AVAILABLE
+    : REP_AVAILABILITY.AVAILABLE;
+}
+
+/** Set or clear rep availability on a placement (clears when available). */
+export function applyRepAvailability(placement, value) {
+  if (normalizeRepAvailability(value) === REP_AVAILABILITY.NOT_AVAILABLE) {
+    placement.repAvailability = REP_AVAILABILITY.NOT_AVAILABLE;
+  } else {
+    delete placement.repAvailability;
+  }
+}
+
 export function isCoverageNeeded(p) {
-  return p?.repAvailability === REP_AVAILABILITY.NOT_AVAILABLE;
+  return normalizeRepAvailability(p?.repAvailability) === REP_AVAILABILITY.NOT_AVAILABLE;
 }
 
 export function coverageNeededCount(placements) {

@@ -22,6 +22,7 @@ import {
   setSaveState,
   isCoverageNeeded,
   coverageNeededCount,
+  applyRepAvailability,
   d8UnassignedCount,
   stopSelectBubble,
   chitFlagLabel,
@@ -43,7 +44,11 @@ const state = {
   selected: null,
   drag: null,
   dirty: false,
+  lastValidationWarnings: [],
+  lastAllValid: true,
 };
+
+let validateGen = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -152,26 +157,32 @@ async function loadRepWeek() {
 }
 
 async function revalidate() {
+  const gen = ++validateGen;
   const { warnings, allValid } = await validatePlacements(
     repKeyOf(state.rep),
     state.week.start,
     state.placements
   );
+  if (gen !== validateGen) return;
   render(warnings, allValid);
 }
 
 /* ---------- Rendering ---------- */
 
 function render(warnings, allValid) {
+  state.lastValidationWarnings = warnings;
+  state.lastAllValid = allValid;
+
   $('weekTitle').textContent = `${state.rep.name} · ${state.week.label}`;
   $('weekDates').textContent = `${shortDate(state.week.start)} – ${shortDate(state.week.end)}`;
   $('d8Legend').hidden = !state.rep.isD8Pool;
-  $('d1CoverageLegend').hidden = !state.rep.allowsRepAvailability;
 
   const invalidCount = state.placements.filter((p) => !p._valid).length;
   const coverageCount = state.rep.allowsRepAvailability
     ? coverageNeededCount(state.placements)
     : 0;
+  $('d1CoverageLegend').hidden =
+    !state.rep.allowsRepAvailability || coverageCount === 0;
   const d8Unassigned = d8UnassignedCount(state.rep, state.placements);
   const src =
     state.placementSource === 'draft'
@@ -353,8 +364,10 @@ function makeChit(p) {
       <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
     stopSelectBubble(select);
     select.addEventListener('change', () => {
-      p.repAvailability = select.value;
+      applyRepAvailability(p, select.value);
       markDirty();
+      if (state.selected && slotKey(state.selected) === slotKey(p)) showDetail(p);
+      render(state.lastValidationWarnings, state.lastAllValid);
       revalidate();
     });
   }

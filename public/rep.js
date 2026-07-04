@@ -20,6 +20,7 @@ import {
   setSaveState,
   isCoverageNeeded,
   coverageNeededCount,
+  applyRepAvailability,
   d8UnassignedCount,
   stopSelectBubble,
   chitFlagLabel,
@@ -37,7 +38,11 @@ const state = {
   draftId: null,
   selected: null, // selected placement (tap-to-place source)
   dirty: false,
+  lastValidationWarnings: [],
+  lastAllValid: true,
 };
+
+let validateGen = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -141,12 +146,14 @@ async function loadWeek() {
 }
 
 async function revalidate() {
+  const gen = ++validateGen;
   const week = currentWeek();
   const { warnings, allValid } = await validatePlacements(
     state.repKey,
     week.start,
     state.placements
   );
+  if (gen !== validateGen) return;
   render(warnings, allValid);
 }
 
@@ -155,6 +162,9 @@ async function revalidate() {
 function render(warnings, allValid) {
   const week = currentWeek();
   if (!week) return;
+
+  state.lastValidationWarnings = warnings;
+  state.lastAllValid = allValid;
 
   populateWeekSelect();
   $('weekTitle').textContent = week.label;
@@ -217,7 +227,8 @@ function render(warnings, allValid) {
   }
 
   renderWarnings(warnings);
-  $('repCoverageLegend').hidden = !state.rep?.allowsRepAvailability;
+  $('repCoverageLegend').hidden =
+    !state.rep?.allowsRepAvailability || coverageCount === 0;
 }
 
 function scrollDayIntoView(day) {
@@ -298,8 +309,10 @@ function makeChit(p) {
       <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
     stopSelectBubble(select);
     select.addEventListener('change', () => {
-      p.repAvailability = select.value;
+      applyRepAvailability(p, select.value);
       markDirty();
+      if (state.selected && slotKey(state.selected) === slotKey(p)) showDetail(p);
+      render(state.lastValidationWarnings, state.lastAllValid);
       revalidate();
     });
   }
