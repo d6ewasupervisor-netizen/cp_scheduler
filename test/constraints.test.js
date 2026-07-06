@@ -58,4 +58,35 @@ describe('master-route-constraints', () => {
     assert.equal(allValid, false);
     assert.equal(results[0].valid, false);
   });
+
+  it('validatePlacements warns at 4+ visits on one day', () => {
+    const slots = buildVisitSlots([
+      { storeNum: 1, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+      { storeNum: 2, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+      { storeNum: 3, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+      { storeNum: 4, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+    ]);
+    const { warnings } = validatePlacements(slots, [
+      { storeNum: 1, visitIndex: 0, dayOfWeek: 'Mon' },
+      { storeNum: 2, visitIndex: 0, dayOfWeek: 'Mon' },
+      { storeNum: 3, visitIndex: 0, dayOfWeek: 'Mon' },
+      { storeNum: 4, visitIndex: 0, dayOfWeek: 'Mon' },
+    ]);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].storeCount, 4);
+  });
+
+  it('validatePlacements does not warn for 3 visits on one day', () => {
+    const slots = buildVisitSlots([
+      { storeNum: 1, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+      { storeNum: 2, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+      { storeNum: 3, serviceDay: 'Mon', pickDay: 'Mon', deliveryDay: 'Tue', action: 'x' },
+    ]);
+    const { warnings } = validatePlacements(slots, [
+      { storeNum: 1, visitIndex: 0, dayOfWeek: 'Mon' },
+      { storeNum: 2, visitIndex: 0, dayOfWeek: 'Mon' },
+      { storeNum: 3, visitIndex: 0, dayOfWeek: 'Mon' },
+    ]);
+    assert.equal(warnings.length, 0);
+  });
 });

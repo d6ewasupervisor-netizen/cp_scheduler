@@ -43,12 +43,24 @@
         <div class="rep-banner-meta" id="repBannerMeta"></div>
       </section>
 
-      <section class="steps-strip" aria-label="How to build your week">
-        <span class="step"><b>1</b> Tap a store card</span>
-        <span class="sep">→</span>
-        <span class="step"><b>2</b> Use <b>Move to</b> or tap a green day</span>
-        <span class="sep">→</span>
-        <span class="step"><b>3</b> Save</span>
+      <section class="instructions-panel" aria-label="Instructions">
+        <h2 class="instructions-heading">Instructions</h2>
+        <table class="instructions-table">
+          <tbody>
+            <tr>
+              <td class="inst-num">1</td>
+              <td>Drag a store pill into a day box</td>
+            </tr>
+            <tr>
+              <td class="inst-num">2</td>
+              <td>Tap a pill to open details and change its day or availability</td>
+            </tr>
+            <tr>
+              <td class="inst-num">3</td>
+              <td>Save your week</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <div class="week-nav">
@@ -70,19 +82,10 @@
         <span><i class="legend-swatch coverage"></i> Not Available — needs coverage from someone else</span>
       </p>
 
-      <div class="layout">
-        <section>
-          <div id="calendar" class="calendar" aria-label="Your weekly schedule"></div>
-          <div id="warnings" class="warnings"></div>
-        </section>
-        <aside class="side-col">
-          <section class="detail-panel">
-            <h2>Selected visit</h2>
-            <div id="slotDetail" class="slot-detail">Tap a store card to see what to do at that visit.</div>
-            <div id="visitChecklist" class="visit-checklist"></div>
-          </section>
-        </aside>
-      </div>
+      <section>
+        <div id="calendar" class="calendar rep-calendar" aria-label="Your weekly schedule"></div>
+        <div id="warnings" class="warnings"></div>
+      </section>
     </div>
   </div>
 
@@ -93,26 +96,34 @@
     </div>
   </div>
 
+  <div id="visitOverlay" class="visit-overlay" hidden>
+    <div class="visit-overlay-backdrop" id="visitOverlayBackdrop"></div>
+    <div class="visit-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="overlayStore">
+      <header class="visit-overlay-header">
+        <div>
+          <h2 id="overlayStore"></h2>
+          <p id="overlayFlag" class="overlay-flag"></p>
+        </div>
+        <button type="button" id="btnCloseOverlay" class="subtle" aria-label="Close">Close</button>
+      </header>
+      <p id="overlayMeta" class="overlay-meta"></p>
+      <div class="overlay-controls">
+        <label class="field">Move to
+          <select id="overlayMoveDay"></select>
+        </label>
+        <label class="field" id="overlayAvailWrap" hidden>Your availability
+          <select id="overlayAvailability"></select>
+        </label>
+      </div>
+      <div id="overlayDetail" class="slot-detail"></div>
+      <div id="overlayChecklist" class="visit-checklist"></div>
+    </div>
+  </div>
+
   <template id="chitTemplate">
-    <div class="chit">
-      <div class="chit-top">
-        <span class="chit-store"></span>
-        <span class="chit-flag"></span>
-      </div>
-      <div class="chit-task"></div>
-      <div class="chit-account"></div>
-      <div class="chit-action"></div>
-      <div class="chit-row">
-        <label class="chit-assignee-wrap" hidden>Suggested lead (planning)
-          <select class="chit-assignee"></select>
-        </label>
-        <label class="chit-availability-wrap" hidden>Your availability
-          <select class="chit-availability"></select>
-        </label>
-        <label class="chit-move-wrap">Move to
-          <select class="chit-move-day"></select>
-        </label>
-      </div>
+    <div class="chit chit-pill">
+      <span class="chit-store"></span>
+      <span class="chit-flag"></span>
     </div>
   </template>
 

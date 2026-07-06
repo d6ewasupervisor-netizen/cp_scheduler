@@ -1,6 +1,5 @@
 // rep.js — "My Week" rep experience.
-// Tap a store card to select it; eligible days light up; tap a day header to place.
-// "Move to" select on each card is the fallback. One Save button, no admin surface.
+// Calendar grid with draggable store pills; tap a pill to expand details in an overlay.
 
 import {
   WORK_DAYS,
@@ -21,7 +20,6 @@ import {
   isCoverageNeeded,
   coverageNeededCount,
   applyRepAvailability,
-  d8UnassignedCount,
   stopSelectBubble,
   chitFlagLabel,
   REP_AVAILABILITY,
@@ -36,13 +34,15 @@ const state = {
   placements: [],
   slots: [],
   draftId: null,
-  selected: null, // selected placement (tap-to-place source)
+  drag: null,
+  expanded: null,
   dirty: false,
   lastValidationWarnings: [],
   lastAllValid: true,
 };
 
 let validateGen = 0;
+let dragJustEnded = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -95,14 +95,10 @@ function updateRepBanner() {
   }
   banner.hidden = false;
   $('repBannerTitle').textContent = state.rep.name;
-  const parts = [
+  $('repBannerMeta').textContent = [
     `District ${state.rep.district}`,
     `${state.placements.length} visit${state.placements.length === 1 ? '' : 's'} this week`,
-  ];
-  if (state.rep.isD8Pool) {
-    parts.push('pick a suggested lead per store (planning only)');
-  }
-  $('repBannerMeta').textContent = parts.join(' · ');
+  ].join(' · ');
   $('repSubtitle').textContent = state.rep.name;
 }
 
@@ -139,7 +135,8 @@ async function loadWeek() {
     state.draftId = null;
   }
 
-  state.selected = null;
+  state.drag = null;
+  closeVisitOverlay();
   state.dirty = false;
   setSaveState($('saveState'), 'saved');
   await revalidate();
@@ -179,20 +176,17 @@ function render(warnings, allValid) {
   const coverageCount = state.rep.allowsRepAvailability
     ? coverageNeededCount(state.placements)
     : 0;
-  const d8Unassigned = d8UnassignedCount(state.rep, state.placements);
   let statusExtra = allValid
     ? '<span class="pass">All days check out</span>'
-    : `<span class="fail">${invalidCount} on a day that doesn't work — tap them to fix</span>`;
+    : `<span class="fail">${invalidCount} on a day that doesn't work — move them to an allowed day</span>`;
   if (coverageCount) {
     statusExtra += ` · <span class="warn">${coverageCount} need coverage</span>`;
-  }
-  if (d8Unassigned) {
-    statusExtra += ` · <span class="warn">${d8Unassigned} need a suggested lead</span>`;
   }
   $('weekStatus').innerHTML = `${state.placements.length} visits · ${statusExtra}`;
 
   const byDay = placementsByDay(state.placements);
-  const selectedSlot = state.selected ? findSlot(state.slots, state.selected) : null;
+  const activePlacement = state.drag || state.expanded;
+  const activeSlot = activePlacement ? findSlot(state.slots, activePlacement) : null;
 
   const cal = $('calendar');
   cal.innerHTML = '';
@@ -202,26 +196,41 @@ function render(warnings, allValid) {
     col.className = 'day-col';
     col.dataset.day = day;
 
-    if (selectedSlot) {
-      col.classList.add(selectedSlot.allowedDays.includes(day) ? 'eligible' : 'ineligible');
+    if (activeSlot) {
+      col.classList.add(activeSlot.allowedDays.includes(day) ? 'eligible' : 'ineligible');
     }
 
     const date = dateForDay(week.start, day);
+    const count = (byDay[day] || []).length;
     col.innerHTML = `
       <div class="day-head">
-        <span>${day} <small>${shortDate(date)}</small></span>
-        <span class="day-count">${(byDay[day] || []).length ? byDay[day].length + ' visit' + (byDay[day].length > 1 ? 's' : '') : ''}</span>
+        <span class="day-label">${day} <small>${shortDate(date)}</small></span>
+        <span class="day-count">${count ? count + ' visit' + (count > 1 ? 's' : '') : ''}</span>
       </div>
       <div class="day-body"></div>`;
 
-    col.querySelector('.day-head').addEventListener('click', () => {
-      if (!state.selected || !selectedSlot) return;
-      placeSelectedOn(day, selectedSlot);
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const slot = state.drag ? findSlot(state.slots, state.drag) : null;
+      const ok = slot?.allowedDays.includes(day);
+      col.classList.toggle('drag-over-ok', !!ok);
+      col.classList.toggle('drag-over-bad', !ok);
+    });
+    col.addEventListener('dragleave', () =>
+      col.classList.remove('drag-over-ok', 'drag-over-bad')
+    );
+    col.addEventListener('drop', (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over-ok', 'drag-over-bad');
+      if (!state.drag) return;
+      const slot = findSlot(state.slots, state.drag);
+      moveTo(state.drag, slot, day);
+      state.drag = null;
     });
 
     const body = col.querySelector('.day-body');
     for (const p of byDay[day] || []) {
-      body.appendChild(makeChit(p));
+      body.appendChild(makePill(p));
     }
     cal.appendChild(col);
   }
@@ -229,6 +238,18 @@ function render(warnings, allValid) {
   renderWarnings(warnings);
   $('repCoverageLegend').hidden =
     !state.rep?.allowsRepAvailability || coverageCount === 0;
+
+  if (state.expanded) {
+    highlightExpandedPill(state.expanded);
+  }
+}
+
+function highlightExpandedPill(p) {
+  document.querySelectorAll('.chit-pill.expanded').forEach((el) => el.classList.remove('expanded'));
+  const key = slotKey(p);
+  document.querySelectorAll('.chit-pill').forEach((el) => {
+    if (el.dataset.key === key) el.classList.add('expanded');
+  });
 }
 
 function scrollDayIntoView(day) {
@@ -238,107 +259,72 @@ function scrollDayIntoView(day) {
     ?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
 }
 
-function placeSelectedOn(day, slot) {
-  const p = state.selected;
-  if (!slot.allowedDays.includes(day)) {
-    toast(`Store ${p.storeNum} can't go on ${day}. Green days only.`, 'bad');
+function moveTo(p, slot, day) {
+  if (!slot?.allowedDays.includes(day)) {
+    toast(
+      `Store ${p.storeNum} can't go on ${day}. Allowed: ${slot?.allowedDays.join(', ') || 'none'}`,
+      'bad'
+    );
     return;
   }
+  const moved = p.dayOfWeek !== day;
   p.dayOfWeek = day;
   p.scheduledDate = dateForDay(currentWeek().start, day);
-  state.selected = null;
   markDirty();
-  toast(`Store ${p.storeNum} moved to ${day}`, 'ok', 1800);
-  scrollDayIntoView(day);
+  if (moved) {
+    toast(`Store ${p.storeNum} moved to ${day}`, 'ok', 1800);
+    scrollDayIntoView(day);
+  }
+  if (state.expanded && slotKey(state.expanded) === slotKey(p)) {
+    populateOverlayControls(p, slot);
+  }
   revalidate();
 }
 
-function makeChit(p) {
+function makePill(p) {
   const tpl = $('chitTemplate');
   const el = tpl.content.firstElementChild.cloneNode(true);
   const slot = findSlot(state.slots, p);
 
+  el.dataset.key = slotKey(p);
+
   if (!p._valid) el.classList.add('invalid');
   else if (isCoverageNeeded(p)) el.classList.add('needs-coverage');
-  else if (state.rep.isD8Pool && !p.proposedAssignee) el.classList.add('unassigned');
-  else if (state.rep.isD8Pool && p.proposedAssignee) el.classList.add('assigned');
-  if (state.selected && slotKey(state.selected) === slotKey(p)) el.classList.add('selected');
 
+  const flag = chitFlagLabel(p, state.rep, { hideD8Lead: true });
   el.querySelector('.chit-store').textContent = `#${p.storeNum}`;
-  el.querySelector('.chit-flag').textContent = chitFlagLabel(p, state.rep);
-  el.querySelector('.chit-task').textContent = orderTimingLine(slot, state.slots);
-  el.querySelector('.chit-account').textContent = p.account || '';
-  el.querySelector('.chit-action').textContent = (p.action || '').slice(0, 48);
-
-  // D8 pool: pick who takes the visit
-  if (state.rep.isD8Pool) {
-    const wrap = el.querySelector('.chit-assignee-wrap');
-    wrap.hidden = false;
-    const select = wrap.querySelector('.chit-assignee');
-    const assignees = state.rep.proposedAssignees?.length
-      ? state.rep.proposedAssignees
-      : [];
-    select.innerHTML =
-      '<option value="">Choose suggested lead…</option>' +
-      assignees
-        .map(
-          (a) =>
-            `<option value="${a.name}"${p.proposedAssignee === a.name ? ' selected' : ''}>${a.label || a.name}</option>`
-        )
-        .join('');
-    stopSelectBubble(select);
-    select.addEventListener('change', () => {
-      p.proposedAssignee = select.value;
-      markDirty();
-      if (p.proposedAssignee) {
-        toast(`Suggested lead: ${p.proposedAssignee}`, 'ok', 2200);
-      }
-      if (state.selected && slotKey(state.selected) === slotKey(p)) showDetail(p);
-      revalidate();
-    });
+  const flagEl = el.querySelector('.chit-flag');
+  if (flag && flag !== 'OK') {
+    flagEl.textContent = flag;
+    flagEl.title = flag;
+  } else {
+    flagEl.hidden = true;
   }
 
-  // D1 rep (Patricia): mark visits Not Available when coverage is needed
-  if (state.rep.allowsRepAvailability) {
-    const wrap = el.querySelector('.chit-availability-wrap');
-    wrap.hidden = false;
-    const select = wrap.querySelector('.chit-availability');
-    const current = p.repAvailability || REP_AVAILABILITY.AVAILABLE;
-    select.innerHTML = `
-      <option value="${REP_AVAILABILITY.AVAILABLE}"${current !== REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Available</option>
-      <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
-    stopSelectBubble(select);
-    select.addEventListener('change', () => {
-      applyRepAvailability(p, select.value);
-      markDirty();
-      if (state.selected && slotKey(state.selected) === slotKey(p)) showDetail(p);
-      render(state.lastValidationWarnings, state.lastAllValid);
-      revalidate();
-    });
-  }
-
-  // Move-to fallback (always available)
-  const moveSelect = el.querySelector('.chit-move-day');
-  moveSelect.innerHTML = WORK_DAYS.map((day) => {
-    const allowed = slot?.allowedDays.includes(day);
-    return `<option value="${day}"${p.dayOfWeek === day ? ' selected' : ''}${allowed ? '' : ' disabled'}>${allowed ? day : day + ' — not allowed'}</option>`;
-  }).join('');
-  stopSelectBubble(moveSelect);
-  moveSelect.addEventListener('change', () => {
-    p.dayOfWeek = moveSelect.value;
-    p.scheduledDate = dateForDay(currentWeek().start, moveSelect.value);
-    markDirty();
+  el.draggable = !isMobileLayout();
+  el.addEventListener('dragstart', (e) => {
+    if (isMobileLayout()) {
+      e.preventDefault();
+      return;
+    }
+    state.drag = p;
+    e.dataTransfer.effectAllowed = 'move';
+    el.classList.add('dragging');
+    revalidate();
+  });
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    state.drag = null;
+    dragJustEnded = true;
+    setTimeout(() => {
+      dragJustEnded = false;
+    }, 0);
     revalidate();
   });
 
-  // Tap to select / deselect
-  el.addEventListener('click', (e) => {
-    if (e.target.closest('select')) return;
-    state.selected =
-      state.selected && slotKey(state.selected) === slotKey(p) ? null : p;
-    showDetail(p);
-    if (state.selected) scrollDayIntoView(p.dayOfWeek);
-    revalidate();
+  el.addEventListener('click', () => {
+    if (dragJustEnded) return;
+    openVisitOverlay(p);
   });
 
   return el;
@@ -346,7 +332,6 @@ function makeChit(p) {
 
 function renderWarnings(warnings) {
   const warnEl = $('warnings');
-  const d8Unassigned = d8UnassignedCount(state.rep, state.placements);
   const coverageCount = state.rep.allowsRepAvailability
     ? coverageNeededCount(state.placements)
     : 0;
@@ -355,9 +340,6 @@ function renderWarnings(warnings) {
     all.unshift({
       message: `${coverageCount} visit(s) marked Not Available — someone else will need to cover those shifts.`,
     });
-  }
-  if (d8Unassigned) {
-    all.unshift({ message: `${d8Unassigned} visit(s) still need a name picked.` });
   }
   if (all.length) {
     warnEl.classList.add('show');
@@ -371,7 +353,64 @@ function renderWarnings(warnings) {
   }
 }
 
-async function showDetail(p) {
+/* ---------- Visit overlay ---------- */
+
+function openVisitOverlay(p) {
+  state.expanded = p;
+  const slot = findSlot(state.slots, p);
+  const overlay = $('visitOverlay');
+  overlay.hidden = false;
+  document.body.classList.add('overlay-open');
+
+  $('overlayStore').textContent = `#${p.storeNum}`;
+  const overlayFlag = chitFlagLabel(p, state.rep, { hideD8Lead: true });
+  $('overlayFlag').textContent = overlayFlag || '';
+  $('overlayFlag').hidden = !overlayFlag;
+  $('overlayMeta').textContent = [
+    orderTimingLine(slot, state.slots),
+    p.account || '',
+    (p.action || '').slice(0, 80),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  populateOverlayControls(p, slot);
+  loadOverlayDetail(p);
+  highlightExpandedPill(p);
+  revalidate();
+}
+
+function populateOverlayControls(p, slot) {
+  const moveSelect = $('overlayMoveDay');
+  moveSelect.innerHTML = WORK_DAYS.map((day) => {
+    const allowed = slot?.allowedDays.includes(day);
+    return `<option value="${day}"${p.dayOfWeek === day ? ' selected' : ''}${allowed ? '' : ' disabled'}>${allowed ? day : day + ' — not allowed'}</option>`;
+  }).join('');
+  stopSelectBubble(moveSelect);
+  moveSelect.onchange = () => moveTo(p, slot, moveSelect.value);
+
+  const availWrap = $('overlayAvailWrap');
+  if (state.rep.allowsRepAvailability) {
+    availWrap.hidden = false;
+    const availSelect = $('overlayAvailability');
+    const current = p.repAvailability || REP_AVAILABILITY.AVAILABLE;
+    availSelect.innerHTML = `
+      <option value="${REP_AVAILABILITY.AVAILABLE}"${current !== REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Available</option>
+      <option value="${REP_AVAILABILITY.NOT_AVAILABLE}"${current === REP_AVAILABILITY.NOT_AVAILABLE ? ' selected' : ''}>Not Available</option>`;
+    stopSelectBubble(availSelect);
+    availSelect.onchange = () => {
+      applyRepAvailability(p, availSelect.value);
+      markDirty();
+      $('overlayFlag').textContent = chitFlagLabel(p, state.rep, { hideD8Lead: true }) || '';
+      loadOverlayDetail(p);
+      revalidate();
+    };
+  } else {
+    availWrap.hidden = true;
+  }
+}
+
+async function loadOverlayDetail(p) {
   try {
     const detail = await api('/schedule/visit-detail', {
       method: 'POST',
@@ -383,23 +422,30 @@ async function showDetail(p) {
       }),
     });
     const lines = [
-      `Store #${detail.storeNum} — ${detail.account}`,
       detail.visitType,
       '',
       ...detail.brief,
       '',
       `Scheduled: ${detail.scheduledDay || '—'} (${detail.scheduledDate || '—'})`,
-      p._valid ? 'Day works ✓' : 'Wrong day — move it to a green day',
+      p._valid ? 'Day works ✓' : 'Wrong day — move to an allowed day',
     ];
-    $('slotDetail').textContent = lines.join('\n');
-    $('visitChecklist').innerHTML =
+    $('overlayDetail').textContent = lines.join('\n');
+    $('overlayChecklist').innerHTML =
       '<div class="visit-type">Checklist</div><ul>' +
       detail.checklist.map((c) => `<li>${c}</li>`).join('') +
       '</ul>';
   } catch {
-    $('slotDetail').textContent = 'Could not load visit details.';
-    $('visitChecklist').innerHTML = '';
+    $('overlayDetail').textContent = 'Could not load visit details.';
+    $('overlayChecklist').innerHTML = '';
   }
+}
+
+function closeVisitOverlay() {
+  state.expanded = null;
+  $('visitOverlay').hidden = true;
+  document.body.classList.remove('overlay-open');
+  document.querySelectorAll('.chit-pill.expanded').forEach((el) => el.classList.remove('expanded'));
+  revalidate();
 }
 
 /* ---------- Save ---------- */
@@ -498,6 +544,8 @@ function showInitError(err) {
     $('btnNextWeek').addEventListener('click', () => changeWeek(1));
     $('weekSelect').addEventListener('change', (e) => jumpToWeek(e.target.value));
     $('btnSignOut').addEventListener('click', signOut);
+    $('btnCloseOverlay').addEventListener('click', closeVisitOverlay);
+    $('visitOverlayBackdrop').addEventListener('click', closeVisitOverlay);
 
     window.addEventListener('beforeunload', (e) => {
       if (state.dirty) e.preventDefault();

@@ -45,11 +45,12 @@ export function stopSelectBubble(el) {
   }
 }
 
-export function chitFlagLabel(p, rep, { admin = false } = {}) {
+export function chitFlagLabel(p, rep, { admin = false, hideD8Lead = false } = {}) {
   if (!p._valid) return admin ? 'Conflict' : 'Wrong day';
   if (isCoverageNeeded(p)) return 'Needs coverage';
   if (rep?.isD8Pool) {
     if (p.proposedAssignee) return `Lead: ${p.proposedAssignee}`;
+    if (hideD8Lead) return '';
     return admin ? 'Unassigned' : 'Pick a lead';
   }
   return '';

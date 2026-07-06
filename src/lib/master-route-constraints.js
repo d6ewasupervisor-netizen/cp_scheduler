@@ -132,7 +132,7 @@ function validatePlacements(slots, placements) {
 
   const warnings = [];
   for (const [day, stores] of Object.entries(byDay)) {
-    if (stores.length >= 3) {
+    if (stores.length >= 4) {
       warnings.push({
         type: 'capacity',
         day,

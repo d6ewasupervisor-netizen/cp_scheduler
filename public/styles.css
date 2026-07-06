@@ -185,7 +185,51 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   padding: 0.9rem 1rem 2rem;
 }
 
-/* ---------- Steps strip (rep) ---------- */
+/* ---------- Instructions (rep) ---------- */
+
+.instructions-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.9rem;
+  overflow: hidden;
+}
+
+.instructions-heading {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+.instructions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.instructions-table td {
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.instructions-table tr:last-child td {
+  border-bottom: none;
+}
+
+.instructions-table .inst-num {
+  width: 2rem;
+  font-weight: 700;
+  color: var(--text);
+  padding-right: 0;
+}
+
+/* ---------- Steps strip (legacy / admin) ---------- */
 
 .steps-strip {
   display: flex;
@@ -351,9 +395,186 @@ select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   padding: 0.2rem 0.2rem 0.35rem;
 }
 
-/* eligible day tap target (rep placement mode) */
-.day-col.eligible .day-head { cursor: pointer; }
-.day-col.eligible .day-head::after {
+body.mode-rep .day-body:empty::after {
+  content: 'Drop visits here';
+}
+
+/* eligible day highlight while dragging */
+body.mode-rep .day-col.eligible .day-head::after {
+  content: 'Drop here';
+  color: var(--ok);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+/* ---------- Chit pills (rep calendar) ---------- */
+
+.chit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  min-height: 0;
+  user-select: none;
+}
+
+.chit-pill .chit-store {
+  font-size: 0.88rem;
+}
+
+.chit-pill .chit-flag {
+  font-size: 0.68rem;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chit-pill.expanded {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.chit-pill.dragging {
+  opacity: 0.55;
+}
+
+body.mode-rep .day-body {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.4rem;
+  min-height: 4.5rem;
+}
+
+body.mode-rep .rep-calendar {
+  gap: 0.65rem;
+}
+
+@media (min-width: 900px) {
+  body.mode-rep .rep-calendar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  body.mode-rep .day-col {
+    border-left-width: 1px;
+    border-top: 4px solid var(--border);
+    min-height: 10rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  body.mode-rep .day-col.eligible {
+    border-left-color: var(--border);
+    border-top-color: var(--ok);
+    background: linear-gradient(180deg, var(--ok-soft), var(--surface) 28%);
+  }
+
+  body.mode-rep .day-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+  }
+
+  body.mode-rep .day-body {
+    flex: 1;
+  }
+}
+
+/* ---------- Visit overlay (rep) ---------- */
+
+.visit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.visit-overlay[hidden] {
+  display: none !important;
+}
+
+.visit-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 18, 0.72);
+}
+
+.visit-overlay-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 520px);
+  max-height: min(92vh, 720px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+body.overlay-open {
+  overflow: hidden;
+}
+
+.visit-overlay-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.visit-overlay-header h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.overlay-flag {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.overlay-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin: 0 0 0.85rem;
+  line-height: 1.4;
+}
+
+.overlay-controls {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.overlay-controls .field {
+  margin: 0;
+}
+
+@media (min-width: 900px) {
+  .visit-overlay {
+    align-items: center;
+    padding: 1rem;
+  }
+
+  .visit-overlay-panel {
+    border-radius: var(--radius);
+    max-height: min(88vh, 720px);
+  }
+}
+
+/* eligible day tap target (admin placement mode) */
+body.mode-admin .day-col.eligible .day-head { cursor: pointer; }
+body.mode-admin .day-col.eligible .day-head::after {
   content: 'Tap to place here';
   color: var(--ok);
   font-size: 0.74rem;
