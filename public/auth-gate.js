@@ -203,16 +203,16 @@
     revealPage();
 
     var path = (location.pathname || '/').toLowerCase();
-    // Reps landing on Planning Desk → their rep week view.
+    // Reps landing on Planning Desk → team dashboard (not admin tools).
     // Admins on /rep.html without ?preview stay on Planning Desk (not locked to one rep).
-    // Shift Day (/shiftday.html) is available to both layers.
+    // Dashboard + Shift Day are available to both layers.
     if (path === '/' || path === '/index.html') {
       try {
         var meRes = await cpAuthFetch('/api/auth/me', { noBounceOn401: true });
         if (meRes.ok) {
           var me = await meRes.json();
           if (me.layer === 'rep') {
-            location.replace('/shiftday.html' + location.search);
+            location.replace('/dashboard.html' + location.search);
             return;
           }
         }

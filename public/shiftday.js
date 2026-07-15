@@ -55,12 +55,23 @@ function defaultWeekIndex(weeks) {
 }
 
 async function resolveRepKey() {
+  const params = new URLSearchParams(location.search);
+  const qRep = params.get('rep');
+
+  // Admin deep-link / preview: open a specific rep's Shift Day
+  if (state.user?.isAdmin && qRep) {
+    return qRep;
+  }
+
   const mapped = state.user?.email
     ? (await api('/shift-day/reps')).find((r) =>
         (r.emails || []).map((e) => e.toLowerCase()).includes(state.user.email.toLowerCase())
       )
     : null;
   if (mapped) return mapped.repKey;
+
+  // Non-admin with ?rep= only if it matches nothing → still fall through to picker
+  if (qRep && state.user?.isAdmin) return qRep;
 
   const saved = localStorage.getItem('cp_shift_rep');
   if (saved) return saved;
@@ -325,6 +336,12 @@ async function init() {
 
   state.weeks = await api('/shift-day/weeks');
   state.weekIndex = defaultWeekIndex(state.weeks);
+  const params = new URLSearchParams(location.search);
+  const qWeek = params.get('weekStart');
+  if (qWeek) {
+    const idx = state.weeks.findIndex((w) => w.start === qWeek);
+    if (idx >= 0) state.weekIndex = idx;
+  }
   $('sdWeekSelect').innerHTML = state.weeks
     .map(
       (w, i) =>
@@ -365,6 +382,16 @@ async function init() {
   };
 
   await loadWeek();
+
+  // Deep-link from dashboard: open a specific store shift
+  const qDate = params.get('date');
+  const qStore = params.get('store');
+  if (qDate && qStore != null) {
+    const hit = state.shifts.find(
+      (s) => String(s.date) === String(qDate) && Number(s.actualStore) === Number(qStore)
+    );
+    if (hit) openDetail(hit.id);
+  }
 }
 
 init().catch((err) => {

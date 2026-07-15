@@ -10,7 +10,7 @@ function parseEmailList(envVal) {
 // Full-admin accounts (Planning Desk, match, dry-run, live UI, photo delivery).
 // Explicit list always wins over rep-layer mapping.
 const DEFAULT_ADMIN_EMAILS =
-  'tyson.gauthier@retailodyssey.com,d6ewa.supervisor@gmail.com,tgauthier2011@gmail.com';
+  'tyson.gauthier@retailodyssey.com,d6ewa.supervisor@gmail.com,tgauthier2011@gmail.com,aiyana.natarisalazar@retailodyssey.com';
 
 // Rep-layer accounts: Shift Day only, scoped to their repKey.
 // Do NOT put supervisor/admin tester emails here — use CP_SCHEDULER_ADMIN_EMAILS instead.

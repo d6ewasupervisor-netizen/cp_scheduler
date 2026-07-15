@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f16">
+  <title>Central Pet — Team Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/auth-gate.js"></script>
+  <style>
+    /* Mobile-first dashboard chrome on top of shared dark system */
+    body.mode-dashboard {
+      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+    .dash-page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0.75rem 1rem 2rem;
+    }
+    .dash-who {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0.75rem 0 1rem;
+    }
+    .dash-who .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      min-height: 36px;
+    }
+    .dash-who .pill strong { color: var(--text); font-weight: 600; }
+    .dash-who .pill.you {
+      border-color: rgba(78, 161, 232, 0.45);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .dash-tabs {
+      display: flex;
+      gap: 0.4rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 0.35rem;
+      margin-bottom: 0.85rem;
+      scroll-snap-type: x proximity;
+    }
+    .dash-tabs button {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 0.55rem 0.95rem;
+      min-height: 44px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .dash-tabs button[aria-selected="true"] {
+      background: var(--accent-soft);
+      border-color: rgba(78, 161, 232, 0.5);
+      color: var(--accent);
+    }
+    .dash-week-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+    }
+    .dash-week-row select {
+      flex: 1;
+      min-height: 48px;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 0.55rem 0.75rem;
+      font-size: 1rem;
+    }
+    .dash-week-row button.icon-btn {
+      min-width: 48px;
+      min-height: 48px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
+    .dash-day {
+      margin-bottom: 0.9rem;
+    }
+    .dash-day-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 0 0 0.4rem;
+      padding: 0 0.15rem;
+    }
+    .dash-day-head h2 {
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+    }
+    .dash-day-head .date {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .dash-shift {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 0.95rem;
+      margin: 0 0 0.5rem;
+      color: inherit;
+      cursor: pointer;
+      min-height: 64px;
+      box-shadow: var(--shadow);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dash-shift:active { transform: scale(0.99); background: var(--surface-2); }
+    .dash-shift:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .dash-shift-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+    .dash-shift-store {
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    .dash-shift-store span {
+      font-weight: 500;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .dash-shift-meta {
+      margin-top: 0.35rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .dash-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.45rem;
+    }
+    .dash-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.45rem;
+      border-radius: 6px;
+      background: var(--surface-3);
+      color: var(--muted);
+    }
+    .dash-badge.order { background: rgba(78,161,232,.18); color: var(--accent); }
+    .dash-badge.load { background: var(--warn-soft); color: var(--warn); }
+    .dash-badge.sealed { background: var(--ok-soft); color: var(--ok); }
+    .dash-badge.progress { background: rgba(78,161,232,.12); color: var(--accent); }
+    .dash-empty {
+      color: var(--faint);
+      font-size: 0.9rem;
+      padding: 0.75rem 0.25rem;
+    }
+    .dash-status {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    .dash-error {
+      background: var(--bad-soft);
+      border: 1px solid rgba(240,101,90,.35);
+      color: var(--bad);
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--radius-sm);
+      margin: 0.75rem 0;
+    }
+    .dash-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+    .dash-actions a, .dash-actions button {
+      min-height: 44px;
+      padding: 0.55rem 0.9rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+    }
+    .dash-actions a.primary {
+      background: var(--accent-deep);
+      border-color: var(--accent-deep);
+      color: #fff;
+    }
+    @media (min-width: 760px) {
+      .dash-page { padding-top: 1rem; }
+      .dash-shift:hover { border-color: rgba(78,161,232,.4); }
+    }
+  </style>
+</head>
+<body class="mode-dashboard">
+  <header class="topbar">
+    <div class="topbar-row">
+      <div>
+        <h1>Central Pet</h1>
+        <p class="subtitle" id="dashSubtitle">Team schedule</p>
+      </div>
+      <div class="user-bar" id="userBar" hidden>
+        <span class="layer-badge" id="layerBadge">…</span>
+        <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnSignOut" class="subtle">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="dash-page">
+    <div id="dashLoading" class="dash-status">Loading your schedule…</div>
+    <div id="dashError" class="dash-error" hidden></div>
+
+    <section id="dashApp" hidden>
+      <div class="dash-who" id="dashWho" aria-label="Signed-in identity"></div>
+
+      <div class="dash-tabs" id="dashTabs" role="tablist" aria-label="Rep schedules" hidden></div>
+
+      <div class="dash-week-row">
+        <button type="button" class="icon-btn" id="btnPrevWeek" aria-label="Previous week">‹</button>
+        <label class="sr-only" for="weekSelect">Week</label>
+        <select id="weekSelect" aria-label="Select week"></select>
+        <button type="button" class="icon-btn" id="btnNextWeek" aria-label="Next week">›</button>
+      </div>
+
+      <div id="dashSchedule"></div>
+
+      <div class="dash-actions">
+        <a class="primary" id="linkFullShiftDay" href="/shiftday.html">Open full Shift Day</a>
+        <a id="linkPlanning" href="/" hidden>Planning Desk</a>
+      </div>
+    </section>
+  </main>
+
+  <style>
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
+  </style>
+  <script type="module" src="/dashboard.js"></script>
+</body>
+</html>

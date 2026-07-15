@@ -14,9 +14,11 @@ describe('cp-roles', () => {
     assert.ok(ADMIN_EMAILS.includes('tyson.gauthier@retailodyssey.com'));
     assert.ok(ADMIN_EMAILS.includes('d6ewa.supervisor@gmail.com'));
     assert.ok(ADMIN_EMAILS.includes('tgauthier2011@gmail.com'));
+    assert.ok(ADMIN_EMAILS.includes('aiyana.natarisalazar@retailodyssey.com')); // Wolf
     assert.equal(cpSchedulerLayer('tyson.gauthier@retailodyssey.com'), 'admin');
     assert.equal(cpSchedulerLayer('d6ewa.supervisor@gmail.com'), 'admin');
     assert.equal(cpSchedulerLayer('tgauthier2011@gmail.com'), 'admin');
+    assert.equal(cpSchedulerLayer('aiyana.natarisalazar@retailodyssey.com'), 'admin');
   });
 
   it('maps D8 field reps to rep layer only', () => {
