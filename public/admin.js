@@ -459,6 +459,346 @@ async function showDetail(p) {
   }
 }
 
+/* ---------- Stage 3: guided visit drafts (read-only Planning Desk view) ---------- */
+
+function photoDeliveryLabel(pd) {
+  if (!pd) return { tag: 'tag-unmatched', text: 'photos: —' };
+  const s = pd.summary;
+  const bits = s
+    ? `sent ${s.sent || 0}/${s.total || 0}${s.failed ? ` · failed ${s.failed}` : ''}${s.pending ? ` · pending ${s.pending}` : ''}`
+    : pd.status || '—';
+  const tag =
+    pd.status === 'complete'
+      ? 'tag-ambiguous'
+      : pd.status === 'failed' || (s && s.failed > 0)
+        ? 'tag-unmatched'
+        : 'tag-unmatched';
+  return { tag, text: `photos: ${pd.status || '—'}${s ? ` (${bits})` : ''}` };
+}
+
+async function loadVisitDrafts() {
+  const host = $('visitDraftsList');
+  if (!host) return;
+  try {
+    const drafts = await api('/shift-day/visit/drafts');
+    if (!drafts.length) {
+      host.innerHTML = '<div class="mw-row">No visit drafts yet.</div>';
+      return;
+    }
+    host.innerHTML = drafts
+      .map((d) => {
+        const tag = d.status === 'ready_for_prod' ? 'tag-ambiguous' : 'tag-unmatched';
+        const statusLabel = d.status === 'ready_for_prod' ? 'sealed' : 'in progress';
+        const pd = photoDeliveryLabel(d.photoDelivery);
+        const failed = d.photoDelivery?.summary?.failed > 0;
+        const resendBtn = failed
+          ? ` <button type="button" class="subtle btn-resend-photos" data-rep="${escapeHtml(d.repKey)}" data-date="${escapeHtml(d.date)}" data-store="${escapeHtml(String(d.actualStore))}">Re-send failed</button>`
+          : '';
+        return `<div class="mw-row"><span class="${tag}">${statusLabel}</span> ${escapeHtml(d.repKey)} · ${escapeHtml(d.date)} · store ${escapeHtml(String(d.actualStore))} · step ${escapeHtml(d.currentStep)} · updated ${new Date(d.updatedAt).toLocaleString()} · <span class="${pd.tag}">${escapeHtml(pd.text)}</span>${resendBtn}</div>`;
+      })
+      .join('');
+    host.querySelectorAll('.btn-resend-photos').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const res = await window.cpAuthFetch('/api/central-pet/shift-day/photo-delivery/resend-failed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              rep: btn.dataset.rep,
+              date: btn.dataset.date,
+              store: Number(btn.dataset.store),
+            }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || res.statusText);
+          const d = body.delivery;
+          toast(
+            d?.message ||
+              `Photo delivery ${d?.status || 'done'}: sent ${d?.summary?.sent || 0}/${d?.summary?.total || 0}`,
+            d?.status === 'complete' || d?.status === 'disabled' ? 'ok' : 'warn',
+            5000
+          );
+          await loadVisitDrafts();
+        } catch (err) {
+          toast(`Re-send failed: ${err.message}`, 'bad', 5000);
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (err) {
+    host.innerHTML = `<div class="mw-row">Could not load visit drafts: ${err.message}</div>`;
+  }
+}
+
+/* ---------- Stage 4: prod overlay dry run + gated live transmit ---------- */
+
+const liveUi = {
+  liveTransmitEnabled: false,
+  allowlist: new Set(),
+};
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function draftIdOf(repKey, date, store) {
+  return `${repKey}/${date}-${store}`;
+}
+
+async function refreshLiveStatus() {
+  const el = $('liveTransmitStatus');
+  const badge = $('dryRunLiveBadge');
+  try {
+    const st = await api('/shift-day/live/status');
+    liveUi.liveTransmitEnabled = !!st.liveTransmitEnabled;
+    liveUi.allowlist = new Set(st.draftIds || []);
+    if (el) {
+      el.textContent = st.liveTransmitEnabled
+        ? `LIVE_TRANSMIT on · ${st.allowlistCount} draft(s) allowlisted · Transmit (LIVE) appears only for allowlisted visits`
+        : 'LIVE_TRANSMIT off — dry-run only (no write path can send)';
+    }
+    if (badge) {
+      badge.textContent = st.liveTransmitEnabled ? 'live armed on server' : 'review only';
+      badge.className = st.liveTransmitEnabled ? 'tag-ambiguous' : 'tag-unmatched';
+    }
+  } catch (err) {
+    if (el) el.textContent = `Live status unavailable: ${err.message}`;
+  }
+}
+
+function renderDryRunCall(call) {
+  return `
+    <details class="mw-row" style="display:block">
+      <summary><span class="tag-unmatched">${call.seq}</span> ${escapeHtml(call.method)} ${escapeHtml(call.url)}${call.reconstructed ? ' <em>(reconstructed)</em>' : ''}</summary>
+      <div style="margin:.4rem 0 0 1rem; font-size:.85em">
+        <div><strong>sourceRef:</strong> ${escapeHtml(call.sourceRef)}</div>
+        ${call.dependsOn?.length ? `<div><strong>dependsOn:</strong> steps ${call.dependsOn.join(', ')}</div>` : ''}
+        <div><strong>headers:</strong> <code>${escapeHtml(JSON.stringify(call.headers))}</code></div>
+        <div><strong>payload:</strong></div>
+        <pre style="white-space:pre-wrap; word-break:break-word">${escapeHtml(JSON.stringify(call.payload, null, 2))}</pre>
+      </div>
+    </details>`;
+}
+
+function renderLiveArmControls({ runId, file, store, draftId, partial, liveState }) {
+  if (!liveUi.liveTransmitEnabled || !liveUi.allowlist.has(draftId)) {
+    return `<div class="mw-row" style="display:block;border:1px dashed var(--border-strong);padding:.65rem;margin:.5rem 0">
+      LIVE controls hidden: flag ${liveUi.liveTransmitEnabled ? 'on' : 'off'}, allowlisted ${liveUi.allowlist.has(draftId) ? 'yes' : 'no'} for <code>${escapeHtml(draftId)}</code>
+    </div>`;
+  }
+  const mode = partial ? 'resume' : 'start';
+  const label = partial ? 'Resume transmit (LIVE)' : 'Transmit (LIVE)';
+  const stateLine = liveState?.state
+    ? `Executor: <code>${escapeHtml(liveState.state.status || '—')}</code> lastOk=${escapeHtml(String(liveState.state.lastSuccessfulSeq ?? '—'))} failed=${escapeHtml(String(liveState.state.failedSeq ?? '—'))}`
+    : 'No prior executor state on disk.';
+  return `
+    <div class="mw-row" style="display:block; border:1px solid var(--warn); padding:.65rem; margin:.5rem 0; border-radius:6px">
+      <strong>${escapeHtml(label)}</strong> — two-tap arm: type store number <code>${escapeHtml(String(store))}</code> to confirm.
+      <p class="week-status" style="margin:.35rem 0">${stateLine}</p>
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.4rem; align-items:end">
+        <label class="field" style="margin:0">Confirm store
+          <input type="text" id="liveConfirmStore" inputmode="numeric" placeholder="${escapeHtml(String(store))}" value="${partial ? escapeHtml(String(store)) : ''}" autocomplete="off">
+        </label>
+        <label class="field" style="margin:0; flex:1; min-width:14rem">
+          <input type="checkbox" id="liveTestMode" ${partial ? 'checked' : ''}> testMode (round-trip vs golden export)
+        </label>
+        <label class="field" style="margin:0; flex:2; min-width:16rem">Golden export path (required if testMode)
+          <input type="text" id="liveGoldenPath" placeholder="C:/Users/tgaut/Downloads/cp_tests/visit-26822165" value="${partial ? 'C:/Users/tgaut/Downloads/cp_tests/visit-26822165' : ''}" autocomplete="off">
+        </label>
+        <button type="button" class="primary" id="btnLiveTransmit"
+          data-run="${escapeHtml(runId)}" data-file="${escapeHtml(file)}" data-store="${escapeHtml(String(store))}"
+          data-draft="${escapeHtml(draftId)}" data-mode="${mode}">${escapeHtml(label)}</button>
+      </div>
+      <p class="week-status" style="margin:.4rem 0 0">No automatic rollback. Uses morning sas-auth token+CSRF+cookies (not app user DB, not PIN). testMode appends POST …/recomplete/. Completed-visit T&E may soft-skip per automator (in-progress only). Logs under <code>live/${escapeHtml(runId)}/</code>.</p>
+      <div id="liveTransmitResult"></div>
+      <div style="margin-top:.5rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:end">
+        <label class="field" style="margin:0; flex:2; min-width:16rem">Post-run export path (after re-export)
+          <input type="text" id="livePostPath" placeholder="C:\\Users\\…\\Downloads\\cp_tests\\visit-26822165" autocomplete="off">
+        </label>
+        <button type="button" class="subtle" id="btnRoundtripDiff"
+          data-run="${escapeHtml(runId)}" data-file="${escapeHtml(file)}" data-draft="${escapeHtml(draftId)}">Run round-trip diff</button>
+      </div>
+      <div id="liveRoundtripResult"></div>
+    </div>`;
+}
+
+async function viewDryRunVisit(runId, file) {
+  const host = $('dryRunResult');
+  try {
+    const assembled = await api(`/shift-day/dryrun/${encodeURIComponent(runId)}/${encodeURIComponent(file)}`);
+    let partial = false;
+    let liveState = null;
+    try {
+      liveState = await api(
+        `/shift-day/live/state/${encodeURIComponent(runId)}/${encodeURIComponent(file)}`
+      );
+      partial = liveState?.registry?.status === 'partial' || liveState?.state?.status === 'partial';
+    } catch {
+      /* live state optional */
+    }
+    const draftId = draftIdOf(assembled.repKey, assembled.date, assembled.actualStore);
+    host.innerHTML =
+      `<p class="week-status">${assembled.repKey} · ${assembled.date} · store ${assembled.actualStore} · visit ${assembled.visitId} · ${assembled.calls?.length || 0} calls · draft <code>${escapeHtml(draftId)}</code></p>` +
+      renderLiveArmControls({
+        runId,
+        file,
+        store: assembled.actualStore,
+        draftId,
+        partial,
+        liveState,
+      }) +
+      (assembled.calls || []).map(renderDryRunCall).join('');
+
+    $('btnLiveTransmit')?.addEventListener('click', () => armAndTransmit());
+    $('btnRoundtripDiff')?.addEventListener('click', () => runRoundtripDiffUi());
+  } catch (err) {
+    host.innerHTML = `<div class="mw-row">Could not load visit file: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function armAndTransmit() {
+  const btn = $('btnLiveTransmit');
+  if (!btn) return;
+  const confirmStore = $('liveConfirmStore')?.value?.trim();
+  const expected = btn.dataset.store;
+  const testMode = !!$('liveTestMode')?.checked;
+  const goldenExportPath = $('liveGoldenPath')?.value?.trim() || null;
+  if (!confirmStore) return toast('Type the store number to arm LIVE transmit', 'warn');
+  if (confirmStore !== expected) return toast(`Store mismatch — type ${expected} exactly`, 'warn');
+  if (testMode && !goldenExportPath) {
+    return toast('testMode requires a golden export path (export-cp-shift-full folder)', 'warn');
+  }
+
+  const modeLabel = testMode ? 'testMode round-trip LIVE' : 'LIVE';
+  if (!window.confirm(`${modeLabel} transmit to prod for store ${expected}? Uses morning sas-auth session. No automatic rollback.`)) return;
+
+  const resultHost = $('liveTransmitResult');
+  if (resultHost) resultHost.innerHTML = '<div class="mw-row">Transmitting… watch this panel</div>';
+  btn.disabled = true;
+  try {
+    // Use raw fetch so 409 partial/preflight bodies are still inspectable
+    const res = await window.cpAuthFetch('/api/central-pet/shift-day/live/transmit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dryRunId: btn.dataset.run,
+        visitFile: btn.dataset.file,
+        draftId: btn.dataset.draft,
+        confirmStore,
+        mode: btn.dataset.mode || 'start',
+        testMode,
+        goldenExportPath,
+      }),
+    });
+    const result = await res.json().catch(() => ({}));
+    // Never echo pin back into the UI
+    if (resultHost) {
+      resultHost.innerHTML = `<pre style="white-space:pre-wrap;font-size:.85em">${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
+    }
+    if (result.status === 'complete') {
+      toast(testMode ? 'testMode transmit+recomplete done — re-export then run diff' : 'LIVE transmit complete', 'ok', 6000);
+    } else if (res.status === 403) toast(`LIVE blocked: ${result.error || result.abortReason}`, 'bad', 6000);
+    else toast(`LIVE transmit ${result.status || res.status}: ${result.abortReason || result.error || 'see result'}`, 'warn', 6000);
+  } catch (err) {
+    if (resultHost) resultHost.innerHTML = `<div class="mw-row">Failed: ${escapeHtml(err.message)}</div>`;
+    toast(`LIVE transmit failed: ${err.message}`, 'bad', 6000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runRoundtripDiffUi() {
+  const btn = $('btnRoundtripDiff');
+  if (!btn) return;
+  const goldenExportPath = $('liveGoldenPath')?.value?.trim();
+  const postExportPath = $('livePostPath')?.value?.trim();
+  if (!goldenExportPath || !postExportPath) {
+    return toast('Set golden export path and post-run export path', 'warn');
+  }
+  const host = $('liveRoundtripResult');
+  if (host) host.innerHTML = '<div class="mw-row">Diffing…</div>';
+  try {
+    const res = await window.cpAuthFetch('/api/central-pet/shift-day/live/roundtrip-diff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dryRunId: btn.dataset.run,
+        visitFile: btn.dataset.file,
+        draftId: btn.dataset.draft,
+        goldenExportPath,
+        postExportPath,
+      }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (host) {
+      host.innerHTML = `<pre style="white-space:pre-wrap;font-size:.85em">${escapeHtml(JSON.stringify({
+        verdict: result.verdict,
+        expectedCount: result.expectedCount,
+        unexpectedCount: result.unexpectedCount,
+        reportPath: result.reportPath,
+        unexpected: result.diff?.unexpected?.slice?.(0, 20),
+      }, null, 2))}</pre>`;
+    }
+    if (result.verdict === 'PASS') toast('Round-trip PASS', 'ok');
+    else toast(`Round-trip ${result.verdict || 'FAIL'} — see unexpected diffs`, 'warn', 6000);
+  } catch (err) {
+    if (host) host.innerHTML = `<div class="mw-row">Diff failed: ${escapeHtml(err.message)}</div>`;
+    toast(err.message, 'bad');
+  }
+}
+
+function renderDryRunManifest(manifest) {
+  const host = $('dryRunResult');
+  const rows = [
+    ...(manifest.visits || []).map((v) => {
+      const draftId = draftIdOf(v.repKey, v.date, v.store);
+      const liveHint =
+        liveUi.liveTransmitEnabled && liveUi.allowlist.has(draftId)
+          ? ' <span class="tag-ambiguous">allowlisted</span>'
+          : '';
+      return (
+        `<div class="mw-row"><span class="tag-ambiguous">assembled</span> ${v.repKey} · ${v.date} · store ${v.store} · visit ${v.visitId} · ${v.callCount} calls${liveHint} ` +
+        `<button type="button" class="subtle dryrun-view-btn" data-run="${escapeHtml(manifest.runId)}" data-file="${escapeHtml(v.file)}">View calls</button></div>`
+      );
+    }),
+    ...(manifest.aborted || []).map(
+      (a) => `<div class="mw-row"><span class="tag-unmatched">aborted</span> ${a.repKey} · ${a.date} · store ${a.store} — ${escapeHtml(a.reason)}</div>`
+    ),
+  ];
+  host.innerHTML =
+    `<p class="week-status">run <code>${escapeHtml(manifest.runId)}</code> — eligible ${manifest.summary.eligible} · assembled ${manifest.summary.assembled} · aborted ${manifest.summary.aborted}</p>` +
+    (rows.length ? rows.join('') : '<div class="mw-row">Nothing eligible in this run.</div>');
+
+  host.querySelectorAll('.dryrun-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => viewDryRunVisit(btn.dataset.run, btn.dataset.file));
+  });
+}
+
+async function loadDryRuns() {
+  const host = $('dryRunList');
+  if (!host) return;
+  try {
+    const { runs } = await api('/shift-day/dryrun');
+    host.innerHTML = runs.length
+      ? runs
+          .map((r) => `<div class="mw-row"><button type="button" class="subtle dryrun-open-run-btn" data-run="${escapeHtml(r)}">${escapeHtml(r)}</button></div>`)
+          .join('')
+      : '<div class="mw-row">No dry runs yet.</div>';
+    host.querySelectorAll('.dryrun-open-run-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          renderDryRunManifest(await api(`/shift-day/dryrun/${encodeURIComponent(btn.dataset.run)}`));
+        } catch (err) {
+          toast(err.message, 'bad');
+        }
+      });
+    });
+  } catch (err) {
+    host.innerHTML = `<div class="mw-row">Could not load runs: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
 /* ---------- Actions ---------- */
 
 function markDirty() {
@@ -609,6 +949,99 @@ function showInitError(err) {
     $('btnRepView').addEventListener('click', () => (window.location.href = '/rep.html?preview=1'));
     $('btnSignOut').addEventListener('click', signOut);
 
+    const supervisorId = () => localStorage.getItem('cp_supervisor_id') || '800175315';
+
+    $('btnRunMatcher')?.addEventListener('click', async () => {
+      const week = state.weeks[state.weekIndex];
+      if (!week) return;
+      try {
+        const data = await api(
+          `/shift-day/match?weekStart=${encodeURIComponent(week.start)}&supervisorId=${encodeURIComponent(supervisorId())}`
+        );
+        const host = $('matchWarnings');
+        const rows = [
+          ...(data.unmatched || []).map((u) => ({
+            tag: 'unmatched',
+            text: `${u.appShift?.repKey} ${u.appShift?.date} store ${u.appShift?.actualStore} (sched ${u.appShift?.scheduledStore}) — no prod visit`,
+          })),
+          ...(data.ambiguous || []).map((a) => ({
+            tag: 'ambiguous',
+            text: `${a.appShift?.repKey} ${a.appShift?.date} store ${a.appShift?.actualStore} — visits ${(a.candidates || []).map((c) => c.visitId).join(', ')}`,
+          })),
+          ...(data.orphaned || []).map((o) => ({
+            tag: 'orphaned',
+            text: `prod ${o.prodVisit?.visitId} ${o.prodVisit?.repKey} ${o.prodVisit?.date} decoded ${o.prodVisit?.actualStore} (sched ${o.prodVisit?.scheduledStore}) — no app shift`,
+          })),
+        ];
+        host.innerHTML =
+          `<p class="week-status">matched ${data.summary?.matched || 0} · unmatched ${data.summary?.unmatched || 0} · ambiguous ${data.summary?.ambiguous || 0} · orphaned ${data.summary?.orphaned || 0}</p>` +
+          (rows.length
+            ? rows.map((r) => `<div class="mw-row"><span class="tag-${r.tag}">${r.tag}</span> ${r.text}</div>`).join('')
+            : '<div class="mw-row">No warnings for this week.</div>');
+        toast('Matcher finished', 'ok');
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    });
+
+    $('btnRefreshVisitDrafts')?.addEventListener('click', loadVisitDrafts);
+
+    $('btnRefreshDryRuns')?.addEventListener('click', loadDryRuns);
+    loadDryRuns();
+    refreshLiveStatus();
+
+    $('btnRunDryRun')?.addEventListener('click', async () => {
+      const week = state.week;
+      if (!week) return toast('Pick a week first', 'warn');
+      const timeChangeComment = $('dryRunTimeChangeComment')?.value?.trim();
+      if (!timeChangeComment) return toast('Time-change comment is required for the dry run', 'warn');
+      const repKeys = ($('dryRunRepKeys')?.value || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      $('dryRunResult').innerHTML = '<div class="mw-row">Assembling…</div>';
+      try {
+        const manifest = await api('/shift-day/dryrun', {
+          method: 'POST',
+          body: JSON.stringify({
+            weekStart: week.start,
+            supervisorId: supervisorId(),
+            repKeys: repKeys.length ? repKeys : undefined,
+            timeChangeComment,
+          }),
+        });
+        renderDryRunManifest(manifest);
+        toast(`Dry run assembled (${manifest.summary.assembled} visit(s))`, 'ok');
+        loadDryRuns();
+      } catch (err) {
+        $('dryRunResult').innerHTML = `<div class="mw-row">Dry run failed: ${escapeHtml(err.message)}</div>`;
+        toast(`Dry run failed: ${err.message}`, 'bad', 5000);
+      }
+    });
+
+    $('btnIngestExport')?.addEventListener('click', async () => {
+      const file = $('scheduleExportFile')?.files?.[0];
+      const week = state.weeks[state.weekIndex];
+      if (!file || !week) {
+        toast('Choose a week and an .xlsx file', 'warn');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('weekStart', week.start);
+      try {
+        const res = await window.cpAuthFetch(`/api/central-pet/shift-day/ingest?weekStart=${encodeURIComponent(week.start)}`, {
+          method: 'POST',
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        toast(`Ingested ${data.shiftCount} shifts (${data.flagCount || 0} flagged)`, 'ok');
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    });
+
     const reload = async () => {
       if (state.dirty) {
         toast('Unsaved changes discarded on switch', 'warn', 2200);
@@ -639,6 +1072,7 @@ function showInitError(err) {
     await loadWeeks();
     await loadReps();
     await loadRepWeek();
+    await loadVisitDrafts();
   } catch (err) {
     console.error('[admin]', err);
     showInitError(err);

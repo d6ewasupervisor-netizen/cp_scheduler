@@ -17,6 +17,7 @@
       <div class="user-bar" id="userBar" hidden>
         <span class="layer-badge admin">Admin</span>
         <span class="user-email" id="userEmail"></span>
+        <a class="subtle nav-link" href="/shiftday.html?preview=1">Shift Day</a>
         <button type="button" id="btnRepView" class="subtle" title="Preview the rep experience">Rep view</button>
         <button type="button" id="btnSignOut" class="subtle">Sign out</button>
       </div>
@@ -61,6 +62,48 @@
         <p class="calendar-scroll-hint">Swipe sideways to see each day →</p>
         <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
         <div id="warnings" class="warnings"></div>
+        <section class="match-warnings" id="matchWarningsPanel" aria-label="Visit matcher warnings">
+          <h2>Visit matcher (read-only)</h2>
+          <p class="week-status">Compares Shift Day schedule to prod field-data for this week. Supervisor id defaults from localStorage <code>cp_supervisor_id</code>.</p>
+          <div class="btn-stack" style="margin:.5rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap">
+            <button type="button" id="btnRunMatcher" class="subtle">Run matcher</button>
+            <label class="field" style="margin:0; flex:1; min-width:10rem">Ingest schedule export
+              <input type="file" id="scheduleExportFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="button" id="btnIngestExport" class="subtle">Upload to week</button>
+          </div>
+          <div id="matchWarnings"></div>
+        </section>
+
+        <section class="match-warnings" id="visitDraftsPanel" aria-label="Guided visit drafts (read-only)">
+          <h2>Guided visit drafts &amp; records (read-only)</h2>
+          <p class="week-status">Stage 3 local visit records — every rep, all districts. Sealed = ready for Stage 4 transmit. Stage 5 photo delivery status is admin-only (Resend gated off until PHOTO_DELIVERY_ENABLED=1).</p>
+          <button type="button" id="btnRefreshVisitDrafts" class="subtle">Refresh</button>
+          <div id="visitDraftsList"></div>
+        </section>
+
+        <section class="match-warnings" id="dryRunPanel" aria-label="Stage 4 prod overlay dry run">
+          <h2>Stage 4 — Prod overlay dry run <span class="tag-unmatched" id="dryRunLiveBadge">review only</span></h2>
+          <p class="week-status">
+            Assembles the complete write sequence for every sealed, uniquely-matched visit in the selected week.
+            Dry run never sends writes. Live transmit requires server flag <code>LIVE_TRANSMIT=1</code>, a per-draft
+            entry in <code>data/live-allowlist.json</code>, and a two-tap store-number arm. No bulk transmit.
+          </p>
+          <p class="week-status" id="liveTransmitStatus">Checking live-mode status…</p>
+          <div class="btn-stack" style="margin:.5rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap">
+            <label class="field" style="margin:0; flex:1; min-width:12rem">Rep key(s) (blank = all sealed this week)
+              <input type="text" id="dryRunRepKeys" placeholder="brian-campbell, james-duchene">
+            </label>
+            <label class="field" style="margin:0; flex:1; min-width:14rem">Time-change comment (required, real text)
+              <input type="text" id="dryRunTimeChangeComment" placeholder="Entered from Stage 3 sealed record">
+            </label>
+            <button type="button" id="btnRunDryRun" class="subtle">Dry run (review only)</button>
+          </div>
+          <div id="dryRunResult"></div>
+          <h3 style="margin:.75rem 0 .25rem">Past runs</h3>
+          <button type="button" id="btnRefreshDryRuns" class="subtle">Refresh runs</button>
+          <div id="dryRunList"></div>
+        </section>
       </section>
 
       <aside class="side-col">

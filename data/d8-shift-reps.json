@@ -1,0 +1,25 @@
+{
+  "reps": [
+    {
+      "repKey": "brian-campbell",
+      "name": "Brian Campbell",
+      "workdayGivenId": "800553343",
+      "emails": ["bcampb9565@sbcglobal.net"],
+      "assigneeId": "brian-campbell"
+    },
+    {
+      "repKey": "kimberly-claflin",
+      "name": "Kimberly Claflin",
+      "workdayGivenId": "800605698",
+      "emails": ["kimberlyjanellclaf@gmail.com"],
+      "assigneeId": "kimberly-claflin"
+    },
+    {
+      "repKey": "james-duchene",
+      "name": "James Duchene",
+      "workdayGivenId": "800627385",
+      "emails": ["james.duchene@retailodyssey.com"],
+      "assigneeId": "james-ducheene"
+    }
+  ]
+}

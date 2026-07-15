@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Shift Day — Central Pet D8</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/auth-gate.js"></script>
+</head>
+<body class="mode-shiftday has-sticky-bar">
+  <header class="topbar topbar-shiftday">
+    <div class="topbar-row">
+      <div>
+        <h1>Shift Day</h1>
+        <p class="subtitle" id="sdSubtitle">District 8 — field schedule</p>
+      </div>
+      <div class="user-bar" id="userBar" hidden>
+        <span class="layer-badge rep">Rep</span>
+        <a class="subtle nav-link" href="/rep.html">My Week</a>
+        <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnSignOut" class="subtle">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="page">
+    <div id="sdLoading" class="rep-loading">Loading Shift Day…</div>
+    <div id="sdError" class="rep-error" hidden></div>
+
+    <section id="sdPicker" class="tray" hidden>
+      <h2>Who are you?</h2>
+      <p class="week-status">Pick your name for this device. Mapped emails skip this.</p>
+      <label class="field">Rep
+        <select id="sdRepSelect"></select>
+      </label>
+      <div style="margin-top:.7rem">
+        <button type="button" id="btnSdRepSave" class="primary">Open Shift Day</button>
+      </div>
+    </section>
+
+    <div id="sdApp" hidden>
+      <section class="rep-banner" id="sdBanner">
+        <div class="rep-banner-title" id="sdBannerTitle"></div>
+        <div class="rep-banner-meta" id="sdBannerMeta"></div>
+      </section>
+
+      <div class="week-nav">
+        <div class="week-nav-main">
+          <label class="field week-picker-field">Week
+            <select id="sdWeekSelect"></select>
+          </label>
+          <div class="week-title" id="sdWeekTitle"></div>
+          <div class="week-dates" id="sdWeekDates"></div>
+        </div>
+        <div class="nav-btns">
+          <button type="button" id="btnSdPrev" aria-label="Previous week">‹</button>
+          <button type="button" id="btnSdNext" aria-label="Next week">›</button>
+        </div>
+      </div>
+
+      <p class="week-status" id="sdWeekStatus"></p>
+
+      <div class="calendar" id="sdCalendar" aria-label="Week calendar"></div>
+    </div>
+  </div>
+
+  <div class="sticky-bar" id="sdSticky" hidden>
+    <div class="sticky-bar-inner">
+      <span id="sdSaveState" class="save-state">All saved</span>
+      <button type="button" id="btnSdSave" class="primary" disabled>Save</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="sdOverlay" hidden>
+    <div class="overlay-card sd-detail">
+      <button type="button" class="overlay-close" id="sdOverlayClose" aria-label="Close">×</button>
+      <div class="sd-detail-store" id="sdDetailStore"></div>
+      <div class="sd-detail-addr" id="sdDetailAddr"></div>
+      <div class="sd-detail-badges" id="sdDetailBadges"></div>
+      <div class="sd-detail-match" id="sdDetailMatch"></div>
+      <dl class="sd-detail-meta" id="sdDetailMeta"></dl>
+      <div class="sd-detail-route" id="sdDetailRoute"></div>
+      <label class="field">Move to day
+        <select id="sdMoveDay"></select>
+      </label>
+      <div class="overlay-actions">
+        <button type="button" id="btnSdMove" class="primary">Move shift</button>
+      </div>
+      <div class="overlay-actions">
+        <button type="button" id="btnSdStartVisit" class="primary">Start Visit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage 3 guided visit flow — free-nav sections, local-only, no SAS writes -->
+  <div id="visitFlowOverlay" class="visit-overlay" hidden>
+    <div class="visit-overlay-backdrop" id="vfBackdrop"></div>
+    <div class="visit-overlay-panel vf-panel" role="dialog" aria-modal="true" aria-labelledby="vfStoreTitle">
+      <header class="visit-overlay-header">
+        <div>
+          <h2 id="vfStoreTitle"></h2>
+          <p id="vfStepLabel" class="overlay-flag"></p>
+        </div>
+        <div class="vf-header-actions">
+          <button type="button" id="vfSidebarToggle" class="subtle vf-sidebar-toggle" aria-label="Sections">Sections</button>
+          <button type="button" id="vfClose" class="subtle" aria-label="Close">Close</button>
+        </div>
+      </header>
+      <div class="vf-layout">
+        <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit sections"></nav>
+        <div class="vf-main">
+          <div id="vfBody" class="vf-body"></div>
+          <div class="vf-nav">
+            <span id="vfSaveState" class="save-state" data-state="saved">Saved</span>
+            <button type="button" id="vfFinish" class="primary" disabled>Finish Visit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+  <script type="module" src="/shiftday.js"></script>
+</body>
+</html>

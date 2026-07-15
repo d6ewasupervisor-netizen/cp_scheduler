@@ -1,0 +1,16 @@
+{
+  "notes": "IANA timezone per store for converting sealed UTC timestamps to SAS field-app actual_start_time / actual_end_time (LOCAL STORE TIME). All current D8 Central Pet service stores are America/Los_Angeles; map keeps conversion correct under DST and if non-Pacific stores are added later. Do not hard-code UTC offsets.",
+  "stores": {
+    "19": "America/Los_Angeles",
+    "23": "America/Los_Angeles",
+    "28": "America/Los_Angeles",
+    "31": "America/Los_Angeles",
+    "53": "America/Los_Angeles",
+    "111": "America/Los_Angeles",
+    "215": "America/Los_Angeles",
+    "391": "America/Los_Angeles",
+    "459": "America/Los_Angeles",
+    "658": "America/Los_Angeles",
+    "682": "America/Los_Angeles"
+  }
+}

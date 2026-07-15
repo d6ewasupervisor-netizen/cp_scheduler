@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "description": "HAR-sourced reason enums for Stage 4 prod-transmitter writes. The transmitter never hard-codes a reason id — it always exact-string-matches the configured text against a live-fetched (or injected, for tests) reason list, and aborts the visit if no match is found. These 'selected' blocks are only the *default* text to look up; a real run must still resolve id/text from the live GET.",
+    "sourceHar": "central pet shifts.json (captured 2026-07-09T14:54-15:01Z, visit 27000510, shift 44390825, store 391 scheduled / 215 decoded)",
+    "signOff": "2026-07-13: T confirmed use of the real prod string in place of the originally-requested 'supervisor was notified' (which does not exist in any SAS reason enum)."
+  },
+  "categorySpentTimeReason": {
+    "endpoint": "GET /api/v1/field-app/spent-time-reasons/",
+    "selected": { "id": 3, "text": "Other \u2013 supervisor was contacted" },
+    "sourceHarEntry": 142,
+    "appliedWriteHarEntry": 414,
+    "appliedConfirmedByHarEntry": 415,
+    "note": "Original ask was 'supervisor was notified' (exact string) \u2014 no such reason exists in prod. Id 3 'Other \u2013 supervisor was contacted' is the closest match AND the one actually applied in this real visit's HAR when the category's cumulative spent time exceeded the 5% threshold (see failedAttemptHarEntry). Note this reason text also carries an en dash (U+2013), not a hyphen.",
+    "failedAttemptHarEntry": 413,
+    "failedAttemptMessage": "Please select spent time reason as cummulative spent time on this category is more than 5.00%"
+  },
+  "shiftTimeChangeReason": {
+    "endpoint": "GET /api/v1/operations/time-change-reason/?is_admin=true",
+    "selected": { "id": 5, "text": "Tablet was Not Available" },
+    "sourceHarEntry": 108,
+    "appliedWriteHarEntries": [137, 353],
+    "note": "Applied to time_change_reason on both shift PATCH calls (start-time entry and stop-time correction) in the HAR, alongside a free-text time_change_comment (HAR value was the placeholder 'k' \u2014 the assembler requires a real opts.timeChangeComment, it will not default to 'k')."
+  }
+}

@@ -1,6 +1,10 @@
 node_modules/
 data/schedule-drafts.json
+data/visit-drafts/
+live/
+dryrun/
 .env
 .env.*
 *.log
 .DS_Store
+cp_scheduler.code-workspace

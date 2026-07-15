@@ -1,0 +1,171 @@
+{
+  "_meta": {
+    "description": "Central Pet write-order scope checklist, extracted verbatim from the two source scope emails. Consumed by the Stage 3 guided visit flow (Part B, Step 3) when writeOrder is true.",
+    "generatedBy": "Stage 3 Part A extraction",
+    "sourceEmails": [
+      {
+        "file": "docs/scope-emails/wings-clipstrips-endcaps-scope.eml",
+        "originalFile": "docs/scope-emails/Central Pet Clarification \u2014 Wings & Clipstrips on Endcaps Scope.eml",
+        "subject": "Central Pet Clarification \u2014 Wings & Clipstrips on Endcaps Scope",
+        "date": "2026-07-07",
+        "from": "info@retail-odyssey.com"
+      },
+      {
+        "file": "docs/scope-emails/credit-policy-p6-shippers-cleanup.eml",
+        "originalFile": "docs/scope-emails/Central Pet_ New Credit Policy + P6 Shippers (Nylabone _ PUP ICE) & Salesfloor Cleanup.eml",
+        "subject": "Central Pet: New Credit Policy + P6 Shippers (Nylabone / PUP ICE) & Salesfloor Cleanup",
+        "date": "2026-07-02",
+        "from": "info@retail-odyssey.com"
+      }
+    ],
+    "fieldNotes": "appliesTo classifies whether an item is shown during the write-order checklist step (order|both) vs informs work-load handling only (load). photoRequired items prompt inline capture. Items with sourcedFromEmail:false are standing categories named in the Stage 3 spec that are NOT present in either source email; kept as generic photo-only checklist entries per admin sign-off on 2026-07-13."
+  },
+  "sections": [
+    {
+      "id": "endcaps-wings-clipstrips",
+      "title": "Wings & Clipstrips on Endcaps",
+      "sourceEmail": "Central Pet Clarification \u2014 Wings & Clipstrips on Endcaps Scope",
+      "items": [
+        {
+          "id": "ewc-01",
+          "section": "endcaps-wings-clipstrips",
+          "text": "Service all endcaps and wings the store has in the Pet Center / pet aisles \u2014 every store has a different number, some have 6 pet ends, others only 1 or 2. There is no fixed count.",
+          "appliesTo": "both",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "ewc-02",
+          "section": "endcaps-wings-clipstrips",
+          "text": "Do NOT service the WOW ends or Purina ends with the longer fronts and TV screens.",
+          "appliesTo": "both",
+          "photoRequired": false,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "ewc-03",
+          "section": "endcaps-wings-clipstrips",
+          "text": "Two different programs \u2014 don't mix them up: Endcap clipstrips lay flat, one-sided, and sit on the endcap. Permanent wing fixtures are double-sided, attached, and have their own designated items and POG.",
+          "appliesTo": "both",
+          "photoRequired": false,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "ewc-04",
+          "section": "endcaps-wings-clipstrips",
+          "text": "Lennox / Lifebound wing: merchandise arrived at the warehouse earlier than expected \u2014 treat this as a priority wing when ordering for your stores.",
+          "appliesTo": "order",
+          "photoRequired": false,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "ewc-05",
+          "section": "endcaps-wings-clipstrips",
+          "text": "This program will take longer per store visit than a normal service \u2014 plan routes accordingly and flag any stores where the added workload is a real problem.",
+          "appliesTo": "both",
+          "photoRequired": false,
+          "sourcedFromEmail": true
+        }
+      ]
+    },
+    {
+      "id": "p6-shippers-nylabone-pupice",
+      "title": "P6 Shippers \u2014 Nylabone Nubz / PUP ICE",
+      "sourceEmail": "Central Pet: New Credit Policy + P6 Shippers (Nylabone / PUP ICE) & Salesfloor Cleanup",
+      "items": [
+        {
+          "id": "p6-01",
+          "section": "p6-shippers-nylabone-pupice",
+          "text": "Set the new P6 shipper this week: Nylabone Nubz OR PUP ICE (most stores get one of the two).",
+          "appliesTo": "load",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "p6-02",
+          "section": "p6-shippers-nylabone-pupice",
+          "text": "Nylabone shipper build note (from Ramon): remove the 2 white \"S\" hooks from the front where product sits and reattach them on the back of the shipper with product. The tabs on top of the base are supposed to fold down and in to hold the S-hooks, but they're tough to work with \u2014 slide the hooks into the opening on the base instead. Heads up: it's an odd-looking shipper with product only on the top portion.",
+          "appliesTo": "load",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        }
+      ]
+    },
+    {
+      "id": "credit-policy-notes",
+      "title": "Credit Policy Notes",
+      "sourceEmail": "Central Pet: New Credit Policy + P6 Shippers (Nylabone / PUP ICE) & Salesfloor Cleanup",
+      "items": [
+        {
+          "id": "cred-01",
+          "section": "credit-policy-notes",
+          "text": "Flea medicine shipper \u2014 take down. Move product to the inline set or place on clipstrips. NO CREDITS on this one. If you can't move enough to fully take it down right away, spread the remaining product across the shipper (goal: fully down by next week).",
+          "appliesTo": "load",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "cred-02",
+          "section": "credit-policy-notes",
+          "text": "A refreshed credit policy for resets & shippers is now in effect \u2014 review the FM Credits Guidelines PDF before your next reset or shipper takedown so credits get processed correctly.",
+          "appliesTo": "both",
+          "photoRequired": false,
+          "sourcedFromEmail": true
+        },
+        {
+          "id": "cred-03",
+          "section": "credit-policy-notes",
+          "text": "Star Wars by BARK: if still up in your store, take it down and process a return \u2014 full return instructions are in the FM Credits Guidelines doc.",
+          "appliesTo": "load",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        }
+      ]
+    },
+    {
+      "id": "salesfloor-cleanup",
+      "title": "Salesfloor Cleanup \u2014 Old Shippers",
+      "sourceEmail": "Central Pet: New Credit Policy + P6 Shippers (Nylabone / PUP ICE) & Salesfloor Cleanup",
+      "items": [
+        {
+          "id": "cleanup-01",
+          "section": "salesfloor-cleanup",
+          "text": "If any older shippers (see reference photos in the email) are still on your floor, take them down and move product to inline locations.",
+          "appliesTo": "load",
+          "photoRequired": true,
+          "sourcedFromEmail": true
+        }
+      ]
+    },
+    {
+      "id": "cat-litter-box-liners",
+      "title": "Cat Litter Box Liners",
+      "sourceEmail": null,
+      "items": [
+        {
+          "id": "litter-01",
+          "section": "cat-litter-box-liners",
+          "text": "Standing category, confirmed by admin sign-off (not sourced from either scope email): check and photograph cat litter box liners.",
+          "appliesTo": "both",
+          "photoRequired": true,
+          "sourcedFromEmail": false
+        }
+      ]
+    },
+    {
+      "id": "cp-serviced-sections-all",
+      "title": "All CP-Serviced Sections (catch-all)",
+      "sourceEmail": null,
+      "items": [
+        {
+          "id": "allsections-01",
+          "section": "cp-serviced-sections-all",
+          "text": "Standing catch-all, confirmed by admin sign-off (not sourced from either scope email): check and photograph every remaining CP-serviced section not already covered above (e.g. Butcher Block rack).",
+          "appliesTo": "both",
+          "photoRequired": true,
+          "sourcedFromEmail": false
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@ const {
   listReps,
   getRep,
 } = require('../lib/master-route');
-const { listWeeks, getWeekByStart } = require('../lib/fiscal-calendar');
+const { listWeeks, getWeekByStart, dayToDateInWeek, dateToDayOfWeek } = require('../lib/fiscal-calendar');
 const { resolveInitialPlacements, toTemplatePlacements } = require('../lib/weekly-template');
 const { fetchProdSchedule } = require('../lib/prod-schedule');
 const {
@@ -22,6 +22,30 @@ const { saveDraft, getDraft, listDrafts, approveDraft, getWeeklyTemplate, saveWe
 const { requireAdmin } = require('../auth-middleware');
 const { buildVisitDetail } = require('../lib/visit-instructions');
 const { repKeyForEmail } = require('../lib/rep-emails');
+const { parseScheduleExport } = require('../lib/parse-schedule-export');
+const {
+  listWeekKeys,
+  getWeekSchedule,
+  saveWeekSchedule,
+  getShiftsForRep,
+  updateShiftDay,
+} = require('../lib/shift-day-store');
+const { loadD8ShiftReps, shiftRepByEmail, shiftRepByKey } = require('../lib/d8-shift-reps');
+const { getStoreAddress } = require('../lib/store-addresses');
+const { matchVisits, statusForShift } = require('../lib/visit-matcher');
+const visitFlow = require('../lib/visit-flow');
+const visitDraftStore = require('../lib/visit-draft-store');
+const { runDryRun } = require('../lib/dryrun-runner');
+const dryrunStore = require('../lib/dryrun-store');
+const { isLiveTransmitEnabled, loadAllowlist, isDraftAllowlisted, draftIdFromParts } = require('../lib/live-allowlist');
+const liveRegistry = require('../lib/live-registry');
+const liveStore = require('../lib/live-store');
+const { executeLiveTransmit, runRoundtripDiff } = require('../lib/live-executor');
+const {
+  deliverVisitPhotos,
+  getDeliveryStatus,
+  isPhotoDeliveryEnabled,
+} = require('../lib/photo-delivery');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
@@ -278,6 +302,731 @@ router.get('/schedule/export/:draftId', requireAdmin, (req, res) => {
 
 router.post('/master-route/upload', upload.single('file'), (_req, res) => {
   res.status(501).json({ error: 'Upload parsing not yet wired — run scripts/parse-master-route.js locally' });
+});
+
+/* ---------- Shift Day (D8 individual reps) ---------- */
+
+// Shift Day reps: overwrite any requested rep with the caller's mapped repKey
+// so Brian cannot read James's schedule (and vice versa).
+function shiftDayScope(req, _res, next) {
+  if (req.user?.layer === 'rep') {
+    const mine = shiftRepByEmail(req.user.email);
+    if (mine) {
+      if (req.query) req.query.rep = mine.repKey;
+      if (req.body) req.body.repKey = mine.repKey;
+      if (req.params && 'repKey' in req.params) req.params.repKey = mine.repKey;
+    }
+  }
+  next();
+}
+
+function masterRouteContextForStore(storeNum) {
+  const rep = getRep('__D8_CENTRAL_PET__');
+  const slots = (rep?.visitSlots || []).filter((s) => Number(s.storeNum) === Number(storeNum));
+  return {
+    storeNum: Number(storeNum),
+    slots: slots.map((s) => ({
+      visitIndex: s.visitIndex,
+      action: s.action,
+      anchorServiceDay: s.anchorServiceDay,
+      pickDay: s.pickDay,
+      deliveryDay: s.deliveryDay,
+      allowedDays: s.allowedDays,
+      reason: s.reason,
+    })),
+  };
+}
+
+router.get('/shift-day/reps', (_req, res) => {
+  res.json(loadD8ShiftReps());
+});
+
+router.get('/shift-day/weeks', (_req, res) => {
+  const fiscal = listWeeks();
+  const ingested = new Set(listWeekKeys());
+  res.json(
+    fiscal.map((w) => ({
+      ...w,
+      hasSchedule: ingested.has(w.start),
+    }))
+  );
+});
+
+router.get('/shift-day/schedule', shiftDayScope, (req, res) => {
+  const repKey = req.query.rep;
+  const weekStart = req.query.weekStart;
+  if (!repKey) return res.status(400).json({ error: 'rep required' });
+  if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
+  const shiftRep = shiftRepByKey(repKey);
+  if (!shiftRep) return res.status(404).json({ error: 'Unknown Shift Day rep' });
+  const week = getWeekByStart(weekStart);
+  if (!week) return res.status(400).json({ error: 'Unknown week' });
+
+  const shifts = getShiftsForRep(weekStart, repKey).map((s) => {
+    const addr = getStoreAddress(s.actualStore);
+    const ctx = masterRouteContextForStore(s.actualStore);
+    const day = s.dayOfWeek || dateToDayOfWeek(s.date);
+    const slot =
+      ctx.slots.find((x) => x.anchorServiceDay === day) ||
+      ctx.slots[0] ||
+      null;
+    return {
+      ...s,
+      dayOfWeek: day,
+      store: addr,
+      allowedDays: slot?.allowedDays || WORK_DAYS_FALLBACK(),
+      masterRoute: ctx,
+    };
+  });
+
+  res.json({
+    rep: shiftRep,
+    week,
+    shifts,
+    source: getWeekSchedule(weekStart)?.source || null,
+  });
+});
+
+function WORK_DAYS_FALLBACK() {
+  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+}
+
+router.post('/shift-day/move', shiftDayScope, (req, res) => {
+  const { repKey, weekStart, shiftId, dayOfWeek } = req.body || {};
+  if (!repKey || !weekStart || !shiftId || !dayOfWeek) {
+    return res.status(400).json({ error: 'repKey, weekStart, shiftId, dayOfWeek required' });
+  }
+  const shiftRep = shiftRepByKey(repKey);
+  if (!shiftRep) return res.status(404).json({ error: 'Unknown Shift Day rep' });
+  const week = getWeekByStart(weekStart);
+  if (!week) return res.status(400).json({ error: 'Unknown week' });
+
+  const existing = getShiftsForRep(weekStart, repKey).find((s) => String(s.id) === String(shiftId));
+  if (!existing) return res.status(404).json({ error: 'Shift not found' });
+
+  const ctx = masterRouteContextForStore(existing.actualStore);
+  const allowed = new Set(
+    (ctx.slots[0]?.allowedDays || WORK_DAYS_FALLBACK()).map(String)
+  );
+  if (!allowed.has(dayOfWeek)) {
+    return res.status(400).json({
+      error: `Store ${existing.actualStore} can't go on ${dayOfWeek}`,
+      allowedDays: [...allowed],
+    });
+  }
+
+  const scheduledDate = dayToDateInWeek(weekStart, dayOfWeek);
+  const updated = updateShiftDay(weekStart, shiftId, dayOfWeek, scheduledDate);
+  res.json({ ok: true, shift: updated });
+});
+
+router.get('/shift-day/match', requireAdmin, async (req, res) => {
+  const weekStart = req.query.weekStart;
+  const supervisorId = req.query.supervisorId;
+  if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
+  if (!supervisorId) return res.status(400).json({ error: 'supervisorId required' });
+  const week = getWeekByStart(weekStart);
+  if (!week) return res.status(400).json({ error: 'Unknown week' });
+  try {
+    const result = await matchVisits({
+      startDate: week.start,
+      endDate: week.end,
+      weekStart: week.start,
+      supervisorId,
+    });
+    res.json({
+      week,
+      summary: result.summary,
+      unmatched: result.unmatched,
+      ambiguous: result.ambiguous,
+      orphaned: result.orphaned,
+      matched: result.matched.map((m) => ({
+        status: m.status,
+        appShiftId: m.appShift.id,
+        visitId: m.prodVisit.visitId,
+        repKey: m.appShift.repKey,
+        date: m.appShift.date,
+        actualStore: m.appShift.actualStore,
+        scheduledStore: m.prodVisit.scheduledStore,
+      })),
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.get('/shift-day/match-status', shiftDayScope, async (req, res) => {
+  const repKey = req.query.rep;
+  const weekStart = req.query.weekStart;
+  const supervisorId = req.query.supervisorId;
+  if (!repKey || !weekStart) {
+    return res.status(400).json({ error: 'rep and weekStart required' });
+  }
+  if (!supervisorId) {
+    return res.status(400).json({ error: 'supervisorId required for live match' });
+  }
+  const week = getWeekByStart(weekStart);
+  if (!week) return res.status(400).json({ error: 'Unknown week' });
+  try {
+    const appShifts = getShiftsForRep(weekStart, repKey);
+    const result = await matchVisits({
+      startDate: week.start,
+      endDate: week.end,
+      weekStart: week.start,
+      supervisorId,
+      appShifts,
+    });
+    const byShift = {};
+    for (const s of appShifts) {
+      byShift[s.id] = statusForShift(result, s.id);
+    }
+    res.json({ week, byShift, summary: result.summary });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.post('/shift-day/ingest', requireAdmin, upload.single('file'), async (req, res) => {
+  if (!req.file?.buffer) return res.status(400).json({ error: 'file required' });
+  const weekStart = req.body?.weekStart || req.query.weekStart;
+  if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
+  const week = getWeekByStart(weekStart);
+  if (!week) return res.status(400).json({ error: 'Unknown week' });
+  try {
+    const parsed = await parseScheduleExport(req.file.buffer, {
+      sourceFile: req.file.originalname,
+    });
+    const inWeek = parsed.shifts.filter(
+      (s) => s.date && s.date >= week.start && s.date <= week.end
+    );
+    for (const s of inWeek) {
+      s.dayOfWeek = dateToDayOfWeek(s.date);
+    }
+    const saved = saveWeekSchedule(weekStart, {
+      weekEnd: week.end,
+      weekLabel: week.label,
+      source: req.file.originalname,
+      meta: parsed.meta,
+      flags: parsed.flags,
+      shifts: inWeek,
+    });
+    res.json({
+      ok: true,
+      week,
+      shiftCount: inWeek.length,
+      flagCount: parsed.flags.length,
+      flags: parsed.flags,
+      updatedAt: saved.updatedAt,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/* ---------- Stage 3: guided visit flow (local-only, no SAS writes) ---------- */
+
+function findShift(repKey, weekStart, shiftId) {
+  return getShiftsForRep(weekStart, repKey).find((s) => String(s.id) === String(shiftId)) || null;
+}
+
+router.get('/shift-day/visit-flow/scope-checklist', (_req, res) => {
+  res.json(visitFlow.scopeChecklist);
+});
+
+router.get('/shift-day/visit-flow/survey', (_req, res) => {
+  res.json(visitFlow.serviceSurvey);
+});
+
+router.get('/shift-day/visit-flow/category-targets', (_req, res) => {
+  res.json(visitFlow.CATEGORY_PHOTO_TARGETS);
+});
+
+router.post('/shift-day/visit/start', shiftDayScope, (req, res) => {
+  const { repKey, weekStart, shiftId, startedAt } = req.body || {};
+  if (!repKey || !weekStart || !shiftId) {
+    return res.status(400).json({ error: 'repKey, weekStart, shiftId required' });
+  }
+  const shift = findShift(repKey, weekStart, shiftId);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  try {
+    const draft = visitDraftStore.startVisit({
+      repKey,
+      weekStart,
+      shiftId,
+      date: shift.date,
+      actualStore: shift.actualStore,
+      scheduledStore: shift.scheduledStore,
+      writeOrder: !!shift.writeOrder,
+      workLoad: !!shift.workLoad,
+      picksDay: shift.picksDay,
+      startedAt: startedAt || undefined,
+      startedBy: req.user?.email || null,
+    });
+    res.json(visitDraftStore.enrichDraftForUi(draft));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/shift-day/visit', shiftDayScope, (req, res) => {
+  const { rep, date, store } = req.query;
+  if (!rep || !date || store == null) {
+    return res.status(400).json({ error: 'rep, date, store required' });
+  }
+  const draft = visitDraftStore.getDraft(rep, date, store);
+  if (!draft) return res.status(404).json({ error: 'No draft for this rep/date/store' });
+  res.json(visitDraftStore.enrichDraftForUi(draft));
+});
+
+router.get('/shift-day/visit/mine', shiftDayScope, (req, res) => {
+  const { rep } = req.query;
+  if (!rep) return res.status(400).json({ error: 'rep required' });
+  res.json(visitDraftStore.listDraftsForRep(rep).map(visitDraftStore.summarize));
+});
+
+router.get('/shift-day/visit/drafts', requireAdmin, (_req, res) => {
+  res.json(visitDraftStore.listAllDrafts());
+});
+
+function draftMutationHandler(fn) {
+  return (req, res) => {
+    const { repKey, date, actualStore } = req.body || {};
+    if (!repKey || !date || actualStore == null) {
+      return res.status(400).json({ error: 'repKey, date, actualStore required' });
+    }
+    try {
+      const draft = fn(repKey, date, actualStore, req.body || {});
+      res.json(visitDraftStore.enrichDraftForUi(draft));
+    } catch (err) {
+      if (err.code === 'SEAL_BLOCKED') {
+        return res.status(400).json({ error: err.message, code: err.code, unmet: err.unmet || [] });
+      }
+      res.status(400).json({ error: err.message });
+    }
+  };
+}
+
+router.post(
+  '/shift-day/visit/photo',
+  upload.single('file'),
+  shiftDayScope,
+  (req, res) => {
+    const { repKey, date, actualStore, target, categoryId, itemId } = req.body || {};
+    if (!repKey || !date || actualStore == null || !target) {
+      return res.status(400).json({ error: 'repKey, date, actualStore, target required' });
+    }
+    if (!req.file?.buffer) return res.status(400).json({ error: 'file required' });
+    const ext = (req.file.originalname || 'photo.jpg').split('.').pop() || 'jpg';
+    try {
+      const photoPath = visitDraftStore.savePhotoBuffer(repKey, date, actualStore, req.file.buffer, ext);
+      let draft;
+      if (target === 'before') {
+        draft = visitDraftStore.recordBeforePhoto(repKey, date, actualStore, { photoPath });
+      } else if (target === 'after') {
+        draft = visitDraftStore.recordAfterPhoto(repKey, date, actualStore, { photoPath });
+      } else if (target === 'load') {
+        draft = visitDraftStore.setLoadCheck(repKey, date, actualStore, {
+          status: req.body.status || 'yes',
+          photoPath,
+        });
+      } else if (target === 'category') {
+        if (!categoryId) return res.status(400).json({ error: 'categoryId required for category photo' });
+        draft = visitDraftStore.recordCategoryPhoto(repKey, date, actualStore, categoryId, { photoPath });
+      } else if (target === 'checklist') {
+        if (!itemId) return res.status(400).json({ error: 'itemId required for checklist photo' });
+        draft = visitDraftStore.recordChecklistPhoto(repKey, date, actualStore, itemId, { photoPath });
+      } else {
+        return res.status(400).json({ error: `Unknown photo target: ${target}` });
+      }
+      res.json(visitDraftStore.enrichDraftForUi(draft));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  }
+);
+
+router.post(
+  '/shift-day/visit/photo/remove',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) => {
+    if (body.target === 'before') {
+      return visitDraftStore.removeBeforePhoto(repKey, date, actualStore, { seq: body.seq });
+    }
+    if (body.target === 'after') {
+      return visitDraftStore.removeAfterPhoto(repKey, date, actualStore, { seq: body.seq });
+    }
+    throw new Error(`Unknown photo remove target: ${body.target}`);
+  })
+);
+
+router.post(
+  '/shift-day/visit/load-check',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setLoadCheck(repKey, date, actualStore, { status: body.status })
+  )
+);
+
+router.post(
+  '/shift-day/visit/checklist',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setChecklistItem(repKey, date, actualStore, body.itemId, { checked: body.checked })
+  )
+);
+
+router.post(
+  '/shift-day/visit/survey',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setSurveyAnswers(repKey, date, actualStore, body.answers || {})
+  )
+);
+
+router.post(
+  '/shift-day/visit/time',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setTimes(repKey, date, actualStore, {
+      startActual: body.startActual,
+      startNote: body.startNote,
+      stopActual: body.stopActual,
+      stopNote: body.stopNote,
+      isLastStopOfDay: body.isLastStopOfDay,
+    })
+  )
+);
+
+router.post('/shift-day/visit/mileage', shiftDayScope, (req, res) => {
+  const { repKey, date, actualStore, repNote } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  const shiftRep = shiftRepByKey(repKey);
+  if (!shiftRep) return res.status(404).json({ error: 'Unknown Shift Day rep' });
+  const draft = visitDraftStore.getDraft(repKey, date, actualStore);
+  if (!draft) return res.status(404).json({ error: 'Draft not found' });
+  try {
+    let leg;
+    if (draft.isLastStopOfDay) {
+      leg = visitFlow.computeMileageLeg({
+        workdayGivenId: shiftRep.workdayGivenId,
+        actualStore,
+        isLastStopOfDay: true,
+      });
+    } else {
+      const previousCompletedStore = visitDraftStore.previousCompletedStoreForDay(repKey, date, {
+        excludeActualStore: actualStore,
+        beforeIso: draft.visitStart?.actual || null,
+      });
+      leg = visitFlow.computeMileageLeg({
+        workdayGivenId: shiftRep.workdayGivenId,
+        actualStore,
+        previousCompletedStore,
+      });
+    }
+    const updated = visitDraftStore.setMileage(repKey, date, actualStore, {
+      leg,
+      ...(repNote !== undefined ? { repNote } : {}),
+    });
+    res.json(visitDraftStore.enrichDraftForUi(updated));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post(
+  '/shift-day/visit/step',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.goToStep(repKey, date, actualStore, body.step)
+  )
+);
+
+router.post(
+  '/shift-day/visit/finish',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore) =>
+    visitDraftStore.finishVisit(repKey, date, actualStore)
+  )
+);
+
+/* ---------- Stage 4: prod overlay dry run (Planning Desk) ----------
+ * runDryRun()/transmitVisit() only ever perform read-only GETs against prod
+ * to resolve ids/enums for assembly; nothing is written from those paths.
+ * Live writes require LIVE_TRANSMIT=1 + per-draft allowlist + two-tap arm. */
+
+router.get('/shift-day/dryrun', requireAdmin, (_req, res) => {
+  res.json({ runs: dryrunStore.listRuns() });
+});
+
+router.post('/shift-day/dryrun', requireAdmin, async (req, res) => {
+  const { weekStart, startDate, endDate, supervisorId, repKeys, timeChangeComment } = req.body || {};
+  if (!supervisorId) return res.status(400).json({ error: 'supervisorId required' });
+  const week = weekStart ? getWeekByStart(weekStart) : null;
+  const effectiveStart = startDate || week?.start;
+  const effectiveEnd = endDate || week?.end;
+  if (!effectiveStart || !effectiveEnd) {
+    return res.status(400).json({ error: 'weekStart (or startDate+endDate) required' });
+  }
+  if (!timeChangeComment) {
+    return res.status(400).json({ error: 'timeChangeComment required — never defaults to a placeholder' });
+  }
+  try {
+    const manifest = await runDryRun({
+      startDate: effectiveStart,
+      endDate: effectiveEnd,
+      weekStart: weekStart || effectiveStart,
+      supervisorId,
+      repKeys: Array.isArray(repKeys) && repKeys.length ? repKeys : null,
+      transmitOpts: {
+        timeChangeComment,
+        isAlreadyTransmitted: (visitId) => liveRegistry.isAlreadyTransmittedVisitId(visitId),
+      },
+    });
+    res.json(manifest);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.get('/shift-day/dryrun/:runId', requireAdmin, (req, res) => {
+  const manifest = dryrunStore.readManifest(req.params.runId);
+  if (!manifest) return res.status(404).json({ error: 'Run not found' });
+  res.json(manifest);
+});
+
+router.get('/shift-day/dryrun/:runId/:file', requireAdmin, (req, res) => {
+  const data = dryrunStore.readVisitFile(req.params.runId, req.params.file);
+  if (!data) return res.status(404).json({ error: 'File not found' });
+  res.json(data);
+});
+
+/* ---------- Stage 4 live transmit (gated) ---------- */
+
+router.get('/shift-day/live/status', requireAdmin, (_req, res) => {
+  const allowlist = loadAllowlist();
+  res.json({
+    liveTransmitEnabled: isLiveTransmitEnabled(),
+    allowlistCount: allowlist.draftIds.length,
+    draftIds: allowlist.draftIds,
+  });
+});
+
+/**
+ * POST /shift-day/live/transmit
+ * Body: {
+ *   dryRunId, visitFile, confirmStore, mode?: 'start'|'resume', draftId?,
+ *   testMode?: boolean, goldenExportPath?: string, postExportPath?: string
+ * }
+ * testMode requires goldenExportPath (export-cp-shift-full folder, allChecksPassed).
+ * 403 if LIVE_TRANSMIT off or draft not allowlisted.
+ * Two-tap arm: confirmStore must equal the assembled actualStore.
+ */
+router.post('/shift-day/live/transmit', requireAdmin, async (req, res) => {
+  if (!isLiveTransmitEnabled()) {
+    return res.status(403).json({ error: 'LIVE_TRANSMIT is disabled', code: 'live_transmit_disabled' });
+  }
+
+  const {
+    dryRunId,
+    visitFile,
+    confirmStore,
+    mode = 'start',
+    draftId: bodyDraftId,
+    testMode = false,
+    goldenExportPath = null,
+    postExportPath = null,
+  } = req.body || {};
+  if (!dryRunId || !visitFile) {
+    return res.status(400).json({ error: 'dryRunId and visitFile required' });
+  }
+  if (confirmStore == null || confirmStore === '') {
+    return res.status(400).json({ error: 'confirmStore required (type the store number to arm)' });
+  }
+  if (testMode && !goldenExportPath) {
+    return res.status(400).json({
+      error: 'testMode requires goldenExportPath (export-cp-shift-full folder with allChecksPassed)',
+      code: 'golden_export_required',
+    });
+  }
+
+  const assembled = dryrunStore.readVisitFile(dryRunId, visitFile);
+  if (!assembled) return res.status(404).json({ error: 'Assembled visit file not found' });
+
+  const draftId = bodyDraftId || draftIdFromParts(assembled.repKey, assembled.date, assembled.actualStore);
+  if (!isDraftAllowlisted(draftId)) {
+    return res.status(403).json({
+      error: `Draft ${draftId} is not on the live allowlist`,
+      code: 'not_allowlisted',
+      draftId,
+    });
+  }
+
+  try {
+    const result = await executeLiveTransmit({
+      dryRunId,
+      visitFile,
+      draftId,
+      confirmStore,
+      mode: mode === 'resume' ? 'resume' : 'start',
+      testMode: !!testMode,
+      goldenExportPath,
+      postExportPath,
+    });
+
+    if (result.abortReason === 'live_transmit_disabled' || result.abortReason === 'not_allowlisted') {
+      return res.status(403).json(result);
+    }
+    if (result.abortReason === 'golden_export_required') {
+      return res.status(400).json(result);
+    }
+    if (result.status === 'complete') {
+      return res.json(result);
+    }
+    if (result.abortReason === 'preflight_failed') {
+      return res.status(409).json(result);
+    }
+    if (result.status === 'partial') {
+      return res.status(409).json(result);
+    }
+    return res.status(400).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /shift-day/live/roundtrip-diff
+ * After re-export, compare golden vs post-run export folders.
+ * Body: { dryRunId, visitFile?, goldenExportPath, postExportPath, draftId?, visitId? }
+ */
+router.post('/shift-day/live/roundtrip-diff', requireAdmin, (req, res) => {
+  const { dryRunId, visitFile, goldenExportPath, postExportPath, draftId, visitId } = req.body || {};
+  if (!dryRunId || !goldenExportPath || !postExportPath) {
+    return res.status(400).json({
+      error: 'dryRunId, goldenExportPath, and postExportPath required',
+    });
+  }
+  let transmittedCalls = [];
+  if (visitFile) {
+    const assembled = dryrunStore.readVisitFile(dryRunId, visitFile);
+    transmittedCalls = assembled?.calls || [];
+  }
+  try {
+    const roundtrip = runRoundtripDiff({
+      dryRunId,
+      goldenExportPath,
+      postExportPath,
+      transmittedCalls,
+      visitId: visitId || null,
+      draftId: draftId || null,
+    });
+    res.json(roundtrip);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/shift-day/live/state/:dryRunId/:file', requireAdmin, (req, res) => {
+  const state = liveStore.readExecutorState(req.params.dryRunId, req.params.file);
+  const log = liveStore.readExecutionLog(req.params.dryRunId, req.params.file);
+  const assembled = dryrunStore.readVisitFile(req.params.dryRunId, req.params.file);
+  const draftId = assembled
+    ? draftIdFromParts(assembled.repKey, assembled.date, assembled.actualStore)
+    : null;
+  const registry = draftId ? liveRegistry.getTransmitRecord(draftId) : null;
+  res.json({ state, log, registry, draftId, liveTransmitEnabled: isLiveTransmitEnabled() });
+});
+
+/* ---------- Stage 5: photo delivery (admin only, Resend gated) ---------- */
+
+router.get('/shift-day/photo-delivery/status', requireAdmin, (_req, res) => {
+  res.json({
+    enabled: isPhotoDeliveryEnabled(),
+    trigger: 'event-driven',
+    note:
+      'Sends fire only after a completed LIVE transmit or explicit admin re-send. ' +
+      'No boot/startup scan of historical transmitted visits. Code default is off; Railway may set PHOTO_DELIVERY_ENABLED=1.',
+  });
+});
+
+/**
+ * GET /shift-day/photo-delivery?rep=&date=&store=
+ * Per-visit photo delivery inventory + last run state.
+ */
+router.get('/shift-day/photo-delivery', requireAdmin, (req, res) => {
+  const { rep, date, store } = req.query;
+  if (!rep || !date || store == null || store === '') {
+    return res.status(400).json({ error: 'rep, date, and store required' });
+  }
+  const draft = visitDraftStore.getDraft(rep, date, store);
+  if (!draft) return res.status(404).json({ error: 'Visit draft not found' });
+  res.json({
+    draftId: draft.id,
+    status: draft.status,
+    delivery: getDeliveryStatus(draft),
+  });
+});
+
+/**
+ * POST /shift-day/photo-delivery/send
+ * Body: { rep, date, store, onlyFailed?: boolean }
+ * Inventories photos and attempts Resend when PHOTO_DELIVERY_ENABLED=1.
+ */
+router.post('/shift-day/photo-delivery/send', requireAdmin, async (req, res) => {
+  const { rep, date, store, onlyFailed = false } = req.body || {};
+  if (!rep || !date || store == null || store === '') {
+    return res.status(400).json({ error: 'rep, date, and store required' });
+  }
+  const draft = visitDraftStore.getDraft(rep, date, store);
+  if (!draft) return res.status(404).json({ error: 'Visit draft not found' });
+
+  try {
+    const delivery = await deliverVisitPhotos({
+      draft,
+      existingDelivery: draft.photoDelivery || null,
+      onlyFailed: !!onlyFailed,
+    });
+    visitDraftStore.setPhotoDelivery(rep, date, store, delivery);
+    res.json({
+      draftId: draft.id,
+      delivery,
+      enabled: isPhotoDeliveryEnabled(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /shift-day/photo-delivery/resend-failed
+ * Body: { rep, date, store }
+ * Re-sends only failed (and still-pending) photos; keeps sent entries.
+ */
+router.post('/shift-day/photo-delivery/resend-failed', requireAdmin, async (req, res) => {
+  const { rep, date, store } = req.body || {};
+  if (!rep || !date || store == null || store === '') {
+    return res.status(400).json({ error: 'rep, date, and store required' });
+  }
+  const draft = visitDraftStore.getDraft(rep, date, store);
+  if (!draft) return res.status(404).json({ error: 'Visit draft not found' });
+
+  try {
+    const delivery = await deliverVisitPhotos({
+      draft,
+      existingDelivery: draft.photoDelivery || null,
+      onlyFailed: true,
+    });
+    visitDraftStore.setPhotoDelivery(rep, date, store, delivery);
+    res.json({
+      draftId: draft.id,
+      delivery,
+      enabled: isPhotoDeliveryEnabled(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

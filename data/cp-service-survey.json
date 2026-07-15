@@ -1,0 +1,120 @@
+{
+  "_meta": {
+    "pending": false,
+    "surveyName": "Central Pet Service Survey",
+    "description": "Central Pet Service Survey — 12 questions with conditional branching, consumed by visit-flow Step 5. Wording/options supplied verbatim by the supervisor on 2026-07-13 and must stay byte-for-byte identical (including the en dash in Q7's \"Small format store \u2013 no Central Pet items in Cat Litter\").",
+    "conditionalRules": "Q4 shown only if Q3 answer != 'Fully stocked'. Q6 shown only if Q5 answer == 'No'. Q8 shown only if Q7 answer == 'No'. Q10 shown only if Q9 answer == 'No'. Q11 is always-visible free text. Q1/Q12 auto-fill to 'yes' once before/after photos (respectively) exist.",
+    "stage4Note": "Stage 4 submits these answers to the prod survey; option matching against SAS's answer set will likely be by exact string. Verify every question text and option string here against the HAR's survey payload when wiring Stage 4 transmission, and flag any mismatch rather than fuzzy-matching.",
+    "stage4Verified": "2026-07-13: cross-checked byte-for-byte against GET /api/v1/surveys/questions/?survey=115502 in central pet shifts.json (survey 'Central Pet Service Survey', visit 27000510, HAR entry #198). Q2/Q3/Q7 (checkbox-type) options matched exactly, incl. Q7's en dash. Q1/Q5/Q9/Q12 (yesNo-type) options were corrected here from 'Yes'/'No' to lowercase 'yes'/'no' to match prod's actual choices[].text exactly (per T's sign-off)."
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "order": 1,
+      "text": "Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.",
+      "type": "single-select",
+      "options": ["yes", "no"],
+      "visibleIf": null,
+      "autoFill": "beforePhotos"
+    },
+    {
+      "id": "q2",
+      "order": 2,
+      "text": "Is the Central Pet order in store for you to work to shelf?",
+      "type": "single-select",
+      "options": ["Yes", "No", "Service day only (no new order)"],
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q3",
+      "order": 3,
+      "text": "Did you stock the section?",
+      "type": "single-select",
+      "options": ["Fully stocked", "Partially stocked with holes / OOS", "Did not stock"],
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q4",
+      "order": 4,
+      "text": "Why were you unable to stock the section?",
+      "type": "freetext",
+      "options": null,
+      "visibleIf": { "questionId": "q3", "op": "notEquals", "value": "Fully stocked" },
+      "autoFill": null
+    },
+    {
+      "id": "q5",
+      "order": 5,
+      "text": "Did you merchandise clip strips?",
+      "type": "single-select",
+      "options": ["yes", "no"],
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q6",
+      "order": 6,
+      "text": "Why were you unable to merchandise clip strips?",
+      "type": "freetext",
+      "options": null,
+      "visibleIf": { "questionId": "q5", "op": "equals", "value": "no" },
+      "autoFill": null
+    },
+    {
+      "id": "q7",
+      "order": 7,
+      "text": "Did you merchandise Central Pet items in the top shelf of the Cat Litter section?",
+      "type": "single-select",
+      "options": ["Yes", "Small format store \u2013 no Central Pet items in Cat Litter", "No"],
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q8",
+      "order": 8,
+      "text": "Why were you unable to merchandise items into the Cat Litter section?",
+      "type": "freetext",
+      "options": null,
+      "visibleIf": { "questionId": "q7", "op": "equals", "value": "No" },
+      "autoFill": null
+    },
+    {
+      "id": "q9",
+      "order": 9,
+      "text": "Did you merchandise the Butcher Block rack?",
+      "type": "single-select",
+      "options": ["yes", "no"],
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q10",
+      "order": 10,
+      "text": "If no, why were you unable to merchandise the Butcher Block rack?",
+      "type": "freetext",
+      "options": null,
+      "visibleIf": { "questionId": "q9", "op": "equals", "value": "no" },
+      "autoFill": null
+    },
+    {
+      "id": "q11",
+      "order": 11,
+      "text": "Is there any additional feedback / issues / successes during your visit?",
+      "type": "freetext",
+      "options": null,
+      "visibleIf": null,
+      "autoFill": null
+    },
+    {
+      "id": "q12",
+      "order": 12,
+      "text": "Take AFTER photos of the Pet Supplies aisle when you are finished. Two 4ft sections per photo.",
+      "type": "single-select",
+      "options": ["yes", "no"],
+      "visibleIf": null,
+      "autoFill": "afterPhotos"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "description": "HAR-grounded evidence for re-closing an already-completed visit in admin mode. Distinct from first-time completion (PUT/PATCH field-app/visits/{id}/shift-complete/).",
+    "usedBy": "live-executor testMode final call (appendRecompleteCall)",
+    "sources": [
+      {
+        "file": "C:/Users/tgaut/Downloads/486_2.har",
+        "method": "POST",
+        "path": "/api/v1/field-app/visits/26536388/recomplete/",
+        "responseStatus": 200,
+        "responseBody": { "errors": [], "success": true, "message": "Visit completed successfully." },
+        "note": "Admin re-close on an already-worked visit. Chrome HAR captured a large postData body (category-reset echo); SAS skill docs and the Stage 4 testMode protocol use empty body — server accepts empty POST and returns the same success message."
+      },
+      {
+        "file": "C:/Users/tgaut/Downloads/682_2.har",
+        "method": "POST",
+        "path": "/api/v1/field-app/visits/26436333/recomplete/",
+        "responseStatus": 200,
+        "responseBody": { "errors": [], "success": true, "message": "Visit completed successfully." }
+      },
+      {
+        "skill": "sas-si-to-prod-photo-recovery / sas-upload-category-after-photos",
+        "endpoint": "POST /api/v1/field-app/visits/{visitId}/recomplete/",
+        "payload": "empty body when finishing after photo/admin mutations on a completed visit"
+      }
+    ],
+    "notThisEndpoint": {
+      "method": "PUT",
+      "path": "/api/v1/field-app/visits/{visitId}/shift-complete/",
+      "sourceRef": "HAR entry #435 in har-evidence-27000510.json — first-time visit completion in the normal 39-call spine, NOT re-close of an already-completed visit"
+    }
+  },
+  "executorCall": {
+    "method": "POST",
+    "urlTemplate": "https://prod.sasretail.com/api/v1/field-app/visits/{visitId}/recomplete/",
+    "payload": {},
+    "sourceRef": "HAR 486_2.har / 682_2.har — POST /api/v1/field-app/visits/{id}/recomplete/ → 200 {message:\"Visit completed successfully.\"}; empty body per sas-si-to-prod-photo-recovery skill (not PUT shift-complete #435)"
+  }
+}

@@ -1,0 +1,722 @@
+[
+  {
+    "harEntry": 57,
+    "started": "2026-07-09T14:55:25.596Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/?from_state=",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 400,
+    "resText": "{\"success\":false,\"message\":\"No Visit matches the given query.\",\"detail\":\"No Visit matches the given query.\",\"code\":\"error\",\"error\":\"Programming Error\"}"
+  },
+  {
+    "harEntry": 58,
+    "started": "2026-07-09T14:55:25.596Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/?from_state=admin&visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "[{\"date\":\"2026-07-08\",\"store_data\":[{\"visit_id\":27000510,\"sibling_visit_ids\":\"26819822,26822176,27000510,27000519,27000525\",\"current_status\":\"in-progress\",\"shift_start_time\":\"06:01 AM\",\"total_shift_employees\":1,\"store\":{\"name\":\"Fred Meyer\",\"number\":391,\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"timezone_store\":\"PDT\"},\"visits_status\":[\"in-progress\"]}]}]"
+  },
+  {
+    "harEntry": 72,
+    "started": "2026-07-09T14:55:25.869Z",
+    "method": "GET",
+    "path": "/api/v1/alerts/app-alert/?alert_date=2026-07-09&visit_ids=26819822,26822176,27000510,27000519,27000525",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 73,
+    "started": "2026-07-09T14:55:25.869Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-visit/?from_state=admin",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "{\"visit_id\":27000510,\"project\":\"Fred Meyer Central Pet Service Surge\",\"project_id\":9293,\"program_id\":134,\"customer_id\":2,\"cycle\":\"2026 Central Pet P6W3\",\"total_shift_employees\":1,\"actual_start_time\":null,\"store\":{\"name\":\"Fred Meyer\",\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"number\":391,\"logo\":\"https://djttbrw0ufia8.cloudfront.net/media/customers/Fred_Meyer_logo.svg_2d1kGg8_FT2ksa5.png\",\"location\":{\"type\":\"Point\",\"coordinates\":[-122.184062,47.7076552]}},\"scheduled_start_date\":\"2026-07-08\",\"scheduled_end_date\":\"2026-07-08\",\"shift_start_time\":\"06:01 AM\",\"shift_end_time\":\"09:01 AM\",\"web_start_time\":null,\"web_end_time\":null,\"mobile_start_time\":null,\"mobile_end_time\":null,\"no_show\":true,\"web_duration\":null,\"mobile_duration\":null,\"visit_email\":false,\"executed_date_cushion\":0,\"mobile_timezone_store\":\"PDT\",\"mobile_timezone_offset\":\"420\",\"mobile_timezone_region\":\"America/Los_Angeles\",\"google_start_location\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-122.3203498,47.3414786]},\"properties\":{\"city\":{\"id\":9006,\"name\":\"Federal Way\",\"state_id\":57,\"country_id\":\"US\",\"state_name\":\"Washington\",\"state_abbr\":\"WA\",\"country_name\":\"United States\"},\"line\":\"28920 11th Place South\",\"postal_code\":\"98003\"}},\"google_end_location\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-122.184062,47.7076552]},\"properties\":{\"city\":{\"id\":14088,\"name\":\"Kirkland\",\"state_id\":57,\"country_id\":\"US\",\"state_name\":\"Washington\",\"state_abbr\":\"WA\",\"country_name\":\"United States\"},\"line\":\"12221 120th Ave. N. E.\",\"postal_code\":\"98034\"}},\"est_distance\":\"30.8 mi\",\"est_duration\":\"40 mins\",\"web_start_location\":null,\"web_end_location\":null,\"mobile_start_location\":[0.0,0.0],\"mobile_end_location\":[0.0,0.0],\"schedules\":[{\"visit_id\":27000510,\"shift_id\":44390825,\"store_number\":391,\"cycle_id\":242141,\"parent_visit_id\":27000510,\"current_status\":\"in-progress\",\"project\":\"Fred Meyer Central Pet Service Surge\",\"project_id\":9293,\"store_rating_required\":false,\"allow_merchandiser_change\":true,\"cico_travel\":true,\"is_admin\":false,\"allow_members_edit_time\":true,\"allow_leads_edit_time\":true,\"cycle\":\"2026 Central Pet P6W3\",\"is_time_confirmed\":null,\"total_shift_employees\":1,\"is_lead\":true,\"actual_start_time\":null,\"actual_end_time\":null,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"invoice_split_entity\":\"fairshare\",\"visit_email\":false,\"allow_gallery_access\":\"web\",\"can_start\":true,\"is_store_signoff_required\":false,\"executed_date_cushion\":0,\"start_offline_mode\":true,\"visit_min_start_date\":\"2026-07-05\",\"visit_max_start_date\":\"2026-07-10\",\"capture_location\":true,\"allow_geo_fancing\":false,\"step_count\":0,\"path_point\":[],\"continuity_initialized_date\":\"2026-07-09T07:04:11.434703Z\",\"required_cr_additional_fields\":null,\"allow_edit\":true,\"allow_member_add_expense\":true,\"enable_premium_pay\":false}],\"team_lead_feedback\":\"This is store 215 Kent\",\"employee\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":null,\"work_time\":null,\"latest_activity\":null,\"no_show\":true,\"actual_start_time\":null,\"actual_end_time\":null,\"te_approved\":false,\"has_pending_records\":false,\"workday_given_id\":\"800553343\"}]}"
+  },
+  {
+    "harEntry": 76,
+    "started": "2026-07-09T14:55:28.427Z",
+    "method": "GET",
+    "path": "/api/v1/alerts/app-alert/?alert_date=2026-07-09&visit_ids=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 80,
+    "started": "2026-07-09T14:55:28.757Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/store-notes/27000510/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"id\":1760,\"notes\":\"\",\"time_modified\":\"Nov 26, 2025 11:44 AM PST\",\"modified_by\":\"Kimberly Claflin Janell\"}"
+  },
+  {
+    "harEntry": 81,
+    "started": "2026-07-09T14:55:28.757Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":null,\"actual_end_time\":null,\"rating\":null,\"shift_breaks\":[],\"work_time\":null,\"break_time\":0,\"no_show\":true,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 82,
+    "started": "2026-07-09T14:55:28.757Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/?from_state=admin",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"id\":27000510,\"project_id\":\"9293\"}"
+  },
+  {
+    "harEntry": 85,
+    "started": "2026-07-09T14:55:28.941Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-field/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"visit_status\":\"in-progress\",\"show_rate_type\":false,\"executed_date_cushion\":0,\"store\":{\"name\":\"Fred Meyer\",\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"number\":391,\"logo\":\"https://djttbrw0ufia8.cloudfront.net/media/customers/Fred_Meyer_logo.svg_2d1kGg8_FT2ksa5.png\"},\"scheduled_start_date\":\"2026-07-08\",\"scheduled_end_date\":\"2026-07-08\",\"shift_start_time\":\"06:01 AM\",\"shift_end_time\":\"09:01 AM\",\"notes\":\"***WRITE ORDER*** THIS IS FOR STORE 215 -\\nDELIVERED YESTERDAY(MONDAY)/WORK LOAD/PICKS TUESDAY(TODAY)***WRITE ORDER***\",\"team\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":null,\"work_time\":null,\"latest_activity\":null,\"no_show\":true,\"actual_start_time\":null,\"actual_end_time\":null,\"te_approved\":false,\"has_pending_records\":false,\"executed_date\":null,\"executed_indicator\":\"same_day\",\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"allow_edit\":true}],\"documents\":[],\"videos_link\":[]}"
+  },
+  {
+    "harEntry": 87,
+    "started": "2026-07-09T14:55:28.988Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Please select category completion status\"]]}]"
+  },
+  {
+    "harEntry": 97,
+    "started": "2026-07-09T14:55:38.092Z",
+    "method": "GET",
+    "path": "/api/v1/broker/brokertimesheet/?visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 98,
+    "started": "2026-07-09T14:55:38.092Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":null,\"actual_end_time\":null,\"rating\":null,\"shift_breaks\":[],\"work_time\":null,\"break_time\":0,\"no_show\":true,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 100,
+    "started": "2026-07-09T14:55:38.092Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-visit-summary/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"automate_report\":false,\"visit_summary_email\":false,\"account_store_id\":138,\"services_detail\":[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Please select category completion status\"]]}],\"store_manager\":null,\"rating\":4,\"store_manager_feedback\":null,\"require_callback\":null,\"rcv_store_visit_summary\":null,\"phone\":null,\"email\":null,\"signature\":null,\"is_manager_accepted\":false}"
+  },
+  {
+    "harEntry": 101,
+    "started": "2026-07-09T14:55:38.092Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/store/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":null,\"actual_end_time\":null,\"rating\":null,\"shift_breaks\":[],\"work_time\":null,\"break_time\":0,\"no_show\":true,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 102,
+    "started": "2026-07-09T14:55:38.104Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Please select category completion status\"]]}]"
+  },
+  {
+    "harEntry": 128,
+    "started": "2026-07-09T14:55:49.763Z",
+    "method": "GET",
+    "path": "/api/v2/field-app/shifts/44390825/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"id\":44390825,\"shift_breaks\":[],\"travel_records\":[],\"actual_start_date\":null,\"actual_start_time\":null,\"actual_end_date\":null,\"actual_end_time\":null,\"executed_datetime\":null,\"no_show\":true,\"total_work_time\":null,\"store_timezone\":\"America/Los_Angeles\",\"timezone\":\"PDT\",\"timezone_offset\":\"420\",\"visit\":27000510,\"employee\":354456,\"time_change_reason\":null,\"time_change_comment\":null,\"capture_location\":false,\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"travel_time_maximum\":24,\"travel_distance_maximum\":1000,\"attestation_policy_link\":\"http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets\",\"can_show_estimation_footnote\":false}"
+  },
+  {
+    "harEntry": 129,
+    "started": "2026-07-09T14:55:50.052Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-field/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"visit_status\":\"in-progress\",\"show_rate_type\":false,\"executed_date_cushion\":0,\"store\":{\"name\":\"Fred Meyer\",\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"number\":391,\"logo\":\"https://djttbrw0ufia8.cloudfront.net/media/customers/Fred_Meyer_logo.svg_2d1kGg8_FT2ksa5.png\"},\"scheduled_start_date\":\"2026-07-08\",\"scheduled_end_date\":\"2026-07-08\",\"shift_start_time\":\"06:01 AM\",\"shift_end_time\":\"09:01 AM\",\"notes\":\"***WRITE ORDER*** THIS IS FOR STORE 215 -\\nDELIVERED YESTERDAY(MONDAY)/WORK LOAD/PICKS TUESDAY(TODAY)***WRITE ORDER***\",\"team\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":null,\"work_time\":null,\"latest_activity\":null,\"no_show\":true,\"actual_start_time\":null,\"actual_end_time\":null,\"te_approved\":false,\"has_pending_records\":false,\"executed_date\":null,\"executed_indicator\":\"same_day\",\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"allow_edit\":true}],\"documents\":[],\"videos_link\":[]}"
+  },
+  {
+    "harEntry": 132,
+    "started": "2026-07-09T14:55:52.761Z",
+    "method": "POST",
+    "path": "/api/v2/field-app/travel/44390825/to_store/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[{\"id\":null,\"shift_id\":44390825,\"start_location_type\":\"H\",\"end_location_type\":\"S\",\"start_time\":\"2026-07-08T12:22:00Z\",\"end_time\":\"2026-07-08T13:01:00Z\",\"duration\":\"0.6500\",\"distance\":\"30.80\",\"replaced\":false,\"travel_policy\":{\"travel_type\":\"H-S\",\"drive_time_threshold\":0.5},\"is_system_generated\":true,\"is_truncated\":false},{\"id\":null,\"shift_id\":44390825,\"start_location_type\":\"H\",\"end_location_type\":\"S\",\"start_time\":\"2026-07-08T12:22:00Z\",\"end_time\":\"2026-07-08T13:01:00Z\",\"duration\":\"0.6500\",\"distance\":\"30.80\",\"replaced\":false,\"travel_policy\":{\"travel_type\":\"H-S\",\"drive_time_threshold\":0.5},\"record_type\":\"LOG\",\"is_system_generated\":true,\"is_truncated\":false}]"
+  },
+  {
+    "harEntry": 137,
+    "started": "2026-07-09T14:56:04.196Z",
+    "method": "PATCH",
+    "path": "/api/v2/field-app/shifts/44390825/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"id\":44390825,\"shift_breaks\":[],\"travel_records\":[{\"id\":null,\"shift_id\":44390825,\"start_location_type\":\"H\",\"end_location_type\":\"S\",\"start_time\":\"2026-07-08T12:22:00Z\",\"end_time\":\"2026-07-08T13:01:00Z\",\"duration\":\"0.6500\",\"distance\":\"30.80\",\"replaced\":null,\"travel_policy\":{},\"record_type\":\"CHANGE\",\"is_system_generated\":true,\"is_truncated\":false},{\"id\":null,\"shift_id\":44390825,\"start_location_type\":\"H\",\"end_location_type\":\"S\",\"start_time\":\"2026-07-08T12:22:00Z\",\"end_time\":\"2026-07-08T13:01:00Z\",\"duration\":\"0.6500\",\"distance\":\"30.80\",\"replaced\":null,\"travel_policy\":{},\"is_system_generated\":true,\"is_truncated\":false}],\"actual_start_date\":\"2026-07-08\",\"actual_start_time\":\"06:01:00\",\"actual_end_date\":\"2026-07-08\",\"actual_end_time\":\"14:01:00\",\"executed_datetime\":\"2026-07-08T13:01:00Z\",\"no_show\":false,\"total_work_time\":\"8h 00m\",\"store_timezone\":\"America/Los_Angeles\",\"timezone\":\"PDT\",\"timezone_offset\":\"420\",\"visit\":27000510,\"employee\":354456,\"time_change_reason\":5,\"time_change_comment\":\"k\",\"capture_location\":false,\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"travel_time_maximum\":24,\"travel_distance_maximum\":1000,\"attestation_policy_link\":\"http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets\"}"
+  },
+  {
+    "harEntry": 138,
+    "started": "2026-07-09T14:56:04.897Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"8h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 141,
+    "started": "2026-07-09T14:56:09.541Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": ""
+  },
+  {
+    "harEntry": 143,
+    "started": "2026-07-09T14:56:09.542Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-reset-exceptions/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Category Reset Exception Types\",\"success\":true,\"complete\":[],\"incomplete\":[{\"id\":1,\"text\":\"Equipment issue\"},{\"id\":2,\"text\":\"POG issue\"},{\"id\":3,\"text\":\"Category not on schedule for this store\"},{\"id\":4,\"text\":\"Store under remodel\"},{\"id\":5,\"text\":\"Limited Resources\"},{\"id\":6,\"text\":\"Multiple visit work scheduled multiple days\"},{\"id\":7,\"text\":\"Store manager refused\"},{\"id\":8,\"text\":\"Other - Please mention in comments\"},{\"id\":13,\"text\":\"Section pulled from store\"},{\"id\":14,\"text\":\"Store Manager Refused - Product Not Available\"},{\"id\":15,\"text\":\"Store Manager Refused - Other, mention in comments\"},{\"id\":16,\"text\":\"Late Delivery\"},{\"id\":17,\"text\":\"Store Closed\"},{\"id\":18,\"text\":\"DSD Issues\"},{\"id\":84,\"text\":\"Mapping Issue\"},{\"id\":85,\"text\":\"Backlog - Revisit Needed\"},{\"id\":86,\"text\":\"Not an Executable KOMPASS event\"},{\"id\":255,\"text\":\"Installation not complete for event\"},{\"id\":222,\"text\":\"Sign Removed\"},{\"id\":288,\"text\":\"Planogram Issues\"},{\"id\":289,\"text\":\"Revisit Required (Short-Staffed, Incomplete)\"},{\"id\":290,\"text\":\"New Item Availability (Product Didn't Arrive)\"},{\"id\":156,\"text\":\"Sign missing from kit\"},{\"id\":155,\"text\":\"Sign damaged\"},{\"id\":190,\"text\":\"Hardware missing\"},{\"id\":191,\"text\":\"Aisle being restocked\"},{\"id\":291,\"text\":\"Reset Captain Decision (Declined)\"},{\"id\":223,\"text\":\"Did not locate kit\"}]}"
+  },
+  {
+    "harEntry": 145,
+    "started": "2026-07-09T14:56:09.542Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"8h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 146,
+    "started": "2026-07-09T14:56:09.542Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"8h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 150,
+    "started": "2026-07-09T14:56:09.549Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Please select category completion status\"]]}]"
+  },
+  {
+    "harEntry": 154,
+    "started": "2026-07-09T14:56:09.819Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/employees/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":\"8:00:00\",\"work_time\":\"8h 00m\",\"latest_activity\":null,\"no_show\":false,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"te_approved\":false,\"has_pending_records\":false,\"executed_date\":\"2026-07-08\",\"executed_indicator\":\"same_day\",\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]"
+  },
+  {
+    "harEntry": 158,
+    "started": "2026-07-09T14:56:10.366Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":null,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"}],\"count\":2},\"after\":{\"image\":null,\"count\":0}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":false,\"is_after_image_required\":false,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":false,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[]}]}"
+  },
+  {
+    "harEntry": 167,
+    "started": "2026-07-09T14:56:18.936Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"image_id\":79670081,\"image_url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\",\"message\":\"Category Reset Item images updated successfully.\",\"success\":true}"
+  },
+  {
+    "harEntry": 168,
+    "started": "2026-07-09T14:56:19.740Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":null,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"image\":null,\"count\":0}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":false,\"is_after_image_required\":false,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":false,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[]}]}"
+  },
+  {
+    "harEntry": 173,
+    "started": "2026-07-09T14:56:34.932Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"image_id\":79670111,\"image_url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\",\"message\":\"Category Reset Item images updated successfully.\",\"success\":true}"
+  },
+  {
+    "harEntry": 174,
+    "started": "2026-07-09T14:56:35.826Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":null,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"count\":1}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":false,\"is_after_image_required\":false,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":false,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[]}]}"
+  },
+  {
+    "harEntry": 186,
+    "started": "2026-07-09T14:56:43.429Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Category Reset Item updated successfully\",\"success\":true,\"data\":{\"comment\":\"\",\"completion_status\":true,\"exception_id\":null,\"time_modified\":\"2026-07-09T14:56:44.106443Z\"}}"
+  },
+  {
+    "harEntry": 187,
+    "started": "2026-07-09T14:56:43.640Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":true,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"count\":1}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":true,\"is_after_image_required\":true,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":true,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[]}]}"
+  },
+  {
+    "harEntry": 193,
+    "started": "2026-07-09T14:56:47.410Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/responders/?visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"id\":8336939,\"name\":\"brian.campbell@sasretailservices.com\",\"visit_id\":27000510}]"
+  },
+  {
+    "harEntry": 194,
+    "started": "2026-07-09T14:56:47.410Z",
+    "method": "GET",
+    "path": "/api/v2/field-app/survey-visits/?visit=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"id\":25760350,\"visit\":27000510,\"survey\":{\"id\":115502,\"name\":\"Central Pet Service Survey\",\"description\":null},\"survey_status\":\"Incomplete\",\"exception\":null,\"comment\":null}]"
+  },
+  {
+    "harEntry": 195,
+    "started": "2026-07-09T14:56:47.419Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}]"
+  },
+  {
+    "harEntry": 198,
+    "started": "2026-07-09T14:56:47.595Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/questions/?survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[{\"id\":918565,\"survey\":115502,\"number\":1,\"sort_id\":1,\"text\":\"Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970764,\"time_created\":\"2026-06-16T17:50:18.550817Z\",\"time_modified\":\"2026-06-16T18:04:53.880845Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918565},{\"id\":3970765,\"time_created\":\"2026-06-16T17:50:18.574494Z\",\"time_modified\":\"2026-06-16T18:04:53.902351Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918565}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918566,\"survey\":115502,\"number\":2,\"sort_id\":2,\"text\":\"Is the Central Pet order in store for you to work to shelf?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970936,\"time_created\":\"2026-06-16T18:04:53.954450Z\",\"time_modified\":\"2026-06-16T18:04:53.954460Z\",\"sortid\":3970766,\"value\":\"3970766\",\"text\":\"Yes\",\"is_image_required\":false,\"question\":918566},{\"id\":3970937,\"time_created\":\"2026-06-16T18:04:53.984757Z\",\"time_modified\":\"2026-06-16T18:04:53.984767Z\",\"sortid\":3970767,\"value\":\"3970767\",\"text\":\"No\",\"is_image_required\":false,\"question\":918566},{\"id\":3970938,\"time_created\":\"2026-06-16T18:04:54.012048Z\",\"time_modified\":\"2026-06-16T18:04:54.012057Z\",\"sortid\":3970768,\"value\":\"3970768\",\"text\":\"Service day only (no new order)\",\"is_image_required\":false,\"question\":918566}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918567,\"survey\":115502,\"number\":3,\"sort_id\":3,\"text\":\"Did you stock the section?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258986,\"time_created\":\"2026-06-16T17:50:18.782403Z\",\"time_modified\":\"2026-06-16T18:04:54.153164Z\",\"expected_answer\":\"Fully stocked\",\"next_question\":5,\"question\":918567},{\"id\":1258987,\"time_created\":\"2026-06-16T17:50:18.804608Z\",\"time_modified\":\"2026-06-16T18:04:54.166430Z\",\"expected_answer\":\"Partially stocked with holes / OOS\",\"next_question\":5,\"question\":918567}],\"choices\":[{\"id\":3970769,\"time_created\":\"2026-06-16T17:50:18.710214Z\",\"time_modified\":\"2026-06-16T18:04:54.070880Z\",\"sortid\":3970769,\"value\":\"3970769\",\"text\":\"Fully stocked\",\"is_image_required\":true,\"question\":918567},{\"id\":3970770,\"time_created\":\"2026-06-16T17:50:18.734555Z\",\"time_modified\":\"2026-06-16T18:04:54.091708Z\",\"sortid\":3970770,\"value\":\"3970770\",\"text\":\"Partially stocked with holes / OOS\",\"is_image_required\":true,\"question\":918567},{\"id\":3970939,\"time_created\":\"2026-06-16T18:04:54.115718Z\",\"time_modified\":\"2026-06-16T18:04:54.115727Z\",\"sortid\":3970771,\"value\":\"3970771\",\"text\":\"Did not stock\",\"is_image_required\":false,\"question\":918567}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918568,\"survey\":115502,\"number\":4,\"sort_id\":4,\"text\":\"Why were you unable to stock the section?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918569,\"survey\":115502,\"number\":5,\"sort_id\":5,\"text\":\"Did you merchandise clip strips?\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258988,\"time_created\":\"2026-06-16T17:50:18.918020Z\",\"time_modified\":\"2026-06-16T18:04:54.282372Z\",\"expected_answer\":\"yes\",\"next_question\":7,\"question\":918569}],\"choices\":[{\"id\":3970772,\"time_created\":\"2026-06-16T17:50:18.870097Z\",\"time_modified\":\"2026-06-16T18:04:54.232920Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918569},{\"id\":3970773,\"time_created\":\"2026-06-16T17:50:18.894731Z\",\"time_modified\":\"2026-06-16T18:04:54.254322Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918569}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918570,\"survey\":115502,\"number\":6,\"sort_id\":6,\"text\":\"Why were you unable to merchandise clip strips?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918571,\"survey\":115502,\"number\":7,\"sort_id\":7,\"text\":\"Did you merchandise Central Pet items in the top shelf of the Cat Litter section?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258989,\"time_created\":\"2026-06-16T17:50:19.052651Z\",\"time_modified\":\"2026-06-16T18:04:54.431097Z\",\"expected_answer\":\"Yes\",\"next_question\":9,\"question\":918571},{\"id\":1258990,\"time_created\":\"2026-06-16T17:50:19.071910Z\",\"time_modified\":\"2026-06-16T18:04:54.444235Z\",\"expected_answer\":\"Small format store – no Central Pet items in Cat Litter\",\"next_question\":9,\"question\":918571}],\"choices\":[{\"id\":3970774,\"time_created\":\"2026-06-16T17:50:18.982928Z\",\"time_modified\":\"2026-06-16T18:04:54.347144Z\",\"sortid\":3970774,\"value\":\"3970774\",\"text\":\"Yes\",\"is_image_required\":true,\"question\":918571},{\"id\":3970775,\"time_created\":\"2026-06-16T17:50:19.006964Z\",\"time_modified\":\"2026-06-16T18:04:54.368015Z\",\"sortid\":3970775,\"value\":\"3970775\",\"text\":\"Small format store – no Central Pet items in Cat Litter\",\"is_image_required\":false,\"question\":918571},{\"id\":3970940,\"time_created\":\"2026-06-16T18:04:54.392463Z\",\"time_modified\":\"2026-06-16T18:04:54.392473Z\",\"sortid\":3970776,\"value\":\"3970776\",\"text\":\"No\",\"is_image_required\":false,\"question\":918571}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918572,\"survey\":115502,\"number\":8,\"sort_id\":8,\"text\":\"Why were you unable to merchandise items into the Cat Litter section?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918573,\"survey\":115502,\"number\":9,\"sort_id\":9,\"text\":\"Did you merchandise the Butcher Block rack?\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258991,\"time_created\":\"2026-06-16T17:50:19.185574Z\",\"time_modified\":\"2026-06-16T18:04:54.559239Z\",\"expected_answer\":\"yes\",\"next_question\":11,\"question\":918573}],\"choices\":[{\"id\":3970777,\"time_created\":\"2026-06-16T17:50:19.138949Z\",\"time_modified\":\"2026-06-16T18:04:54.510891Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918573},{\"id\":3970778,\"time_created\":\"2026-06-16T17:50:19.162273Z\",\"time_modified\":\"2026-06-16T18:04:54.531928Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":false,\"question\":918573}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918574,\"survey\":115502,\"number\":10,\"sort_id\":10,\"text\":\"If no, why were you unable to merchandise the Butcher Block rack?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918575,\"survey\":115502,\"number\":11,\"sort_id\":11,\"text\":\"Is there any additional feedback / issues / successes during your visit?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918576,\"survey\":115502,\"number\":12,\"sort_id\":12,\"text\":\"Take AFTER photos of the Pet Supplies aisle when you are finished. Two 4ft sections per photo.\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970779,\"time_created\":\"2026-06-16T17:50:19.271551Z\",\"time_modified\":\"2026-06-16T18:04:54.653726Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918576},{\"id\":3970780,\"time_created\":\"2026-06-16T17:50:19.294698Z\",\"time_modified\":\"2026-06-16T18:04:54.675144Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918576}],\"question_dropdown_option\":[],\"websites_urls\":null}]"
+  },
+  {
+    "harEntry": 199,
+    "started": "2026-07-09T14:56:47.742Z",
+    "method": "GET",
+    "path": "/api/v2/surveys/survey-check-list/?visit=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 200,
+    "started": "2026-07-09T14:56:47.778Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/answers/?answer_status=saved&page_size=12&responder=8336939&sort=-id&survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 203,
+    "started": "2026-07-09T14:56:49.992Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/answers/?answer_status=valid&responder=8336939&survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 204,
+    "started": "2026-07-09T14:56:50.000Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/surveys/115502/run",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}]"
+  },
+  {
+    "harEntry": 206,
+    "started": "2026-07-09T14:56:50.148Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/documents/?survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/surveys/115502/run",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 308,
+    "started": "2026-07-09T14:59:56.569Z",
+    "method": "POST",
+    "path": "/api/v1/surveys/surveys/115502/complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/surveys/115502/run",
+    "status": 200,
+    "resText": "{\"message\":\"Survey completed.\",\"survey\":115502}"
+  },
+  {
+    "harEntry": 310,
+    "started": "2026-07-09T14:59:58.768Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/responders/?visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/surveys/115502/run",
+    "status": 200,
+    "resText": "[{\"id\":8336939,\"name\":\"tyson.gauthier@retailodyssey.com\",\"visit_id\":27000510}]"
+  },
+  {
+    "harEntry": 311,
+    "started": "2026-07-09T14:59:58.768Z",
+    "method": "GET",
+    "path": "/api/v2/field-app/survey-visits/?visit=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/surveys/115502/run",
+    "status": 200,
+    "resText": "[{\"id\":25760350,\"visit\":27000510,\"survey\":{\"id\":115502,\"name\":\"Central Pet Service Survey\",\"description\":null},\"survey_status\":\"Complete\",\"exception\":null,\"comment\":null}]"
+  },
+  {
+    "harEntry": 313,
+    "started": "2026-07-09T14:59:58.775Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}]"
+  },
+  {
+    "harEntry": 315,
+    "started": "2026-07-09T14:59:58.957Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/questions/?survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[{\"id\":918565,\"survey\":115502,\"number\":1,\"sort_id\":1,\"text\":\"Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970764,\"time_created\":\"2026-06-16T17:50:18.550817Z\",\"time_modified\":\"2026-06-16T18:04:53.880845Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918565},{\"id\":3970765,\"time_created\":\"2026-06-16T17:50:18.574494Z\",\"time_modified\":\"2026-06-16T18:04:53.902351Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918565}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918566,\"survey\":115502,\"number\":2,\"sort_id\":2,\"text\":\"Is the Central Pet order in store for you to work to shelf?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970936,\"time_created\":\"2026-06-16T18:04:53.954450Z\",\"time_modified\":\"2026-06-16T18:04:53.954460Z\",\"sortid\":3970766,\"value\":\"3970766\",\"text\":\"Yes\",\"is_image_required\":false,\"question\":918566},{\"id\":3970937,\"time_created\":\"2026-06-16T18:04:53.984757Z\",\"time_modified\":\"2026-06-16T18:04:53.984767Z\",\"sortid\":3970767,\"value\":\"3970767\",\"text\":\"No\",\"is_image_required\":false,\"question\":918566},{\"id\":3970938,\"time_created\":\"2026-06-16T18:04:54.012048Z\",\"time_modified\":\"2026-06-16T18:04:54.012057Z\",\"sortid\":3970768,\"value\":\"3970768\",\"text\":\"Service day only (no new order)\",\"is_image_required\":false,\"question\":918566}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918567,\"survey\":115502,\"number\":3,\"sort_id\":3,\"text\":\"Did you stock the section?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258986,\"time_created\":\"2026-06-16T17:50:18.782403Z\",\"time_modified\":\"2026-06-16T18:04:54.153164Z\",\"expected_answer\":\"Fully stocked\",\"next_question\":5,\"question\":918567},{\"id\":1258987,\"time_created\":\"2026-06-16T17:50:18.804608Z\",\"time_modified\":\"2026-06-16T18:04:54.166430Z\",\"expected_answer\":\"Partially stocked with holes / OOS\",\"next_question\":5,\"question\":918567}],\"choices\":[{\"id\":3970769,\"time_created\":\"2026-06-16T17:50:18.710214Z\",\"time_modified\":\"2026-06-16T18:04:54.070880Z\",\"sortid\":3970769,\"value\":\"3970769\",\"text\":\"Fully stocked\",\"is_image_required\":true,\"question\":918567},{\"id\":3970770,\"time_created\":\"2026-06-16T17:50:18.734555Z\",\"time_modified\":\"2026-06-16T18:04:54.091708Z\",\"sortid\":3970770,\"value\":\"3970770\",\"text\":\"Partially stocked with holes / OOS\",\"is_image_required\":true,\"question\":918567},{\"id\":3970939,\"time_created\":\"2026-06-16T18:04:54.115718Z\",\"time_modified\":\"2026-06-16T18:04:54.115727Z\",\"sortid\":3970771,\"value\":\"3970771\",\"text\":\"Did not stock\",\"is_image_required\":false,\"question\":918567}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918568,\"survey\":115502,\"number\":4,\"sort_id\":4,\"text\":\"Why were you unable to stock the section?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918569,\"survey\":115502,\"number\":5,\"sort_id\":5,\"text\":\"Did you merchandise clip strips?\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258988,\"time_created\":\"2026-06-16T17:50:18.918020Z\",\"time_modified\":\"2026-06-16T18:04:54.282372Z\",\"expected_answer\":\"yes\",\"next_question\":7,\"question\":918569}],\"choices\":[{\"id\":3970772,\"time_created\":\"2026-06-16T17:50:18.870097Z\",\"time_modified\":\"2026-06-16T18:04:54.232920Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918569},{\"id\":3970773,\"time_created\":\"2026-06-16T17:50:18.894731Z\",\"time_modified\":\"2026-06-16T18:04:54.254322Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918569}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918570,\"survey\":115502,\"number\":6,\"sort_id\":6,\"text\":\"Why were you unable to merchandise clip strips?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918571,\"survey\":115502,\"number\":7,\"sort_id\":7,\"text\":\"Did you merchandise Central Pet items in the top shelf of the Cat Litter section?\",\"type\":\"checkbox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258989,\"time_created\":\"2026-06-16T17:50:19.052651Z\",\"time_modified\":\"2026-06-16T18:04:54.431097Z\",\"expected_answer\":\"Yes\",\"next_question\":9,\"question\":918571},{\"id\":1258990,\"time_created\":\"2026-06-16T17:50:19.071910Z\",\"time_modified\":\"2026-06-16T18:04:54.444235Z\",\"expected_answer\":\"Small format store – no Central Pet items in Cat Litter\",\"next_question\":9,\"question\":918571}],\"choices\":[{\"id\":3970774,\"time_created\":\"2026-06-16T17:50:18.982928Z\",\"time_modified\":\"2026-06-16T18:04:54.347144Z\",\"sortid\":3970774,\"value\":\"3970774\",\"text\":\"Yes\",\"is_image_required\":true,\"question\":918571},{\"id\":3970775,\"time_created\":\"2026-06-16T17:50:19.006964Z\",\"time_modified\":\"2026-06-16T18:04:54.368015Z\",\"sortid\":3970775,\"value\":\"3970775\",\"text\":\"Small format store – no Central Pet items in Cat Litter\",\"is_image_required\":false,\"question\":918571},{\"id\":3970940,\"time_created\":\"2026-06-16T18:04:54.392463Z\",\"time_modified\":\"2026-06-16T18:04:54.392473Z\",\"sortid\":3970776,\"value\":\"3970776\",\"text\":\"No\",\"is_image_required\":false,\"question\":918571}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918572,\"survey\":115502,\"number\":8,\"sort_id\":8,\"text\":\"Why were you unable to merchandise items into the Cat Litter section?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918573,\"survey\":115502,\"number\":9,\"sort_id\":9,\"text\":\"Did you merchandise the Butcher Block rack?\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[{\"id\":1258991,\"time_created\":\"2026-06-16T17:50:19.185574Z\",\"time_modified\":\"2026-06-16T18:04:54.559239Z\",\"expected_answer\":\"yes\",\"next_question\":11,\"question\":918573}],\"choices\":[{\"id\":3970777,\"time_created\":\"2026-06-16T17:50:19.138949Z\",\"time_modified\":\"2026-06-16T18:04:54.510891Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918573},{\"id\":3970778,\"time_created\":\"2026-06-16T17:50:19.162273Z\",\"time_modified\":\"2026-06-16T18:04:54.531928Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":false,\"question\":918573}],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918574,\"survey\":115502,\"number\":10,\"sort_id\":10,\"text\":\"If no, why were you unable to merchandise the Butcher Block rack?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918575,\"survey\":115502,\"number\":11,\"sort_id\":11,\"text\":\"Is there any additional feedback / issues / successes during your visit?\",\"type\":\"textBox\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":false,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[],\"question_dropdown_option\":[],\"websites_urls\":null},{\"id\":918576,\"survey\":115502,\"number\":12,\"sort_id\":12,\"text\":\"Take AFTER photos of the Pet Supplies aisle when you are finished. Two 4ft sections per photo.\",\"type\":\"yesNo\",\"extra\":null,\"grid\":null,\"grid_configuration\":null,\"footer\":null,\"image\":null,\"min_date\":null,\"max_date\":null,\"answer_image_required\":true,\"disable_image_upload\":false,\"external_question_id\":null,\"min_numeric\":null,\"max_numeric\":null,\"skips\":[],\"choices\":[{\"id\":3970779,\"time_created\":\"2026-06-16T17:50:19.271551Z\",\"time_modified\":\"2026-06-16T18:04:54.653726Z\",\"sortid\":0,\"value\":\"no\",\"text\":\"no\",\"is_image_required\":false,\"question\":918576},{\"id\":3970780,\"time_created\":\"2026-06-16T17:50:19.294698Z\",\"time_modified\":\"2026-06-16T18:04:54.675144Z\",\"sortid\":1,\"value\":\"yes\",\"text\":\"yes\",\"is_image_required\":true,\"question\":918576}],\"question_dropdown_option\":[],\"websites_urls\":null}]"
+  },
+  {
+    "harEntry": 316,
+    "started": "2026-07-09T14:59:59.101Z",
+    "method": "GET",
+    "path": "/api/v2/surveys/survey-check-list/?visit=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 317,
+    "started": "2026-07-09T14:59:59.120Z",
+    "method": "GET",
+    "path": "/api/v1/surveys/answers/?answer_status=saved&page_size=12&responder=8336939&sort=-id&survey=115502",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[{\"answer\":\"yes\",\"question\":918576,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753724,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"3 Endcaps, 3 Wing Panels, Six Endcap Clipstrips\",\"question\":918575,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753721,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"yes\",\"question\":918573,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753690,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"Yes\",\"question\":918571,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753689,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"yes\",\"question\":918569,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753688,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"Fully stocked\",\"question\":918567,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753686,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"Yes\",\"question\":918566,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753680,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"},{\"answer\":\"yes\",\"question\":918565,\"responder\":8336939,\"survey\":115502,\"answer_status\":\"saved\",\"time_modified\":\"2026-07-09T14:59:57.378743Z\",\"id\":80753673,\"runid\":\"188e8268-cb38-48ce-b690-2ad4d94d881e\"}]"
+  },
+  {
+    "harEntry": 321,
+    "started": "2026-07-09T15:00:04.936Z",
+    "method": "GET",
+    "path": "/api/v1/broker/brokertimesheet/?visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 322,
+    "started": "2026-07-09T15:00:04.936Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"8h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 325,
+    "started": "2026-07-09T15:00:04.936Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T13:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"8h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 326,
+    "started": "2026-07-09T15:00:04.936Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-visit-summary/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/survey/admin",
+    "status": 200,
+    "resText": "{\"automate_report\":false,\"visit_summary_email\":false,\"account_store_id\":138,\"services_detail\":[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}],\"store_manager\":null,\"rating\":4,\"store_manager_feedback\":null,\"require_callback\":null,\"rcv_store_visit_summary\":null,\"phone\":null,\"email\":null,\"signature\":null,\"is_manager_accepted\":false}"
+  },
+  {
+    "harEntry": 327,
+    "started": "2026-07-09T15:00:04.949Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}]"
+  },
+  {
+    "harEntry": 332,
+    "started": "2026-07-09T15:00:07.489Z",
+    "method": "GET",
+    "path": "/api/v2/field-app/shifts/44390825/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"id\":44390825,\"shift_breaks\":[],\"travel_records\":[{\"id\":2191755,\"shift_id\":44390825,\"start_location_type\":\"H\",\"end_location_type\":\"S\",\"start_time\":\"2026-07-08T12:22:00Z\",\"end_time\":\"2026-07-08T13:01:00Z\",\"duration\":\"0.6500\",\"distance\":\"30.80\",\"replaced\":null,\"travel_policy\":{\"travel_type\":\"H-S\",\"drive_time_threshold\":0.5},\"is_system_generated\":true,\"is_truncated\":false}],\"actual_start_date\":\"2026-07-08\",\"actual_start_time\":\"06:01:00\",\"actual_end_date\":\"2026-07-08\",\"actual_end_time\":\"14:01:00\",\"executed_datetime\":\"2026-07-08T13:01:00Z\",\"no_show\":false,\"total_work_time\":\"8h 00m\",\"store_timezone\":\"America/Los_Angeles\",\"timezone\":\"PDT\",\"timezone_offset\":\"420\",\"visit\":27000510,\"employee\":354456,\"time_change_reason\":5,\"time_change_comment\":\"k\",\"capture_location\":false,\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"travel_time_maximum\":24,\"travel_distance_maximum\":1000,\"attestation_policy_link\":\"http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets\",\"can_show_estimation_footnote\":false}"
+  },
+  {
+    "harEntry": 353,
+    "started": "2026-07-09T15:00:42.161Z",
+    "method": "PATCH",
+    "path": "/api/v2/field-app/shifts/44390825/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"id\":44390825,\"shift_breaks\":[],\"travel_records\":[],\"actual_start_date\":\"2026-07-08\",\"actual_start_time\":\"11:01:00\",\"actual_end_date\":\"2026-07-08\",\"actual_end_time\":\"14:01:00\",\"executed_datetime\":\"2026-07-08T18:01:00Z\",\"no_show\":false,\"total_work_time\":\"3h 00m\",\"store_timezone\":\"America/Los_Angeles\",\"timezone\":\"PDT\",\"timezone_offset\":\"420\",\"visit\":27000510,\"employee\":354456,\"time_change_reason\":5,\"time_change_comment\":\"k\",\"capture_location\":false,\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true,\"travel_time_maximum\":24,\"travel_distance_maximum\":1000,\"attestation_policy_link\":\"http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets\"}"
+  },
+  {
+    "harEntry": 357,
+    "started": "2026-07-09T15:00:42.644Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"3h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 372,
+    "started": "2026-07-09T15:00:48.668Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": ""
+  },
+  {
+    "harEntry": 373,
+    "started": "2026-07-09T15:00:48.668Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-reset-exceptions/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Category Reset Exception Types\",\"success\":true,\"complete\":[],\"incomplete\":[{\"id\":1,\"text\":\"Equipment issue\"},{\"id\":2,\"text\":\"POG issue\"},{\"id\":3,\"text\":\"Category not on schedule for this store\"},{\"id\":4,\"text\":\"Store under remodel\"},{\"id\":5,\"text\":\"Limited Resources\"},{\"id\":6,\"text\":\"Multiple visit work scheduled multiple days\"},{\"id\":7,\"text\":\"Store manager refused\"},{\"id\":8,\"text\":\"Other - Please mention in comments\"},{\"id\":13,\"text\":\"Section pulled from store\"},{\"id\":14,\"text\":\"Store Manager Refused - Product Not Available\"},{\"id\":15,\"text\":\"Store Manager Refused - Other, mention in comments\"},{\"id\":16,\"text\":\"Late Delivery\"},{\"id\":17,\"text\":\"Store Closed\"},{\"id\":18,\"text\":\"DSD Issues\"},{\"id\":84,\"text\":\"Mapping Issue\"},{\"id\":85,\"text\":\"Backlog - Revisit Needed\"},{\"id\":86,\"text\":\"Not an Executable KOMPASS event\"},{\"id\":255,\"text\":\"Installation not complete for event\"},{\"id\":222,\"text\":\"Sign Removed\"},{\"id\":288,\"text\":\"Planogram Issues\"},{\"id\":289,\"text\":\"Revisit Required (Short-Staffed, Incomplete)\"},{\"id\":290,\"text\":\"New Item Availability (Product Didn't Arrive)\"},{\"id\":156,\"text\":\"Sign missing from kit\"},{\"id\":155,\"text\":\"Sign damaged\"},{\"id\":190,\"text\":\"Hardware missing\"},{\"id\":191,\"text\":\"Aisle being restocked\"},{\"id\":291,\"text\":\"Reset Captain Decision (Declined)\"},{\"id\":223,\"text\":\"Did not locate kit\"}]}"
+  },
+  {
+    "harEntry": 375,
+    "started": "2026-07-09T15:00:48.668Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"3h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 376,
+    "started": "2026-07-09T15:00:48.668Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"3h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 378,
+    "started": "2026-07-09T15:00:48.673Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/employees/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":\"3:00:00\",\"work_time\":\"3h 00m\",\"latest_activity\":null,\"no_show\":false,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"te_approved\":false,\"has_pending_records\":false,\"executed_date\":\"2026-07-08\",\"executed_indicator\":\"same_day\",\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]"
+  },
+  {
+    "harEntry": 381,
+    "started": "2026-07-09T15:00:48.681Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":0.0,\"total_items\":1,\"completed_items\":0,\"completed\":false,\"not_completed\":[],\"show_completed_item_count\":0,\"error_messages\":[[\"Category Reset - PET CARE SUPPLIES - \",\"Team Member and Spent Time are mandatory as category is completed\"]]}]"
+  },
+  {
+    "harEntry": 386,
+    "started": "2026-07-09T15:00:49.491Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":true,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"count\":1}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":true,\"is_after_image_required\":true,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":true,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[]}]}"
+  },
+  {
+    "harEntry": 410,
+    "started": "2026-07-09T15:00:58.212Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Category Reset Item updated successfully\",\"success\":true,\"data\":{}}"
+  },
+  {
+    "harEntry": 411,
+    "started": "2026-07-09T15:00:58.455Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":false,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":true,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"count\":1}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":true,\"is_after_image_required\":true,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":true,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"workday_given_id\":\"800553343\",\"id\":354456,\"shift_id\":44390825,\"image\":\"static/field/assets/img/userProfile.jpg\",\"current_status\":null,\"spent_time\":null,\"spent_time_reason\":null,\"time_diff\":null,\"work_time\":\"3:00:00\",\"is_duration_required\":true,\"te_approved\":false,\"has_pending_records\":false}]}]}"
+  },
+  {
+    "harEntry": 413,
+    "started": "2026-07-09T15:01:05.315Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"message\":[\"Please select spent time reason as cummulative spent time on this category is more than 5.00%\"],\"success\":false,\"is_spent_time\":true}"
+  },
+  {
+    "harEntry": 414,
+    "started": "2026-07-09T15:01:09.571Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/41384408/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Category Reset Item updated successfully\",\"success\":true,\"data\":{}}"
+  },
+  {
+    "harEntry": 415,
+    "started": "2026-07-09T15:01:09.784Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/category-resets/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"category_resets\":[{\"id\":41384408,\"completed\":true,\"category_id\":986,\"supplier\":null,\"specification\":null,\"planogram_id\":\"0\",\"name\":\"PET CARE SUPPLIES\",\"is_rolled_over\":true,\"number\":212,\"est_size_numerator\":1.0,\"est_size_unit\":\"ft\",\"reset_type\":\"MAINTENANCE\",\"image\":\"static/field/assets/img/default-category-image.png\",\"planogram_image\":\"static/field/assets/img/no-image.png\",\"category_completion\":true,\"state\":{\"before\":{\"images\":[{\"id\":79646998,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-16ACHnO4.jpeg\"},{\"id\":79646993,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw.jpeg\"},{\"id\":79670081,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/pro-yZAsjxfw_0QW2TSt.jpeg\"}],\"count\":3},\"after\":{\"images\":[{\"id\":79670111,\"url\":\"https://djttbrw0ufia8.cloudfront.net/media/8694_uGITqFZ.jpg\"}],\"count\":1}},\"avg_est_minutes\":\"1h\",\"exception\":{\"text\":null,\"id\":null},\"is_photo_required\":true,\"comment\":\"\",\"minutes_per_foot\":0.0,\"repack_count\":0,\"disco_count\":0,\"ua_count\":0,\"void_count\":0,\"ooc_count\":0,\"external_project_id\":\"\",\"department\":\"\",\"is_before_image_required\":true,\"is_after_image_required\":true,\"is_cycle_item_before_image_required\":false,\"is_cycle_item_after_image_required\":false,\"is_exception_required\":false,\"is_comment_required\":false,\"is_assignee_required\":true,\"new_pog_id\":null,\"act_size_numerator\":null,\"act_size_unit\":null,\"require_footage\":false,\"item_sequence\":null,\"new_item_count\":null,\"oos_count\":null,\"disc_qty_count\":null,\"sub_category\":\"\",\"new_pog_name\":null,\"new_pog_issue\":null,\"backstock_boxes\":null,\"new_items_stocked\":\"-\",\"pog_modified_date\":null,\"hand_written_tags\":null,\"not_on_file_qty\":null,\"out_of_dates\":null,\"required_cr_additional_fields\":[],\"has_future_visits_in_same_cycle\":true,\"aisle\":null,\"team\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"workday_given_id\":\"800553343\",\"id\":354456,\"shift_id\":44390825,\"image\":\"static/field/assets/img/userProfile.jpg\",\"current_status\":null,\"spent_time\":\"3h\",\"spent_time_reason\":{\"id\":3,\"text\":\"Other – supervisor was contacted\"},\"time_diff\":null,\"work_time\":\"3:00:00\",\"is_duration_required\":true,\"te_approved\":false,\"has_pending_records\":false}]}]}"
+  },
+  {
+    "harEntry": 422,
+    "started": "2026-07-09T15:01:13.094Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"3h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 425,
+    "started": "2026-07-09T15:01:13.095Z",
+    "method": "GET",
+    "path": "/api/v1/broker/brokertimesheet/?visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 426,
+    "started": "2026-07-09T15:01:13.095Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-visit-summary/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"automate_report\":false,\"visit_summary_email\":false,\"account_store_id\":138,\"services_detail\":[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true,\"not_completed\":[],\"show_completed_item_count\":1,\"error_messages\":[]}],\"store_manager\":null,\"rating\":4,\"store_manager_feedback\":null,\"require_callback\":null,\"rcv_store_visit_summary\":null,\"phone\":null,\"email\":null,\"signature\":null,\"is_manager_accepted\":false}"
+  },
+  {
+    "harEntry": 427,
+    "started": "2026-07-09T15:01:13.095Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/category-reset/admin",
+    "status": 200,
+    "resText": "{\"team_lead_feedback\":null,\"current_status\":\"in-progress\",\"is_broker_project\":false,\"invoice_split_entity\":{\"id\":\"fairshare\",\"text\":\"fairshare\"},\"employees\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"rating\":null,\"shift_breaks\":[],\"work_time\":\"3h 00m\",\"break_time\":0,\"no_show\":false,\"is_lead\":true,\"te_approved\":false,\"has_pending_records\":false,\"check_billing_status\":false,\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"allow_edit\":true,\"workday_given_id\":\"800553343\",\"home_to_store\":true,\"store_to_store\":true,\"store_to_home\":true,\"calculate_mileage\":true}]}"
+  },
+  {
+    "harEntry": 428,
+    "started": "2026-07-09T15:01:13.110Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/services-detail/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[{\"service_name\":\"survey\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true},{\"service_name\":\"category-reset\",\"percentage\":100.0,\"total_items\":1,\"completed_items\":1,\"completed\":true,\"not_completed\":[],\"show_completed_item_count\":1,\"error_messages\":[]}]"
+  },
+  {
+    "harEntry": 434,
+    "started": "2026-07-09T15:01:21.859Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/promo-audits/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 435,
+    "started": "2026-07-09T15:01:22.260Z",
+    "method": "PUT",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "{\"message\":\"Visit completed successfully.\",\"success\":true}"
+  },
+  {
+    "harEntry": 439,
+    "started": "2026-07-09T15:01:24.947Z",
+    "method": "PATCH",
+    "path": "/api/v1/field-app/visits/27000510/shift-complete/",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": ""
+  },
+  {
+    "harEntry": 440,
+    "started": "2026-07-09T15:01:24.947Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/?from_state=admin&visit_id=27000510",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/shift-completion/admin",
+    "status": 200,
+    "resText": "[{\"date\":\"2026-07-08\",\"store_data\":[{\"visit_id\":27000510,\"sibling_visit_ids\":\"26819822,26822176,27000510,27000519,27000525\",\"current_status\":\"completed\",\"shift_start_time\":\"06:01 AM\",\"total_shift_employees\":1,\"store\":{\"name\":\"Fred Meyer\",\"number\":391,\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"timezone_store\":\"PDT\"},\"visits_status\":[\"completed\"]}]}]"
+  },
+  {
+    "harEntry": 441,
+    "started": "2026-07-09T15:01:25.195Z",
+    "method": "GET",
+    "path": "/api/v1/alerts/app-alert/?alert_date=2026-07-09&visit_ids=26819822,26822176,27000510,27000519,27000525",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "[]"
+  },
+  {
+    "harEntry": 442,
+    "started": "2026-07-09T15:01:25.195Z",
+    "method": "GET",
+    "path": "/api/v1/field-app/visits/27000510/store-visit/?from_state=admin",
+    "referer": "https://prod.sasretail.com/en/field/schedules/27000510/schedule/admin",
+    "status": 200,
+    "resText": "{\"visit_id\":27000510,\"project\":\"Fred Meyer Central Pet Service Surge\",\"project_id\":9293,\"program_id\":134,\"customer_id\":2,\"cycle\":\"2026 Central Pet P6W3\",\"total_shift_employees\":1,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"store\":{\"name\":\"Fred Meyer\",\"address\":\"12221 120th Ave. N. E.\",\"city\":\"Kirkland\",\"state\":\"Washington\",\"country\":\"United States\",\"zip\":\"98034\",\"number\":391,\"logo\":\"https://djttbrw0ufia8.cloudfront.net/media/customers/Fred_Meyer_logo.svg_2d1kGg8_FT2ksa5.png\",\"location\":{\"type\":\"Point\",\"coordinates\":[-122.184062,47.7076552]}},\"scheduled_start_date\":\"2026-07-08\",\"scheduled_end_date\":\"2026-07-08\",\"shift_start_time\":\"06:01 AM\",\"shift_end_time\":\"09:01 AM\",\"web_start_time\":null,\"web_end_time\":null,\"mobile_start_time\":null,\"mobile_end_time\":null,\"no_show\":false,\"web_duration\":null,\"mobile_duration\":null,\"visit_email\":false,\"executed_date_cushion\":0,\"mobile_timezone_store\":\"PDT\",\"mobile_timezone_offset\":\"420\",\"mobile_timezone_region\":\"America/Los_Angeles\",\"google_start_location\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-122.3203498,47.3414786]},\"properties\":{\"city\":{\"id\":9006,\"name\":\"Federal Way\",\"state_id\":57,\"country_id\":\"US\",\"state_name\":\"Washington\",\"state_abbr\":\"WA\",\"country_name\":\"United States\"},\"line\":\"28920 11th Place South\",\"postal_code\":\"98003\"}},\"google_end_location\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-122.184062,47.7076552]},\"properties\":{\"city\":{\"id\":14088,\"name\":\"Kirkland\",\"state_id\":57,\"country_id\":\"US\",\"state_name\":\"Washington\",\"state_abbr\":\"WA\",\"country_name\":\"United States\"},\"line\":\"12221 120th Ave. N. E.\",\"postal_code\":\"98034\"}},\"est_distance\":\"30.8 mi\",\"est_duration\":\"40 mins\",\"web_start_location\":null,\"web_end_location\":null,\"mobile_start_location\":[0.0,0.0],\"mobile_end_location\":[0.0,0.0],\"schedules\":[{\"visit_id\":27000510,\"shift_id\":44390825,\"store_number\":391,\"cycle_id\":242141,\"parent_visit_id\":27000510,\"current_status\":\"completed\",\"project\":\"Fred Meyer Central Pet Service Surge\",\"project_id\":9293,\"store_rating_required\":false,\"allow_merchandiser_change\":true,\"cico_travel\":true,\"is_admin\":false,\"allow_members_edit_time\":true,\"allow_leads_edit_time\":true,\"cycle\":\"2026 Central Pet P6W3\",\"is_time_confirmed\":null,\"total_shift_employees\":1,\"is_lead\":true,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"timezone_offset\":\"420\",\"timezone_store\":\"PDT\",\"timezone_region\":\"America/Los_Angeles\",\"invoice_split_entity\":\"fairshare\",\"visit_email\":false,\"allow_gallery_access\":\"web\",\"can_start\":true,\"is_store_signoff_required\":false,\"executed_date_cushion\":0,\"start_offline_mode\":true,\"visit_min_start_date\":\"2026-07-05\",\"visit_max_start_date\":\"2026-07-10\",\"capture_location\":true,\"allow_geo_fancing\":false,\"step_count\":0,\"path_point\":[],\"continuity_initialized_date\":\"2026-07-09T07:04:11.434703Z\",\"required_cr_additional_fields\":null,\"allow_edit\":true,\"allow_member_add_expense\":true,\"enable_premium_pay\":false}],\"team_lead_feedback\":\"This is store 215 Kent\",\"employee\":[{\"name\":\"Brian Campbell Charles\",\"preferred_name\":null,\"id\":354456,\"is_lead\":true,\"image_path\":\"static/field/assets/img/userProfile.jpg\",\"shift_id\":44390825,\"time_spent\":\"3:00:00\",\"work_time\":\"3h 00m\",\"latest_activity\":null,\"no_show\":false,\"actual_start_time\":\"2026-07-08T18:01:00Z\",\"actual_end_time\":\"2026-07-08T21:01:00Z\",\"te_approved\":false,\"has_pending_records\":false,\"workday_given_id\":\"800553343\"}]}"
+  }
+]

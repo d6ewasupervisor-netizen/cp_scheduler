@@ -1,0 +1,62 @@
+{
+  "units": "address",
+  "source": "fred_meyer_store_list",
+  "notes": "D8 Central Pet service stores. Store 111 (Federal Way) is on Brian's route and must be included in mileage matrix legs.",
+  "stores": {
+    "19": {
+      "name": "Auburn",
+      "address": "801 Auburn Way N., Auburn, WA 98002",
+      "district": "D8"
+    },
+    "23": {
+      "name": "Bellevue",
+      "address": "2041 148th N. E., Bellevue, WA 98007",
+      "district": "D8"
+    },
+    "28": {
+      "name": "Burien",
+      "address": "14300 First Ave S., Burien, WA 98168",
+      "district": "D8"
+    },
+    "31": {
+      "name": "Renton (108th)",
+      "address": "17801 108th Ave S. E., Renton, WA 98055",
+      "district": "D8"
+    },
+    "53": {
+      "name": "Covington",
+      "address": "16735 S. E. 272nd St., Covington, WA 98042",
+      "district": "D8"
+    },
+    "111": {
+      "name": "Federal Way",
+      "address": "33702 21st Ave. S. W., Federal Way, WA 98023",
+      "district": "D8"
+    },
+    "215": {
+      "name": "Kent",
+      "address": "25250 Pacific Hwy. South, Kent, WA 98032",
+      "district": "D8"
+    },
+    "391": {
+      "name": "Kirkland",
+      "address": "12221 120th Ave. N. E., Kirkland, WA 98034",
+      "district": "D8"
+    },
+    "459": {
+      "name": "Renton Center",
+      "address": "365 Renton Center Way S. W., Renton, WA 98055",
+      "district": "D8"
+    },
+    "658": {
+      "name": "Issaquah",
+      "address": "6100 E. Lake Sammamish Pkwy. S. E., Issaquah, WA 98029",
+      "district": "D8"
+    },
+    "682": {
+      "name": "Maple Valley",
+      "address": "26520 Maple Valley-Black Diamond Rd, Maple Valley, WA 98038",
+      "district": "D8"
+    }
+  }
+}
