@@ -2,17 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { REP_LAYER_EMAILS } = require('./cp-roles');
+const { REP_LAYER_EMAILS, ADMIN_EMAILS } = require('./cp-roles');
 const { isCorporateWorkDomainEmail, isEmailAllowed } = require('./allowed-emails');
-
-function parseList(envVal) {
-  return (envVal || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-const ADMIN_EMAILS = parseList(process.env.CP_SCHEDULER_ADMIN_EMAILS);
 
 function loadRepEmailKeys() {
   try {

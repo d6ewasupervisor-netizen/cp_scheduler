@@ -67,13 +67,18 @@ Optional:
 
 | Variable | Purpose |
 |----------|---------|
-| `CP_SCHEDULER_REP_EMAILS` | Comma-separated rep-layer emails (default `d6ewa.supervisor@gmail.com` for rep UI testing) |
+| `CP_SCHEDULER_ADMIN_EMAILS` | Full admin layer (default: Tyson work + d6ewa.supervisor + tgauthier2011) |
+| `CP_SCHEDULER_REP_EMAILS` | Rep layer only (D8 field emails + Patricia). **Admin list wins** if both match. |
+| `CP_SCHEDULER_PUBLIC_URL` | Public origin for magic-link returnTo |
 | `CP_SCHEDULER_AUTH_SKIP` | `1` on localhost only — bypass auth for dev |
 | `EOD_API_BASE_URL` | Default `https://eod-api.the-dump-bin.com` |
+| `FRONTEND_BASE_URL` | Dump Bin hub (`https://the-dump-bin.com`) for open-sign-in wrap |
 | `DATABASE_PATH` | JSON draft store (default `data/schedule-drafts.json`) |
 | `SAS_AUTH_STATE` | Path to sas-auth token for PROD overlay |
 
 Also add the cp_scheduler origin to eod-api `ALLOWED_ORIGINS` if browsers call eod-api directly from sign-in (already includes `https://cpscheduler-production.up.railway.app` when synced via `scripts/railway-sync-auth-vars.py`).
+
+**Host hub entry (preferred):** from [the-dump-bin.com](https://the-dump-bin.com/) use **Central Pet — Shift Day** / **Planning Desk**. The hub passes the existing Dump Bin session JWT via `#dbSession=` (same `JWT_SECRET` as eod-api) so users do not re-enter email when already signed in.
 
 Sync auth vars from eod-api to cp_scheduler (local, requires Railway CLI login):
 
@@ -83,10 +88,12 @@ python scripts/railway-sync-auth-vars.py
 
 ### Views
 
-- **Admin** — everyone authenticated except rep-layer emails: templates, approve, handoff exports, PROD overlay.
-- **Rep** — simplified scheduling view: tap-to-place visits, save week, no exports.
+- **Admin** — Planning Desk (`/`), all-rep Shift Day preview, match, dry-run, live transmit UI, photo delivery.
+- **Rep** — Shift Day + own week only (`/shiftday.html`, `/rep.html`), scoped to `repKey`.
 
-**Rep vs admin testing:** Sign in as `d6ewa.supervisor@gmail.com` to see **exactly Patricia’s rep view** (mapped to Patricia Marks Z, 11 D1 visits, Not Available coverage picker). Sign in with any other allowed account (e.g. `tgauthier2011@gmail.com` or your work email) for admin Planning Desk (`/`). Patricia’s real account is `patricia.marks@youradv.com` — same schedule mapping.
+**Admin accounts (full layer):** `tyson.gauthier@retailodyssey.com`, `d6ewa.supervisor@gmail.com`, `tgauthier2011@gmail.com` (override with `CP_SCHEDULER_ADMIN_EMAILS`).
+
+**Rep accounts:** Brian / Kimberly / James D8 emails + Patricia Marks (override with `CP_SCHEDULER_REP_EMAILS`).
 
 Access request flow: sign-in page → eod-api `/api/access-request` → supervisor email with approve/deny link (same as Dump Bin).
 

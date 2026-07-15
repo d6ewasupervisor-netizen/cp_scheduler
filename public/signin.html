@@ -145,6 +145,20 @@
         return next && next.startsWith('/') ? next : '/';
       }
 
+      // Host handoff: #dbSession= from Dump Bin (shared JWT_SECRET)
+      try {
+        const rawHash = location.hash || '';
+        const m = rawHash.match(/(?:^#|&)dbSession=([^&]+)/i);
+        const qpSession = new URLSearchParams(location.search).get('session');
+        const handed = (m && decodeURIComponent(m[1])) || qpSession || '';
+        if (handed) {
+          localStorage.setItem(SESSION_KEY, handed);
+          try {
+            history.replaceState({}, '', location.pathname + location.search.replace(/[?&]session=[^&]*/g, '').replace(/^&/, '?') + '');
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       try {
         if (localStorage.getItem(SESSION_KEY)) {
           location.replace(resolveNext());
@@ -156,6 +170,12 @@
       const sendBtn = document.getElementById('send-btn');
       const statusEl = document.getElementById('status');
       const overlay = document.getElementById('access-overlay');
+
+      // Prefill from host deep-link ?email=
+      try {
+        const prefill = new URLSearchParams(location.search).get('email');
+        if (prefill) emailEl.value = prefill;
+      } catch (_) {}
 
       try {
         const err = sessionStorage.getItem('cpSignInError');

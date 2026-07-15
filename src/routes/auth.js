@@ -3,7 +3,7 @@
 const express = require('express');
 const { requireAuth } = require('../auth-middleware');
 const { AUTH_MODE, AUTH_SKIP } = require('../auth-middleware');
-const { REP_LAYER_EMAILS } = require('../lib/cp-roles');
+const { REP_LAYER_EMAILS, ADMIN_EMAILS } = require('../lib/cp-roles');
 const { layerHelpText } = require('../lib/visit-instructions');
 const { forwardToEodApi, eodApiBase } = require('../lib/eod-api-proxy');
 const { repKeyForEmail } = require('../lib/rep-emails');
@@ -162,6 +162,7 @@ router.get('/me', requireAuth, (req, res) => {
       : null,
     help: layerHelpText(req.user.layer),
     repLayerEmails: REP_LAYER_EMAILS,
+    adminEmails: ADMIN_EMAILS,
   });
 });
 
