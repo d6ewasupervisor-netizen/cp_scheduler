@@ -3,14 +3,19 @@
 /**
  * Stage 5 — Central Pet shift photo delivery via Resend.
  *
- * After a visit is transmitted (or on admin re-send), emails one JPEG per photo
- * to d6ewa.supervisor@gmail.com. flow-automation files them into OneDrive.
+ * After a visit is transmitted (or on admin re-send), emails visit JPEGs in
+ * size-budgeted batches to d6ewa.supervisor@gmail.com. flow-automation files
+ * each attachment into OneDrive by canonical filename.
  *
- * CONFIG-GATED OFF by default (PHOTO_DELIVERY_ENABLED=0). Building this module
- * does not enable sending.
+ * CONFIG-GATED OFF by default (PHOTO_DELIVERY_ENABLED=0) unless env arms it.
  *
- * Subject contract (stable): [Central Pet Shift] FM<store#> <YYYY-MM-DD> <filename>.jpg
+ * Subject contracts (both accepted by the receiver):
+ *   Legacy: [Central Pet Shift] FM<store#> <YYYY-MM-DD> <filename>.jpg
+ *   Batch:  [Central Pet Shift] FM<store#> <YYYY-MM-DD> batch <n>/<total> (<count> photos)
  * Filename contract: FM<store#>_<YYYY-MM-DD>_<category>_<seq>.jpg
+ *
+ * Base64 inflates ~37%; BATCH_RAW_BYTES_MAX default 15MB leaves headroom under
+ * Resend's ~25MB encoded limit.
  */
 
 const fs = require('fs');
@@ -23,6 +28,8 @@ const DEFAULT_TO = 'd6ewa.supervisor@gmail.com';
 const DEFAULT_FROM = 'centralpet@retail-odyssey.com';
 const SUBJECT_PREFIX = '[Central Pet Shift]';
 const HEADER_STORE = 'X-Central-Pet-Store';
+/** Default raw (pre-base64) budget per email. */
+const DEFAULT_BATCH_RAW_BYTES_MAX = 15 * 1024 * 1024;
 
 /** Internal draft category id → canonical filename slug. */
 const CATEGORY_SLUG = {
@@ -53,8 +60,10 @@ const CANONICAL_CATEGORIES = new Set([
   'load',
 ]);
 
-const SUBJECT_RE =
+const SUBJECT_LEGACY_RE =
   /^\[Central Pet Shift\]\s+FM(\d{1,3})\s+(\d{4}-\d{2}-\d{2})\s+(.+\.jpe?g)\s*$/i;
+const SUBJECT_BATCH_RE =
+  /^\[Central Pet Shift\]\s+FM(\d{1,3})\s+(\d{4}-\d{2}-\d{2})\s+batch\s+(\d+)\/(\d+)\s+\((\d+)\s+photos?\)\s*$/i;
 const FILENAME_RE =
   /^FM(\d{1,3})_(\d{4}-\d{2}-\d{2})_([a-z0-9-]+)_(\d+)\.jpe?g$/i;
 
@@ -78,6 +87,15 @@ function photoDeliveryTo() {
 function throttleMs() {
   const n = parseInt(process.env.PHOTO_DELIVERY_THROTTLE_MS || '250', 10);
   return Number.isFinite(n) && n >= 0 ? n : 250;
+}
+
+function batchRawBytesMax() {
+  const raw =
+    process.env.BATCH_RAW_BYTES_MAX ||
+    process.env.PHOTO_BATCH_RAW_BYTES_MAX ||
+    String(DEFAULT_BATCH_RAW_BYTES_MAX);
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_BATCH_RAW_BYTES_MAX;
 }
 
 function padStore(store) {
@@ -109,6 +127,7 @@ function buildCanonicalFilename({ store, date, category, seq }) {
   return `FM${storePad}_${date}_${cat}_${n}.jpg`;
 }
 
+/** Legacy single-photo subject (still valid for re-sends / tests). */
 function buildSubject({ store, date, filename }) {
   const storePad = padStore(store);
   if (!storePad) throw new Error('buildSubject: store required');
@@ -117,14 +136,44 @@ function buildSubject({ store, date, filename }) {
   return `${SUBJECT_PREFIX} FM${storePad} ${date} ${filename}`;
 }
 
+/** Batch subject — metadata rides on attachment filenames. */
+function buildBatchSubject({ store, date, batchIndex, batchTotal, count }) {
+  const storePad = padStore(store);
+  if (!storePad) throw new Error('buildBatchSubject: store required');
+  if (!date) throw new Error('buildBatchSubject: date required');
+  const n = Number(batchIndex) || 1;
+  const total = Number(batchTotal) || 1;
+  const c = Number(count) || 0;
+  return `${SUBJECT_PREFIX} FM${storePad} ${date} batch ${n}/${total} (${c} photo${c === 1 ? '' : 's'})`;
+}
+
 function parseSubject(subject) {
-  const m = SUBJECT_RE.exec(String(subject || '').trim());
-  if (!m) return null;
-  return {
-    store: padStore(m[1]),
-    date: m[2],
-    filename: m[3].trim(),
-  };
+  const s = String(subject || '').trim();
+  const batch = SUBJECT_BATCH_RE.exec(s);
+  if (batch) {
+    return {
+      kind: 'batch',
+      store: padStore(batch[1]),
+      date: batch[2],
+      batchIndex: parseInt(batch[3], 10),
+      batchTotal: parseInt(batch[4], 10),
+      photoCount: parseInt(batch[5], 10),
+      filename: null,
+    };
+  }
+  const legacy = SUBJECT_LEGACY_RE.exec(s);
+  if (legacy) {
+    return {
+      kind: 'legacy',
+      store: padStore(legacy[1]),
+      date: legacy[2],
+      filename: legacy[3].trim(),
+      batchIndex: null,
+      batchTotal: null,
+      photoCount: null,
+    };
+  }
+  return null;
 }
 
 function parseFilename(name) {
@@ -155,6 +204,7 @@ function resolvePhotoAbsPath(photoRecord) {
 /**
  * Collect deliverable photos from a sealed (or sealed-like) visit draft.
  * Checklist-only photos are omitted; survey answers reuse other buckets.
+ * One visit = one store/date; never mix visits in a batch.
  */
 function collectVisitPhotos(draft) {
   if (!draft) return [];
@@ -175,6 +225,7 @@ function collectVisitPhotos(draft) {
       path: photoRecord.path,
       absPath: resolvePhotoAbsPath(photoRecord),
       filename,
+      // Legacy single-photo subject kept for inventory/debug; batches use buildBatchSubject.
       subject: buildSubject({ store, date, filename }),
       store: padStore(store),
       date: String(date),
@@ -191,7 +242,6 @@ function collectVisitPhotos(draft) {
     for (const p of list || []) push(catId, p);
   }
 
-  // Optional free-form survey image slots if ever stored under surveyPhotos
   for (const [qId, list] of Object.entries(draft.surveyPhotos || {})) {
     const cat = /^q\d+/i.test(qId) ? `survey-${qId.toLowerCase()}` : null;
     if (!cat) continue;
@@ -250,6 +300,8 @@ function initDeliveryEntries(photos) {
       error: null,
       sentAt: null,
       attempts: 0,
+      batchIndex: null,
+      batchTotal: null,
     };
   }
   return map;
@@ -270,9 +322,6 @@ function mergeDeliveryMap(existing, photos, { onlyFailed = false } = {}) {
         next[p.key] = { ...old };
         continue;
       }
-      if (old?.status !== 'failed' && old?.status !== 'pending' && old?.status !== 'skipped') {
-        // brand-new key after onlyFailed re-send of a partial set — treat as pending
-      }
     } else if (old?.status === 'sent') {
       next[p.key] = { ...old };
       continue;
@@ -284,11 +333,13 @@ function mergeDeliveryMap(existing, photos, { onlyFailed = false } = {}) {
       filename: p.filename,
       subject: p.subject,
       path: p.path,
-      status: onlyFailed && old?.status === 'sent' ? 'sent' : 'pending',
+      status: 'pending',
       resendId: old?.status === 'sent' ? old.resendId : null,
       error: null,
       sentAt: old?.status === 'sent' ? old.sentAt : null,
       attempts: old?.attempts || 0,
+      batchIndex: null,
+      batchTotal: null,
     };
     if (onlyFailed && old?.status === 'sent') {
       next[p.key] = { ...old };
@@ -297,7 +348,48 @@ function mergeDeliveryMap(existing, photos, { onlyFailed = false } = {}) {
   return next;
 }
 
-async function sendOnePhoto({ resend, photo, from, to }) {
+/**
+ * Pack photos into batches under a raw-byte budget.
+ * Never splits a single photo; oversized photos get their own batch.
+ *
+ * @param {Array<{ key: string, byteSize: number }>} photos
+ * @param {number} maxRawBytes
+ * @param {{ warnings?: string[] }} [opts]
+ * @returns {Array<Array>}
+ */
+function packPhotoBatches(photos, maxRawBytes, opts = {}) {
+  const warnings = opts.warnings || [];
+  const batches = [];
+  let current = [];
+  let currentBytes = 0;
+
+  for (const photo of photos) {
+    const size = Number(photo.byteSize) || 0;
+    if (size > maxRawBytes) {
+      if (current.length) {
+        batches.push(current);
+        current = [];
+        currentBytes = 0;
+      }
+      warnings.push(
+        `photo ${photo.key || photo.filename} is ${size} bytes (> batch budget ${maxRawBytes}); sending alone`
+      );
+      batches.push([photo]);
+      continue;
+    }
+    if (current.length && currentBytes + size > maxRawBytes) {
+      batches.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(photo);
+    currentBytes += size;
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
+
+function loadPhotoBuffer(photo) {
   const abs = photo.absPath;
   if (!abs || !fs.existsSync(abs)) {
     const err = new Error(`photo file missing: ${photo.path}`);
@@ -310,45 +402,51 @@ async function sendOnePhoto({ resend, photo, from, to }) {
     err.code = 'photo_empty';
     throw err;
   }
+  return buffer;
+}
+
+async function sendPhotoBatch({ resend, photos, store, date, batchIndex, batchTotal, from, to }) {
+  const subject = buildBatchSubject({
+    store,
+    date,
+    batchIndex,
+    batchTotal,
+    count: photos.length,
+  });
+
+  const attachments = photos.map((p) => ({
+    filename: p.filename,
+    content: p.buffer.toString('base64'),
+  }));
+
+  const fileList = photos
+    .map((p) => `<li>${p.filename} (${p.category} #${p.seq})</li>`)
+    .join('');
 
   const payload = {
     from,
     to,
-    subject: photo.subject,
-    html: `<p>Central Pet shift photo.</p>
-<p><strong>Store:</strong> FM${photo.store}<br/>
-<strong>Date:</strong> ${photo.date}<br/>
-<strong>Category:</strong> ${photo.category}<br/>
-<strong>File:</strong> ${photo.filename}</p>
-<p>Subject and X-Central-Pet-Store header carry routing metadata for flow-automation.</p>`,
+    subject,
+    html: `<p>Central Pet shift photos (batch ${batchIndex}/${batchTotal}).</p>
+<p><strong>Store:</strong> FM${store}<br/>
+<strong>Date:</strong> ${date}<br/>
+<strong>Photos:</strong> ${photos.length}</p>
+<ul>${fileList}</ul>
+<p>X-Central-Pet-Store and attachment filenames carry routing metadata for flow-automation.</p>`,
     headers: {
-      [HEADER_STORE]: photo.store,
+      [HEADER_STORE]: store,
     },
-    attachments: [
-      {
-        filename: photo.filename,
-        content: buffer.toString('base64'),
-      },
-    ],
+    attachments,
   };
 
   const { data, error } = await resend.emails.send(payload);
   if (error) throw new Error(error.message || String(error));
-  return { resendId: data?.id || null };
+  return { resendId: data?.id || null, subject };
 }
 
 /**
  * Deliver photos for a visit draft. Per-photo pending/sent/failed state.
- * When PHOTO_DELIVERY_ENABLED is off, inventories photos as pending/skipped
- * and does not call Resend.
- *
- * @param {object} opts
- * @param {object} opts.draft - visit draft record
- * @param {object} [opts.existingDelivery] - previous draft.photoDelivery
- * @param {boolean} [opts.onlyFailed] - re-send only failed/pending, keep sent
- * @param {object} [opts.resendClient] - injectable Resend-like client
- * @param {Function} [opts.sleepFn]
- * @param {boolean} [opts.forceEnabled] - test override for enabled gate
+ * Photos are packed into size-budgeted multi-attachment emails.
  */
 async function deliverVisitPhotos({
   draft,
@@ -357,14 +455,16 @@ async function deliverVisitPhotos({
   resendClient = null,
   sleepFn = sleep,
   forceEnabled = null,
+  maxRawBytes = null,
 } = {}) {
   const enabled = forceEnabled != null ? !!forceEnabled : isPhotoDeliveryEnabled();
   const photos = collectVisitPhotos(draft);
   const prevPhotos = existingDelivery?.photos || {};
   let map = mergeDeliveryMap(prevPhotos, photos, { onlyFailed });
+  const budget = maxRawBytes != null ? maxRawBytes : batchRawBytesMax();
 
   if (!photos.length) {
-    const state = {
+    return {
       ...emptyDeliveryState(),
       status: 'empty',
       enabled,
@@ -372,12 +472,11 @@ async function deliverVisitPhotos({
       photos: {},
       summary: { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0 },
       message: 'No deliverable photos on visit',
+      batches: [],
     };
-    return state;
   }
 
   if (!enabled) {
-    // Inventory only — mark non-sent as skipped while gated off
     for (const key of Object.keys(map)) {
       if (map[key].status !== 'sent') {
         map[key] = {
@@ -395,6 +494,7 @@ async function deliverVisitPhotos({
       photos: map,
       summary,
       message: 'Photo delivery gated off (PHOTO_DELIVERY_ENABLED=0)',
+      batches: [],
     };
   }
 
@@ -416,41 +516,132 @@ async function deliverVisitPhotos({
       photos: map,
       summary,
       message: 'RESEND_API_KEY is not configured',
+      batches: [],
     };
   }
 
-  const resend = resendClient || new Resend(process.env.RESEND_API_KEY);
-  const from = photoSenderFrom();
-  const to = photoDeliveryTo();
-  const delay = throttleMs();
-  let first = true;
-
+  // Photos still needing a send (failed/pending; keep sent)
+  const toSend = [];
   for (const photo of photos) {
     const entry = map[photo.key];
     if (!entry) continue;
     if (entry.status === 'sent') continue;
     if (onlyFailed && entry.status !== 'failed' && entry.status !== 'pending') continue;
 
-    if (!first && delay > 0) await sleepFn(delay);
-    first = false;
-
-    entry.attempts = (entry.attempts || 0) + 1;
     try {
-      const { resendId } = await sendOnePhoto({ resend, photo, from, to });
-      map[photo.key] = {
-        ...entry,
-        status: 'sent',
-        resendId,
-        error: null,
-        sentAt: new Date().toISOString(),
-      };
+      const buffer = loadPhotoBuffer(photo);
+      toSend.push({
+        ...photo,
+        buffer,
+        byteSize: buffer.length,
+      });
     } catch (err) {
       map[photo.key] = {
         ...entry,
         status: 'failed',
         error: err.message || String(err),
+        attempts: (entry.attempts || 0) + 1,
         sentAt: null,
       };
+    }
+  }
+
+  const packWarnings = [];
+  const batches = packPhotoBatches(toSend, budget, { warnings: packWarnings });
+  for (const w of packWarnings) {
+    console.warn(`[photo-delivery] ${w}`);
+  }
+
+  const resend = resendClient || new Resend(process.env.RESEND_API_KEY);
+  const from = photoSenderFrom();
+  const to = photoDeliveryTo();
+  const delay = throttleMs();
+  const batchLog = [];
+  let first = true;
+  const batchTotal = batches.length;
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const batchIndex = i + 1;
+    if (!first && delay > 0) await sleepFn(delay);
+    first = false;
+
+    const store = batch[0].store;
+    const date = batch[0].date;
+
+    for (const p of batch) {
+      const entry = map[p.key];
+      map[p.key] = {
+        ...entry,
+        attempts: (entry.attempts || 0) + 1,
+        batchIndex,
+        batchTotal,
+      };
+    }
+
+    try {
+      const { resendId, subject } = await sendPhotoBatch({
+        resend,
+        photos: batch,
+        store,
+        date,
+        batchIndex,
+        batchTotal,
+        from,
+        to,
+      });
+      const sentAt = new Date().toISOString();
+      for (const p of batch) {
+        map[p.key] = {
+          ...map[p.key],
+          status: 'sent',
+          resendId,
+          error: null,
+          sentAt,
+          batchIndex,
+          batchTotal,
+          subject,
+        };
+      }
+      batchLog.push({
+        batchIndex,
+        batchTotal,
+        count: batch.length,
+        bytes: batch.reduce((s, p) => s + p.byteSize, 0),
+        resendId,
+        subject,
+        status: 'sent',
+        keys: batch.map((p) => p.key),
+      });
+    } catch (err) {
+      const msg = err.message || String(err);
+      for (const p of batch) {
+        map[p.key] = {
+          ...map[p.key],
+          status: 'failed',
+          error: msg,
+          sentAt: null,
+          batchIndex,
+          batchTotal,
+        };
+      }
+      batchLog.push({
+        batchIndex,
+        batchTotal,
+        count: batch.length,
+        bytes: batch.reduce((s, p) => s + p.byteSize, 0),
+        resendId: null,
+        subject: buildBatchSubject({
+          store,
+          date,
+          batchIndex,
+          batchTotal,
+          count: batch.length,
+        }),
+        status: 'failed',
+        error: msg,
+        keys: batch.map((p) => p.key),
+      });
     }
   }
 
@@ -461,7 +652,9 @@ async function deliverVisitPhotos({
     lastRunAt: new Date().toISOString(),
     photos: map,
     summary,
-    message: null,
+    message: packWarnings.length ? packWarnings.join('; ') : null,
+    batches: batchLog,
+    batchBudgetBytes: budget,
   };
 }
 
@@ -504,18 +697,22 @@ module.exports = {
   HEADER_STORE,
   DEFAULT_FROM,
   DEFAULT_TO,
+  DEFAULT_BATCH_RAW_BYTES_MAX,
   CATEGORY_SLUG,
   CANONICAL_CATEGORIES,
   isPhotoDeliveryEnabled,
   photoSenderFrom,
   photoDeliveryTo,
+  batchRawBytesMax,
   padStore,
   canonicalCategory,
   buildCanonicalFilename,
   buildSubject,
+  buildBatchSubject,
   parseSubject,
   parseFilename,
   collectVisitPhotos,
+  packPhotoBatches,
   deliverVisitPhotos,
   getDeliveryStatus,
   initDeliveryEntries,

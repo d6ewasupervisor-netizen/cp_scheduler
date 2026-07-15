@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * Single-photo smoke test for Stage 5 photo delivery.
- * Sends ONE JPEG via Resend → d6ewa.supervisor@gmail.com for the Gmail poller.
+ * Smoke test for Stage 5 batched photo delivery.
+ * Sends a multi-photo batch via Resend → d6ewa.supervisor@gmail.com.
  *
  * Usage (from repo root):
  *   node scripts/smoke-photo-delivery.js
+ *   SMOKE_PHOTO_COUNT=3 node scripts/smoke-photo-delivery.js
  *
  * Requires RESEND_API_KEY (from env, cp .env, or flow-automation .env).
  * Forces PHOTO_DELIVERY_ENABLED for this process only.
@@ -48,8 +49,8 @@ if (!process.env.PHOTO_SENDER_FROM) {
 
 const {
   deliverVisitPhotos,
-  buildCanonicalFilename,
-  buildSubject,
+  buildBatchSubject,
+  collectVisitPhotos,
   padStore,
   isPhotoDeliveryEnabled,
   photoSenderFrom,
@@ -70,59 +71,71 @@ async function main() {
   const date =
     process.env.SMOKE_DATE ||
     new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const count = Math.max(1, parseInt(process.env.SMOKE_PHOTO_COUNT || '3', 10) || 3);
   const photoSrc =
     process.env.SMOKE_PHOTO ||
     path.join(REPO, 'data/dryrun-demo-photos/after-1.jpg');
+  const altSrc = path.join(REPO, 'data/dryrun-demo-photos/before-1.jpeg');
 
   if (!fs.existsSync(photoSrc)) {
     console.error('Smoke photo not found:', photoSrc);
     process.exit(1);
   }
 
-  // Staging dir under visit-drafts so collectVisitPhotos resolves paths normally
   const relDir = `data/visit-drafts/_smoke/${date}-${store}-photos`;
   const absDir = path.join(REPO, relDir);
   fs.mkdirSync(absDir, { recursive: true });
-  const relPhoto = `${relDir}/smoke-after-1.jpg`.replace(/\\/g, '/');
-  const absPhoto = path.join(REPO, relPhoto);
-  fs.copyFileSync(photoSrc, absPhoto);
+
+  const categories = ['before', 'after', 'endcaps', 'clipstrips', 'wing-panels'];
+  const beforePhotos = [];
+  const afterPhotos = [];
+  const categoryPhotos = {};
+
+  for (let i = 0; i < count; i++) {
+    const cat = categories[i % categories.length];
+    const seq = Math.floor(i / categories.length) + 1;
+    const src = i % 2 === 0 || !fs.existsSync(altSrc) ? photoSrc : altSrc;
+    const relPhoto = `${relDir}/smoke-${cat}-${seq}.jpg`.replace(/\\/g, '/');
+    fs.copyFileSync(src, path.join(REPO, relPhoto));
+    const rec = { path: relPhoto, store, date, category: cat, seq };
+    if (cat === 'before') beforePhotos.push(rec);
+    else if (cat === 'after') afterPhotos.push(rec);
+    else {
+      if (!categoryPhotos[cat]) categoryPhotos[cat] = [];
+      categoryPhotos[cat].push(rec);
+    }
+  }
 
   const draft = {
     id: `_smoke/${date}-${store}`,
     repKey: '_smoke',
     date,
     actualStore: store,
-    beforePhotos: [],
-    afterPhotos: [
-      {
-        path: relPhoto,
-        store,
-        date,
-        category: 'after',
-        seq: 1,
-      },
-    ],
-    categoryPhotos: {},
+    beforePhotos,
+    afterPhotos,
+    categoryPhotos,
     loadCheck: null,
   };
 
-  const filename = buildCanonicalFilename({
-    store,
-    date,
-    category: 'after',
-    seq: 1,
-  });
-  const subject = buildSubject({ store, date, filename });
+  const inventory = collectVisitPhotos(draft);
 
-  console.log('=== Stage 5 smoke photo delivery ===');
+  console.log('=== Stage 5 smoke photo delivery (batched) ===');
   console.log('enabled:', isPhotoDeliveryEnabled());
   console.log('from:', photoSenderFrom());
   console.log('to:', photoDeliveryTo().join(', '));
   console.log('store:', padStore(store));
   console.log('date:', date);
-  console.log('filename:', filename);
-  console.log('subject:', subject);
-  console.log('bytes:', fs.statSync(absPhoto).size);
+  console.log('photoCount:', inventory.length);
+  console.log(
+    'expected subject:',
+    buildBatchSubject({
+      store,
+      date,
+      batchIndex: 1,
+      batchTotal: 1,
+      count: inventory.length,
+    })
+  );
   console.log('sending…');
 
   const result = await deliverVisitPhotos({
@@ -131,22 +144,41 @@ async function main() {
     sleepFn: async () => {},
   });
 
-  console.log(JSON.stringify(result, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        status: result.status,
+        summary: result.summary,
+        batches: result.batches,
+        photos: Object.fromEntries(
+          Object.entries(result.photos || {}).map(([k, v]) => [
+            k,
+            { status: v.status, filename: v.filename, batchIndex: v.batchIndex, resendId: v.resendId },
+          ])
+        ),
+      },
+      null,
+      2
+    )
+  );
 
-  if (result.summary?.sent !== 1) {
-    console.error('SMOKE FAIL: expected 1 sent photo');
+  if (result.summary?.sent !== inventory.length) {
+    console.error(`SMOKE FAIL: expected ${inventory.length} sent photos`);
+    process.exit(2);
+  }
+  if ((result.batches || []).length !== 1) {
+    console.error(`SMOKE FAIL: expected 1 batch email, got ${result.batches?.length}`);
     process.exit(2);
   }
 
-  const expectedOneDrive = path.join(
+  const root =
     process.env.CENTRAL_PET_SHIFT_PHOTO_ROOT ||
-      String.raw`C:\Users\tgaut\OneDrive - Advantage Solutions\Central Pet Shift Data`,
-    date,
-    padStore(store),
-    filename
-  );
-  console.log('expect OneDrive path (after Gmail poller):', expectedOneDrive);
-  console.log('SMOKE SEND OK — wait for poller (~60s) then check folder');
+    String.raw`C:\Users\tgaut\OneDrive - Advantage Solutions\Central Pet Shift Data`;
+  console.log('expect OneDrive folder (after Gmail poller):', path.join(root, date, padStore(store)));
+  for (const p of inventory) {
+    console.log('  ', path.join(root, date, padStore(store), p.filename));
+  }
+  console.log('SMOKE SEND OK — wait for poller (~60s) then confirm all files land from one email');
 }
 
 main().catch((err) => {
