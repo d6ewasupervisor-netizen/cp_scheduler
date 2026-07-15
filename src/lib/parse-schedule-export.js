@@ -109,8 +109,8 @@ async function parseScheduleExport(input, opts = {}) {
   const cStore = col(['store #', 'store#', 'store number']);
   const cStoreName = col(['store name']);
   const cDate = col(['scheduled date', 'date', 'shift date']);
-  const cStart = col(['shift start', 'start', 'start time']);
-  const cEnd = col(['shift end', 'end', 'end time']);
+  const cStart = col(['shift start time', 'shift start', 'start', 'start time']);
+  const cEnd = col(['shift end time', 'shift end', 'end', 'end time']);
   const cNotes = col(['visit notes (optional)', 'visit notes', 'notes']);
 
   if (cTeam == null || cStore == null || cDate == null) {
