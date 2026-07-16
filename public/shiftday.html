@@ -59,6 +59,10 @@
       </div>
 
       <p class="week-status" id="sdWeekStatus"></p>
+      <div class="btn-stack sd-resync-row" style="margin:.4rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center">
+        <button type="button" id="btnSdResyncProd" class="primary">Resync from PROD</button>
+        <span class="week-status" id="sdResyncHint" style="margin:0">Pulls the latest visits from SAS so stores and match status stay current.</span>
+      </div>
 
       <div class="calendar" id="sdCalendar" aria-label="Week calendar"></div>
     </div>

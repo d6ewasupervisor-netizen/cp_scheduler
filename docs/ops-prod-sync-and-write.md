@@ -11,26 +11,36 @@ How Central Pet Shift Day stays aligned with SAS and when it writes.
 
 Do not confuse field completion with scheduling CRUD. The app **reads** cycles for sync; schedule mutations stay in the skill/HAR path you already trust.
 
-## Sync week from PROD (cycle refresh)
+## Sync week from PROD (cycle refresh) — mandatory for reps
 
-**Admin → PROD sync & visit matcher → “Sync week from PROD”**
+**Any signed-in user** (rep or admin) can resync:
+
+| Surface | Control |
+|---------|---------|
+| **Shift Day** (`/shiftday.html`) | **Resync from PROD** (primary) |
+| **Admin** | **Sync week from PROD** |
+| **API** | `POST /shift-day/sync-from-prod` |
 
 ```http
 POST /api/central-pet/shift-day/sync-from-prod
-{ "weekStart": "2026-07-12", "supervisorId": "800175315" }
+{ "weekStart": "2026-07-12" }
 ```
+
+`supervisorId` optional — server defaults to `SAS_SUPERVISOR_ID` / `CP_SCHEDULER_SUPERVISOR_ID` / `800175315`.
 
 1. Resolves fiscal week bounds.  
 2. Loads project **9293** field-data for the supervisor + date range.  
 3. Per visit: store-field notes → `decodeD8Note` (391 trap → actual store).  
 4. Maps employees via `d8-shift-reps` workday ids.  
-5. Optionally attaches cycle id/name from `project-cycles`.  
-6. **Replaces** that week’s local shift-day board (`source: prod-sync`).
+5. Attaches cycle id/name from `project-cycles` when available.  
+6. **Replaces** that week’s local shift-day board (`source: prod-sync`).  
+7. Re-runs **matcher** and clears `matchStale`.
 
-Also: **Run matcher** after sync (or after xlsx ingest) so each app shift has a unique `visitId`.
+Reps must resync when PROD schedule changes, before starting a visit, or when the UI shows **MATCH STALE**.
 
 ### When to resync
 
+- **Before starting a visit in the field** (fresh visitId / store decode)  
 - After ops change visits in **Cycle Management / Team Scheduling**  
 - After re-ingest of an export (`matchStale` flags true)  
 - After local day-move on the board (`matchStale`)  

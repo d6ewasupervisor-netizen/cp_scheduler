@@ -389,11 +389,16 @@ router.get('/shift-day/schedule', shiftDayScope, (req, res) => {
     };
   });
 
+  const stored = getWeekSchedule(weekStart);
   res.json({
     rep: shiftRep,
     week,
     shifts,
-    source: getWeekSchedule(weekStart)?.source || null,
+    source: stored?.source || null,
+    matchStale: !!stored?.matchStale,
+    lastSyncedAt: stored?.lastSyncedAt || null,
+    lastMatchedAt: stored?.lastMatchedAt || null,
+    lastSyncedFrom: stored?.lastSyncedFrom || null,
   });
 });
 
@@ -542,16 +547,45 @@ router.post('/shift-day/ingest', requireAdmin, upload.single('file'), async (req
 
 /**
  * Resync week board from SAS PROD (project-cycles + field-data + note decode).
- * Admin only. Does not mutate team-scheduling — read → local store only.
+ * Available to **every signed-in user (reps + admin)** so field staff can pull
+ * the freshest cycle data before/during a visit day.
+ * Does not mutate team-scheduling — read → local store only.
  * Field completion writes remain dry-run → LIVE_TRANSMIT path.
  */
-router.post('/shift-day/sync-from-prod', requireAdmin, async (req, res) => {
+function resolveSupervisorId(req) {
+  return (
+    req.body?.supervisorId ||
+    req.query.supervisorId ||
+    process.env.SAS_SUPERVISOR_ID ||
+    process.env.CP_SCHEDULER_SUPERVISOR_ID ||
+    '800175315'
+  );
+}
+
+router.post('/shift-day/sync-from-prod', async (req, res) => {
   const weekStart = req.body?.weekStart || req.query.weekStart;
-  const supervisorId = req.body?.supervisorId || req.query.supervisorId;
+  const supervisorId = resolveSupervisorId(req);
   if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
   if (!supervisorId) return res.status(400).json({ error: 'supervisorId required' });
   try {
     const result = await syncWeekFromProd({ weekStart, supervisorId });
+    // Fresh match cache for the week so visit pills stay accurate after resync
+    try {
+      const week = getWeekByStart(weekStart);
+      if (week) {
+        const match = await matchVisits({
+          startDate: week.start,
+          endDate: week.end,
+          weekStart: week.start,
+          supervisorId,
+        });
+        setWeekMatchCache(week.start, match.summary);
+        result.matchSummary = match.summary;
+      }
+    } catch (matchErr) {
+      result.matchError = matchErr.message;
+    }
+    result.requestedBy = req.user?.email || null;
     res.json(result);
   } catch (err) {
     res.status(502).json({ error: err.message });

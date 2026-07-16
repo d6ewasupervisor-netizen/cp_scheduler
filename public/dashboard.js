@@ -6,6 +6,7 @@ import {
   signOut,
   dateForDay,
   shortDate,
+  toast,
 } from '/shared.js';
 
 const state = {
@@ -309,6 +310,40 @@ async function init() {
         await loadActiveWeek();
       }
     };
+
+    $('btnDashResync')?.addEventListener('click', async () => {
+      const week = currentWeek();
+      if (!week) return;
+      const btn = $('btnDashResync');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Syncing…';
+      }
+      try {
+        const data = await api('/shift-day/sync-from-prod', {
+          method: 'POST',
+          body: JSON.stringify({ weekStart: week.start }),
+        });
+        state.schedules = {};
+        state.weeks = await api('/shift-day/weeks');
+        const idx = state.weeks.findIndex((w) => w.start === week.start);
+        if (idx >= 0) state.weekIndex = idx;
+        await loadActiveWeek();
+        toast(
+          `Resynced ${data.shiftCount ?? 0} shifts from PROD` +
+            (data.matchSummary?.matched != null ? ` · ${data.matchSummary.matched} matched` : ''),
+          'ok',
+          5000
+        );
+      } catch (e) {
+        toast(e.message || 'Resync failed', 'bad', 5000);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Resync from PROD';
+        }
+      }
+    });
 
     renderWho();
     $('dashLoading').hidden = true;

@@ -305,15 +305,59 @@ async function loadWeek() {
   $('sdBannerTitle').textContent = data.rep.name;
   $('sdBannerMeta').textContent = `${state.shifts.length} shifts · ${week.label}`;
   $('sdSubtitle').textContent = data.rep.name;
+  const stale = data.matchStale ? ' · MATCH STALE — tap Resync from PROD' : '';
+  const synced = data.lastSyncedAt ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}` : '';
   $('sdWeekStatus').textContent = data.source
-    ? `Schedule source: ${data.source}`
-    : 'No ingested export for this week — showing seed/empty.';
+    ? `Schedule source: ${data.source}${synced}${stale}`
+    : `No schedule for this week yet — tap Resync from PROD${stale}`;
+  if ($('sdResyncHint')) {
+    $('sdResyncHint').textContent = data.matchStale
+      ? 'Schedule may be out of date after a move or PROD change — resync recommended.'
+      : 'Pulls the latest visits from SAS so stores and match status stay current.';
+  }
 
   await loadMatch();
   await loadDrafts();
   renderCalendar();
   setSaveState($('sdSaveState'), false);
   $('btnSdSave').disabled = true;
+}
+
+async function resyncFromProd() {
+  const week = currentWeek();
+  if (!week) return;
+  const btn = $('btnSdResyncProd');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+  }
+  try {
+    toast('Resyncing week from PROD…', 'ok', 4000);
+    const data = await api('/shift-day/sync-from-prod', {
+      method: 'POST',
+      body: JSON.stringify({
+        weekStart: week.start,
+        supervisorId: state.supervisorId,
+      }),
+    });
+    const n = data.shiftCount ?? 0;
+    const matched = data.matchSummary?.matched;
+    toast(
+      `PROD resync: ${n} shift(s)` +
+        (matched != null ? ` · ${matched} matched` : '') +
+        (data.matchError ? ` · match warn: ${data.matchError}` : ''),
+      'ok',
+      6000
+    );
+    await loadWeek();
+  } catch (err) {
+    toast(err.message || 'Resync failed', 'bad', 6000);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Resync from PROD';
+    }
+  }
 }
 
 async function init() {
@@ -349,7 +393,7 @@ async function init() {
   $('sdWeekSelect').innerHTML = state.weeks
     .map(
       (w, i) =>
-        `<option value="${i}">${w.label}${w.hasSchedule ? '' : ' · no export'}</option>`
+        `<option value="${i}">${w.label}${w.hasSchedule ? '' : ' · resync needed'}</option>`
     )
     .join('');
 
@@ -369,6 +413,7 @@ async function init() {
       await loadWeek();
     }
   };
+  $('btnSdResyncProd')?.addEventListener('click', () => resyncFromProd());
   $('sdOverlayClose').onclick = closeDetail;
   $('sdOverlay').addEventListener('click', (e) => {
     if (e.target === $('sdOverlay')) closeDetail();
