@@ -1,0 +1,9 @@
+output/
+dryrun/
+live/
+node_modules/
+.git/
+data/visit-drafts/
+*.tar.gz
+*.har
+*.log
