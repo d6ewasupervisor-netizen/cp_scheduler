@@ -1,0 +1,71 @@
+# PROD sync, cycle refresh, and write-to-PROD
+
+How Central Pet Shift Day stays aligned with SAS and when it writes.
+
+## Two different “writes”
+
+| Intent | What the app does | Gate |
+|--------|-------------------|------|
+| **Complete a visit** (times, photos, survey, mileage) | Assemble dry-run → live-executor field-app sequence | `LIVE_TRANSMIT=1` + allowlist + two-tap |
+| **Change team schedule in cycle management** | **Not in-app.** Planning Desk handoff → skill `sas-prod-shift-management-har` / automator | Explicit human + skill dry-run |
+
+Do not confuse field completion with scheduling CRUD. The app **reads** cycles for sync; schedule mutations stay in the skill/HAR path you already trust.
+
+## Sync week from PROD (cycle refresh)
+
+**Admin → PROD sync & visit matcher → “Sync week from PROD”**
+
+```http
+POST /api/central-pet/shift-day/sync-from-prod
+{ "weekStart": "2026-07-12", "supervisorId": "800175315" }
+```
+
+1. Resolves fiscal week bounds.  
+2. Loads project **9293** field-data for the supervisor + date range.  
+3. Per visit: store-field notes → `decodeD8Note` (391 trap → actual store).  
+4. Maps employees via `d8-shift-reps` workday ids.  
+5. Optionally attaches cycle id/name from `project-cycles`.  
+6. **Replaces** that week’s local shift-day board (`source: prod-sync`).
+
+Also: **Run matcher** after sync (or after xlsx ingest) so each app shift has a unique `visitId`.
+
+### When to resync
+
+- After ops change visits in **Cycle Management / Team Scheduling**  
+- After re-ingest of an export (`matchStale` flags true)  
+- After local day-move on the board (`matchStale`)  
+- Before dry-run / live arm for a field day  
+
+## Write to PROD (field completion)
+
+1. Sync + match the week.  
+2. Rep seals visit in field UI (`ready_for_prod`).  
+3. Admin dry-run with real time-change comment.  
+4. Spot-check assembled calls (times, mileage CHANGE, spent-time, PUT complete).  
+5. Arm: `LIVE_TRANSMIT=1`, one draft id in `live-allowlist.json`, restart if needed.  
+6. Two-tap store confirm → Transmit.  
+7. Disarm: LIVE off, clear allowlist.
+
+Contract: `docs/sas-payload-contract.md` · checklist: `docs/live-first-run.md`.
+
+## Field test playbook (today)
+
+1. **Sync** current week from PROD.  
+2. **Match** — zero ambiguous on the store you will test.  
+3. Confirm visit **Not started** (or accept first-time path only).  
+4. Capture in app (workspace + photo queue) → seal.  
+5. Dry-run → LIVE for that one draft only.  
+6. If partial: use execution log + resume; do not double-start.  
+
+## Related skills (other repos)
+
+| Skill | Use for |
+|-------|---------|
+| `sas-auth-prod-session` | Morning token for any SAS call |
+| `sas-prod-shift-management-har` | Create/move/reassign visits & shifts in cycle |
+| `sas-upload-category-after-photos` / SI skills | Photo recovery outside this app |
+| `use-railway` | Deploy + `LIVE_TRANSMIT` env |
+
+## Railway volume note
+
+`data/visit-drafts` is on a volume. Week store is `data/shift-day-schedules.json` (deploy-local unless you mount it). After deploy, **re-run Sync from PROD** so production has the week board.

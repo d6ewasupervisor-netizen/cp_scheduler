@@ -951,8 +951,73 @@ function showInitError(err) {
 
     const supervisorId = () => localStorage.getItem('cp_supervisor_id') || '800175315';
 
+    async function refreshShiftDayWeekMeta() {
+      try {
+        const rows = await api('/shift-day/weeks');
+        state.shiftDayWeeks = rows;
+        const start = state.week?.start || $('weekSelect')?.value;
+        state.shiftDayWeek = rows.find((w) => w.start === start) || null;
+      } catch {
+        state.shiftDayWeeks = [];
+        state.shiftDayWeek = null;
+      }
+      renderWeekSyncStatus();
+    }
+
+    function renderWeekSyncStatus() {
+      const el = $('weekSyncStatus');
+      if (!el) return;
+      const week = state.shiftDayWeek || state.week;
+      if (!week) {
+        el.textContent = 'Select a week to see sync status.';
+        return;
+      }
+      const parts = [
+        week.label || week.start,
+        week.hasSchedule ? `${week.shiftCount ?? '?'} shifts` : 'no local shift-day schedule',
+        week.source ? `source=${week.source}` : null,
+        week.matchStale ? 'MATCH STALE — re-sync or re-match' : week.lastMatchedAt ? 'match fresh' : null,
+        week.lastSyncedAt ? `synced ${week.lastSyncedAt}` : null,
+      ].filter(Boolean);
+      el.textContent = parts.join(' · ');
+      el.className = week.matchStale ? 'week-status tag-ambiguous' : 'week-status';
+    }
+
+    $('btnSyncFromProd')?.addEventListener('click', async () => {
+      const week = state.week;
+      if (!week) return toast('Pick a week first', 'warn');
+      if (
+        !confirm(
+          `Replace local shift-day schedule for ${week.label || week.start} with a live pull from SAS PROD (cycle/field-data)? Local day moves for this week will be overwritten.`
+        )
+      ) {
+        return;
+      }
+      try {
+        toast('Syncing from PROD…', 'ok', 4000);
+        const data = await api('/shift-day/sync-from-prod', {
+          method: 'POST',
+          body: JSON.stringify({
+            weekStart: week.start,
+            supervisorId: supervisorId(),
+          }),
+        });
+        toast(
+          `Synced ${data.shiftCount} shifts from PROD` +
+            (data.cycle?.name ? ` (${data.cycle.name})` : '') +
+            (data.unmappedEmployeeCount ? ` · ${data.unmappedEmployeeCount} unmapped emp` : ''),
+          'ok',
+          6000
+        );
+        await refreshShiftDayWeekMeta();
+        await loadRepWeek().catch(() => {});
+      } catch (err) {
+        toast(err.message, 'bad', 6000);
+      }
+    });
+
     $('btnRunMatcher')?.addEventListener('click', async () => {
-      const week = state.weeks[state.weekIndex];
+      const week = state.week;
       if (!week) return;
       try {
         const data = await api(
@@ -978,6 +1043,7 @@ function showInitError(err) {
           (rows.length
             ? rows.map((r) => `<div class="mw-row"><span class="tag-${r.tag}">${r.tag}</span> ${r.text}</div>`).join('')
             : '<div class="mw-row">No warnings for this week.</div>');
+        await refreshShiftDayWeekMeta();
         toast('Matcher finished', 'ok');
       } catch (err) {
         toast(err.message, 'bad');
@@ -1021,7 +1087,7 @@ function showInitError(err) {
 
     $('btnIngestExport')?.addEventListener('click', async () => {
       const file = $('scheduleExportFile')?.files?.[0];
-      const week = state.weeks[state.weekIndex];
+      const week = state.week;
       if (!file || !week) {
         toast('Choose a week and an .xlsx file', 'warn');
         return;
@@ -1036,7 +1102,8 @@ function showInitError(err) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        toast(`Ingested ${data.shiftCount} shifts (${data.flagCount || 0} flagged)`, 'ok');
+        toast(`Ingested ${data.shiftCount} shifts (${data.flagCount || 0} flagged) — match stale`, 'ok');
+        await refreshShiftDayWeekMeta();
       } catch (err) {
         toast(err.message, 'bad');
       }
@@ -1048,6 +1115,7 @@ function showInitError(err) {
       }
       try {
         await loadRepWeek();
+        await refreshShiftDayWeekMeta();
       } catch (err) {
         showInitError(err);
       }
@@ -1072,6 +1140,7 @@ function showInitError(err) {
     await loadWeeks();
     await loadReps();
     await loadRepWeek();
+    await refreshShiftDayWeekMeta();
     await loadVisitDrafts();
   } catch (err) {
     console.error('[admin]', err);

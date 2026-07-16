@@ -49,9 +49,35 @@ function updateShiftDay(weekStart, shiftId, dayOfWeek, scheduledDate) {
   if (!shift) throw new Error('Shift not found');
   shift.dayOfWeek = dayOfWeek;
   shift.date = scheduledDate;
+  week.matchStale = true;
   week.updatedAt = new Date().toISOString();
   writeStore(db);
   return shift;
+}
+
+/** Mark week match/sync cache stale (after local edits or before re-pull). */
+function markWeekMatchStale(weekStart, reason = 'local_edit') {
+  const db = readStore();
+  const week = db.weeks?.[weekStart];
+  if (!week) return null;
+  week.matchStale = true;
+  week.matchStaleReason = reason;
+  week.updatedAt = new Date().toISOString();
+  writeStore(db);
+  return week;
+}
+
+function setWeekMatchCache(weekStart, matchSummary) {
+  const db = readStore();
+  const week = db.weeks?.[weekStart];
+  if (!week) return null;
+  week.matchStale = false;
+  week.matchStaleReason = null;
+  week.lastMatchedAt = new Date().toISOString();
+  week.matchSummary = matchSummary || null;
+  week.updatedAt = new Date().toISOString();
+  writeStore(db);
+  return week;
 }
 
 module.exports = {
@@ -61,5 +87,7 @@ module.exports = {
   saveWeekSchedule,
   getShiftsForRep,
   updateShiftDay,
+  markWeekMatchStale,
+  setWeekMatchCache,
   readStore,
 };

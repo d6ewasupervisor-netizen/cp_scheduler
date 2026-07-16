@@ -62,10 +62,16 @@
         <p class="calendar-scroll-hint">Swipe sideways to see each day →</p>
         <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
         <div id="warnings" class="warnings"></div>
-        <section class="match-warnings" id="matchWarningsPanel" aria-label="Visit matcher warnings">
-          <h2>Visit matcher (read-only)</h2>
-          <p class="week-status">Compares Shift Day schedule to prod field-data for this week. Supervisor id defaults from localStorage <code>cp_supervisor_id</code>.</p>
+        <section class="match-warnings" id="matchWarningsPanel" aria-label="PROD schedule sync and matcher">
+          <h2>PROD sync &amp; visit matcher</h2>
+          <p class="week-status">
+            <strong>Sync from PROD</strong> pulls the week board from SAS cycle management (field-data + store notes → decoded stores).
+            Use after schedule changes in PROD. XLSX ingest remains a fallback. Matcher links each app shift to a unique visitId.
+            Supervisor id: localStorage <code>cp_supervisor_id</code> (default 800175315).
+          </p>
+          <p class="week-status" id="weekSyncStatus">Select a week to see sync status.</p>
           <div class="btn-stack" style="margin:.5rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap">
+            <button type="button" id="btnSyncFromProd" class="primary">Sync week from PROD</button>
             <button type="button" id="btnRunMatcher" class="subtle">Run matcher</button>
             <label class="field" style="margin:0; flex:1; min-width:10rem">Ingest schedule export
               <input type="file" id="scheduleExportFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">

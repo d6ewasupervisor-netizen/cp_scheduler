@@ -29,10 +29,12 @@ const {
   saveWeekSchedule,
   getShiftsForRep,
   updateShiftDay,
+  setWeekMatchCache,
 } = require('../lib/shift-day-store');
 const { loadD8ShiftReps, shiftRepByEmail, shiftRepByKey } = require('../lib/d8-shift-reps');
 const { getStoreAddress } = require('../lib/store-addresses');
 const { matchVisits, statusForShift } = require('../lib/visit-matcher');
+const { syncWeekFromProd } = require('../lib/prod-week-sync');
 const visitFlow = require('../lib/visit-flow');
 const visitDraftStore = require('../lib/visit-draft-store');
 const { runDryRun } = require('../lib/dryrun-runner');
@@ -345,10 +347,18 @@ router.get('/shift-day/weeks', (_req, res) => {
   const fiscal = listWeeks();
   const ingested = new Set(listWeekKeys());
   res.json(
-    fiscal.map((w) => ({
-      ...w,
-      hasSchedule: ingested.has(w.start),
-    }))
+    fiscal.map((w) => {
+      const stored = getWeekSchedule(w.start);
+      return {
+        ...w,
+        hasSchedule: ingested.has(w.start),
+        source: stored?.source || null,
+        matchStale: !!stored?.matchStale,
+        lastSyncedAt: stored?.lastSyncedAt || null,
+        lastMatchedAt: stored?.lastMatchedAt || null,
+        shiftCount: stored?.shifts?.length ?? 0,
+      };
+    })
   );
 });
 
@@ -434,9 +444,13 @@ router.get('/shift-day/match', requireAdmin, async (req, res) => {
       weekStart: week.start,
       supervisorId,
     });
+    setWeekMatchCache(week.start, result.summary);
+    const stored = getWeekSchedule(week.start);
     res.json({
       week,
       summary: result.summary,
+      matchStale: false,
+      lastMatchedAt: stored?.lastMatchedAt || null,
       unmatched: result.unmatched,
       ambiguous: result.ambiguous,
       orphaned: result.orphaned,
@@ -509,6 +523,8 @@ router.post('/shift-day/ingest', requireAdmin, upload.single('file'), async (req
       meta: parsed.meta,
       flags: parsed.flags,
       shifts: inWeek,
+      matchStale: true,
+      matchStaleReason: 'xlsx_ingest',
     });
     res.json({
       ok: true,
@@ -516,10 +532,29 @@ router.post('/shift-day/ingest', requireAdmin, upload.single('file'), async (req
       shiftCount: inWeek.length,
       flagCount: parsed.flags.length,
       flags: parsed.flags,
+      matchStale: true,
       updatedAt: saved.updatedAt,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Resync week board from SAS PROD (project-cycles + field-data + note decode).
+ * Admin only. Does not mutate team-scheduling — read → local store only.
+ * Field completion writes remain dry-run → LIVE_TRANSMIT path.
+ */
+router.post('/shift-day/sync-from-prod', requireAdmin, async (req, res) => {
+  const weekStart = req.body?.weekStart || req.query.weekStart;
+  const supervisorId = req.body?.supervisorId || req.query.supervisorId;
+  if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
+  if (!supervisorId) return res.status(400).json({ error: 'supervisorId required' });
+  try {
+    const result = await syncWeekFromProd({ weekStart, supervisorId });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
 });
 
