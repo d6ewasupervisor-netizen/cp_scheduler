@@ -36,14 +36,21 @@ POST /api/central-pet/shift-day/sync-from-prod
 6. **Replaces** that week’s local shift-day board (`source: prod-sync`).  
 7. Re-runs **matcher** and clears `matchStale`.
 
-Reps must resync when PROD schedule changes, before starting a visit, or when the UI shows **MATCH STALE**.
+### Automatic resync (default)
 
-### When to resync
+| Event | Behavior |
+|-------|----------|
+| Open **Shift Day** or **Dashboard** | Auto `sync-from-prod` for the selected week, then load board |
+| Change week (prev/next/select) | Auto resync that week |
+| Manual **Resync from PROD** | Same pull, with full toast feedback |
 
-- **Before starting a visit in the field** (fresh visitId / store decode)  
-- After ops change visits in **Cycle Management / Team Scheduling**  
-- After re-ingest of an export (`matchStale` flags true)  
-- After local day-move on the board (`matchStale`)  
+If SAS is down, the app shows a warning and falls back to the last saved local week so reps are not blocked offline.
+
+### When to tap manual Resync
+
+- PROD schedule just changed while the app was already open  
+- UI shows **MATCH STALE** after a local day-move  
+- Before starting a visit if you want an extra fresh pull  
 - Before dry-run / live arm for a field day  
 
 ## Write to PROD (field completion)

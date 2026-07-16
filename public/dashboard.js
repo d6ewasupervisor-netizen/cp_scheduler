@@ -223,12 +223,81 @@ async function ensureSchedule(repKey) {
   }
 }
 
-async function loadActiveWeek() {
+let dashSyncInFlight = null;
+
+/** Auto/manual PROD pull for the selected week (shared by open + Resync button). */
+async function pullDashWeekFromProd({ silent = false } = {}) {
+  const week = currentWeek();
+  if (!week) return null;
+  if (dashSyncInFlight) return dashSyncInFlight;
+
+  const btn = $('btnDashResync');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+  }
+  if ($('dashSubtitle')) {
+    $('dashSubtitle').textContent = `Syncing ${week.label || week.start} from PROD…`;
+  }
+
+  dashSyncInFlight = (async () => {
+    try {
+      const data = await api('/shift-day/sync-from-prod', {
+        method: 'POST',
+        body: JSON.stringify({ weekStart: week.start }),
+      });
+      state.schedules = {};
+      state.weeks = await api('/shift-day/weeks');
+      const idx = state.weeks.findIndex((w) => w.start === week.start);
+      if (idx >= 0) state.weekIndex = idx;
+      if (!silent) {
+        toast(
+          `PROD sync: ${data.shiftCount ?? 0} shift(s)` +
+            (data.matchSummary?.matched != null ? ` · ${data.matchSummary.matched} matched` : ''),
+          'ok',
+          4000
+        );
+      } else {
+        toast(
+          `Synced ${data.shiftCount ?? 0} shifts from PROD`,
+          'ok',
+          2500
+        );
+      }
+      return data;
+    } finally {
+      dashSyncInFlight = null;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Resync from PROD';
+      }
+    }
+  })();
+
+  return dashSyncInFlight;
+}
+
+/**
+ * @param {{ resync?: boolean, silent?: boolean }} opts
+ */
+async function loadActiveWeek({ resync = false, silent = false } = {}) {
   showError('');
   const week = currentWeek();
   if (!week) return;
   $('weekSelect').value = String(state.weekIndex);
   $('dashSubtitle').textContent = week.label || 'Team schedule';
+
+  if (resync) {
+    try {
+      await pullDashWeekFromProd({ silent });
+    } catch (e) {
+      toast(
+        `PROD sync failed — showing last saved schedule. ${e.message || ''}`.trim(),
+        'bad',
+        7000
+      );
+    }
+  }
 
   const reps = visibleReps();
   if (!reps.length) {
@@ -252,6 +321,10 @@ async function loadActiveWeek() {
   renderTabs();
   renderSchedule();
   updateFullShiftDayLink();
+  const w = currentWeek();
+  if (w && $('dashSubtitle')) {
+    $('dashSubtitle').textContent = w.label || 'Team schedule';
+  }
 }
 
 async function init() {
@@ -294,61 +367,36 @@ async function init() {
     $('weekSelect').onchange = async () => {
       state.weekIndex = Number($('weekSelect').value);
       state.schedules = {};
-      await loadActiveWeek();
+      await loadActiveWeek({ resync: true, silent: true });
     };
     $('btnPrevWeek').onclick = async () => {
       if (state.weekIndex > 0) {
         state.weekIndex -= 1;
         state.schedules = {};
-        await loadActiveWeek();
+        await loadActiveWeek({ resync: true, silent: true });
       }
     };
     $('btnNextWeek').onclick = async () => {
       if (state.weekIndex < state.weeks.length - 1) {
         state.weekIndex += 1;
         state.schedules = {};
-        await loadActiveWeek();
+        await loadActiveWeek({ resync: true, silent: true });
       }
     };
 
     $('btnDashResync')?.addEventListener('click', async () => {
-      const week = currentWeek();
-      if (!week) return;
-      const btn = $('btnDashResync');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Syncing…';
-      }
       try {
-        const data = await api('/shift-day/sync-from-prod', {
-          method: 'POST',
-          body: JSON.stringify({ weekStart: week.start }),
-        });
-        state.schedules = {};
-        state.weeks = await api('/shift-day/weeks');
-        const idx = state.weeks.findIndex((w) => w.start === week.start);
-        if (idx >= 0) state.weekIndex = idx;
-        await loadActiveWeek();
-        toast(
-          `Resynced ${data.shiftCount ?? 0} shifts from PROD` +
-            (data.matchSummary?.matched != null ? ` · ${data.matchSummary.matched} matched` : ''),
-          'ok',
-          5000
-        );
+        await loadActiveWeek({ resync: true, silent: false });
       } catch (e) {
         toast(e.message || 'Resync failed', 'bad', 5000);
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = 'Resync from PROD';
-        }
       }
     });
 
     renderWho();
     $('dashLoading').hidden = true;
     $('dashApp').hidden = false;
-    await loadActiveWeek();
+    // Auto PROD sync on open
+    await loadActiveWeek({ resync: true, silent: true });
   } catch (err) {
     $('dashLoading').hidden = true;
     showError(err.message || 'Could not load dashboard');

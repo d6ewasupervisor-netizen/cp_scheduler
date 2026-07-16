@@ -291,11 +291,82 @@ async function loadDrafts() {
   }
 }
 
-async function loadWeek() {
+/** In-flight sync promise so open/week-change/manual share one pull. */
+let syncInFlight = null;
+
+/**
+ * Pull week from SAS PROD. Does not reload the calendar (caller does loadWeek).
+ * @param {{ silent?: boolean }} opts silent=true for auto-open (less toast noise)
+ */
+async function pullWeekFromProd({ silent = false } = {}) {
   const week = currentWeek();
+  if (!week) return null;
+  if (syncInFlight) return syncInFlight;
+
+  const btn = $('btnSdResyncProd');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+  }
+  if ($('sdWeekStatus')) {
+    $('sdWeekStatus').textContent = silent
+      ? `Syncing ${week.label} from PROD…`
+      : `Resyncing ${week.label} from PROD…`;
+  }
+
+  syncInFlight = (async () => {
+    try {
+      if (!silent) toast('Resyncing week from PROD…', 'ok', 3000);
+      const data = await api('/shift-day/sync-from-prod', {
+        method: 'POST',
+        body: JSON.stringify({
+          weekStart: week.start,
+          supervisorId: state.supervisorId,
+        }),
+      });
+      const n = data.shiftCount ?? 0;
+      const matched = data.matchSummary?.matched;
+      const msg =
+        `PROD sync: ${n} shift(s)` +
+        (matched != null ? ` · ${matched} matched` : '') +
+        (data.matchError ? ` · match warn: ${data.matchError}` : '');
+      if (!silent) toast(msg, 'ok', 5000);
+      else toast(msg, 'ok', 2800);
+      return data;
+    } finally {
+      syncInFlight = null;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Resync from PROD';
+      }
+    }
+  })();
+
+  return syncInFlight;
+}
+
+/**
+ * @param {{ resync?: boolean, silent?: boolean }} opts
+ * resync=true pulls PROD first (default true on open / week change)
+ */
+async function loadWeek({ resync = false, silent = false } = {}) {
+  const week = currentWeek();
+  if (!week) return;
   $('sdWeekTitle').textContent = week.label;
   $('sdWeekDates').textContent = `${shortDate(week.start)} – ${shortDate(week.end)}`;
   $('sdWeekSelect').value = String(state.weekIndex);
+
+  if (resync) {
+    try {
+      await pullWeekFromProd({ silent });
+    } catch (err) {
+      toast(
+        `PROD sync failed — showing last saved schedule. ${err.message || ''}`.trim(),
+        'bad',
+        7000
+      );
+    }
+  }
 
   const data = await api(
     `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
@@ -309,11 +380,11 @@ async function loadWeek() {
   const synced = data.lastSyncedAt ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}` : '';
   $('sdWeekStatus').textContent = data.source
     ? `Schedule source: ${data.source}${synced}${stale}`
-    : `No schedule for this week yet — tap Resync from PROD${stale}`;
+    : `No schedule for this week yet — resync failed or empty week${stale}`;
   if ($('sdResyncHint')) {
     $('sdResyncHint').textContent = data.matchStale
-      ? 'Schedule may be out of date after a move or PROD change — resync recommended.'
-      : 'Pulls the latest visits from SAS so stores and match status stay current.';
+      ? 'Schedule may be out of date — auto-sync runs on open; use Resync if PROD just changed.'
+      : 'Auto-syncs when you open Shift Day. Use Resync anytime for the freshest PROD data.';
   }
 
   await loadMatch();
@@ -324,39 +395,10 @@ async function loadWeek() {
 }
 
 async function resyncFromProd() {
-  const week = currentWeek();
-  if (!week) return;
-  const btn = $('btnSdResyncProd');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Syncing…';
-  }
   try {
-    toast('Resyncing week from PROD…', 'ok', 4000);
-    const data = await api('/shift-day/sync-from-prod', {
-      method: 'POST',
-      body: JSON.stringify({
-        weekStart: week.start,
-        supervisorId: state.supervisorId,
-      }),
-    });
-    const n = data.shiftCount ?? 0;
-    const matched = data.matchSummary?.matched;
-    toast(
-      `PROD resync: ${n} shift(s)` +
-        (matched != null ? ` · ${matched} matched` : '') +
-        (data.matchError ? ` · match warn: ${data.matchError}` : ''),
-      'ok',
-      6000
-    );
-    await loadWeek();
+    await loadWeek({ resync: true, silent: false });
   } catch (err) {
     toast(err.message || 'Resync failed', 'bad', 6000);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Resync from PROD';
-    }
   }
 }
 
@@ -399,18 +441,18 @@ async function init() {
 
   $('sdWeekSelect').onchange = async () => {
     state.weekIndex = Number($('sdWeekSelect').value);
-    await loadWeek();
+    await loadWeek({ resync: true, silent: true });
   };
   $('btnSdPrev').onclick = async () => {
     if (state.weekIndex > 0) {
       state.weekIndex -= 1;
-      await loadWeek();
+      await loadWeek({ resync: true, silent: true });
     }
   };
   $('btnSdNext').onclick = async () => {
     if (state.weekIndex < state.weeks.length - 1) {
       state.weekIndex += 1;
-      await loadWeek();
+      await loadWeek({ resync: true, silent: true });
     }
   };
   $('btnSdResyncProd')?.addEventListener('click', () => resyncFromProd());
@@ -562,7 +604,8 @@ async function init() {
     });
   });
 
-  await loadWeek();
+  // Auto PROD sync on open — mandatory freshest board for field
+  await loadWeek({ resync: true, silent: true });
 
   // Deep-link from dashboard: open a specific store shift
   const qDate = params.get('date');
