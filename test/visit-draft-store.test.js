@@ -113,6 +113,43 @@ describe('startVisit / resume', () => {
     store.finishVisit(REP_A, '2026-07-09', 19);
     assert.throws(() => store.setChecklistItem(REP_A, '2026-07-09', 19, 'x', { checked: true }), /sealed/i);
   });
+
+  it('abandonVisit removes in-progress draft and photo dir; refuses sealed', () => {
+    store.startVisit({
+      repKey: REP_A,
+      date: '2026-07-15',
+      actualStore: 53,
+      writeOrder: true,
+      workLoad: false,
+    });
+    store.recordBeforePhoto(REP_A, '2026-07-15', 53, { photoPath: 'fake/b.jpg' });
+    const photoDir = store.photoDirPath(REP_A, '2026-07-15', 53);
+    fs.mkdirSync(photoDir, { recursive: true });
+    fs.writeFileSync(path.join(photoDir, 'x.jpg'), Buffer.from([1]));
+
+    const result = store.abandonVisit(REP_A, '2026-07-15', 53);
+    assert.equal(result.ok, true);
+    assert.equal(result.abandonedId, 'test-fixture-rep-a/2026-07-15-53');
+    assert.equal(store.getDraft(REP_A, '2026-07-15', 53), null);
+    assert.equal(fs.existsSync(store.draftFilePath(REP_A, '2026-07-15', 53)), false);
+    assert.equal(fs.existsSync(photoDir), false);
+
+    store.startVisit({
+      repKey: REP_A,
+      date: '2026-07-15',
+      actualStore: 53,
+      writeOrder: false,
+      workLoad: false,
+    });
+    fillSealRequirements(REP_A, '2026-07-15', 53);
+    store.finishVisit(REP_A, '2026-07-15', 53);
+    assert.throws(() => store.abandonVisit(REP_A, '2026-07-15', 53), /sealed/i);
+    // cleanup sealed leftover so later suite cases stay isolated
+    const sealedFile = store.draftFilePath(REP_A, '2026-07-15', 53);
+    if (fs.existsSync(sealedFile)) fs.unlinkSync(sealedFile);
+    const sealedPhotos = store.photoDirPath(REP_A, '2026-07-15', 53);
+    if (fs.existsSync(sealedPhotos)) fs.rmSync(sealedPhotos, { recursive: true, force: true });
+  });
 });
 
 describe('autosave after every discrete action + resume mid-branch', () => {

@@ -52,8 +52,38 @@ function isTravelToStoreCall(call) {
   return call.method === 'POST' && /\/field-app\/travel\/\d+\/to_store\/?$/.test(call.url || '');
 }
 
+function isTravelToHomeCall(call) {
+  return call.method === 'POST' && /\/field-app\/travel\/\d+\/to_home\/?$/.test(call.url || '');
+}
+
+function isTravelCall(call) {
+  return isTravelToStoreCall(call) || isTravelToHomeCall(call);
+}
+
 function isShiftPatchCall(call) {
   return call.method === 'PATCH' && /\/field-app\/shifts\/\d+\/?$/.test(call.url || '');
+}
+
+/**
+ * Prod often returns HTTP 200 with success:false for business rules
+ * (e.g. spent_time_reason required when category share > 5%).
+ * Treat those as failures so we never continue as if the write landed.
+ * James FM53 HAR 2026-07-15: is_spent_time soft-fail + duration 400.
+ */
+function isSasBusinessFailure(body) {
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) return false;
+  if (body.success === false) return true;
+  if (body.is_spent_time === true && body.success !== true) return true;
+  return false;
+}
+
+function sasBusinessFailureMessage(body) {
+  if (!body || typeof body !== 'object') return 'sas_business_failure';
+  const msg = body.message;
+  if (Array.isArray(msg)) return msg.join('; ');
+  if (typeof msg === 'string' && msg) return msg;
+  if (body.detail) return String(body.detail);
+  return 'sas_business_failure';
 }
 
 /* ---------- Placeholder resolution ---------- */
@@ -357,13 +387,28 @@ async function runPreflight({
  * Always appended after the assembled sequence.
  *
  * CRITICAL: re-closing an already-completed visit uses
- *   POST /api/v1/field-app/visits/{id}/recomplete/  (empty body)
+ *   POST /api/v1/field-app/visits/{id}/recomplete/
  * NOT PUT …/shift-complete/ (that is first-time completion, HAR #435).
- * Evidence: data/har-evidence-recomplete.json (486_2.har / 682_2.har + skills).
+ *
+ * Body: prefer assembled.recompletePayload from prod-transmitter
+ * (prod completion.har: category-reset[] + complete_shift_final). Empty {} still
+ * accepted by some projects but often soft-fails "Please provide valid data".
  */
-function appendRecompleteCall(calls, visitId) {
+function appendRecompleteCall(calls, visitId, recompletePayload = null) {
   const list = Array.isArray(calls) ? [...calls] : [];
   const maxSeq = list.reduce((m, c) => Math.max(m, Number(c.seq) || 0), 0);
+  const payload =
+    recompletePayload && typeof recompletePayload === 'object'
+      ? recompletePayload
+      : {
+          'category-reset': [],
+          complete_shift_final: {
+            team_lead_feedback: null,
+            allowed_truncation: false,
+            allowed_overlap: false,
+            allowed_missing_ques: false,
+          },
+        };
   list.push({
     seq: maxSeq + 1,
     method: 'POST',
@@ -373,11 +418,11 @@ function appendRecompleteCall(calls, visitId) {
       Authorization: 'Token {{REDACTED}}',
       'X-Requested-With': 'XMLHttpRequest',
     },
-    payload: {},
+    payload,
     dependsOn: maxSeq ? [maxSeq] : [],
     sourceRef:
-      'testMode — POST /api/v1/field-app/visits/{id}/recomplete/ empty body (HAR 486_2.har / 682_2.har response "Visit completed successfully."; data/har-evidence-recomplete.json). NOT PUT shift-complete (HAR #435 first-time complete).',
-    reconstructed: false,
+      'testMode — POST …/recomplete/ with category-reset + complete_shift_final (prod completion.har 2026-07-15). NOT PUT shift-complete (first-time). Fallback empty category-reset if assembler omitted recompletePayload.',
+    reconstructed: true,
     testModeAppended: true,
   });
   return list;
@@ -613,12 +658,15 @@ async function executeLiveTransmit({
 
   // testMode: append recomplete as final call (POST …/recomplete/, not PUT shift-complete)
   let calls = assembled.calls;
+  const recompleteBody = assembled.recompletePayload || null;
   if (testMode && mode === 'start') {
-    calls = appendRecompleteCall(assembled.calls, assembled.visitId);
+    calls = appendRecompleteCall(assembled.calls, assembled.visitId, recompleteBody);
     result.recompleteAppended = true;
   } else if (testMode && mode === 'resume') {
     const hasRecomplete = (assembled.calls || []).some((c) => c.testModeAppended);
-    calls = hasRecomplete ? assembled.calls : appendRecompleteCall(assembled.calls, assembled.visitId);
+    calls = hasRecomplete
+      ? assembled.calls
+      : appendRecompleteCall(assembled.calls, assembled.visitId, recompleteBody);
     result.recompleteAppended = true;
   }
   const logEntries = [...priorLogEntries];
@@ -650,10 +698,10 @@ async function executeLiveTransmit({
       }
     }
 
-    // Automator: if travel_records already on shift, skip to_store (completed visits 500 the preview)
-    if (isTravelToStoreCall(call) && testMode) {
+    // Automator: if travel_records already on shift, skip to_store/to_home (completed visits 500 the preview)
+    if (isTravelCall(call) && testMode) {
       try {
-        const shiftPath = (call.url || '').replace(/\/travel\/(\d+)\/to_store\/?$/, '/shifts/$1/');
+        const shiftPath = (call.url || '').replace(/\/travel\/(\d+)\/(to_store|to_home)\/?$/, '/shifts/$1/');
         const pref = await sasFetch(shiftPath, {
           method: 'GET',
           headers: buildSessionHeaders(session, { visitId: assembled.visitId, write: false }),
@@ -669,7 +717,7 @@ async function executeLiveTransmit({
             status: 200,
             body: { softSkipped: true, reason: 'travel_records_already_present' },
             softSkipped: true,
-            skipReason: 'travel already on shift — automator skips to_store',
+            skipReason: 'travel already on shift — automator skips to_store/to_home',
             timestamp: now(),
             ok: true,
           });
@@ -685,12 +733,44 @@ async function executeLiveTransmit({
       if (call.payload != null) {
         resolvedPayload = resolvePlaceholders(call.payload, stepResults);
         if (resolvedPayload && typeof resolvedPayload === 'object') {
-          // Automator applyRegularShiftTimesViaApi: PATCH omits travel_records entirely
-          // (travel is POST to_store or already on shift). Including synthetic CHANGE
-          // records → prod 500 "TravelRecord has no shift."
+          // travel_records on shift PATCH:
+          // - empty [] OK (time-only edit, prod completion.har)
+          // - complete CHANGE rows OK (prod completion mileage edit: shift_id, times,
+          //   distance, duration, change_reason, change_comment)
+          // - incomplete/audit-only rows stripped (500 "TravelRecord has no shift")
           if (isShiftPatchCall(call) && Object.prototype.hasOwnProperty.call(resolvedPayload, 'travel_records')) {
-            const { travel_records, ...rest } = resolvedPayload;
-            resolvedPayload = rest;
+            const raw = resolvedPayload.travel_records;
+            if (!Array.isArray(raw) || raw.length === 0) {
+              resolvedPayload = { ...resolvedPayload, travel_records: [] };
+            } else {
+              const cleaned = raw
+                .filter((tr) => tr && !tr._auditOnly)
+                .map((tr) => {
+                  const { _auditOnly, _auditNote, ...rest } = tr;
+                  return rest;
+                })
+                .filter((tr) => {
+                  return (
+                    tr.shift_id != null &&
+                    tr.start_time &&
+                    tr.end_time &&
+                    tr.distance != null &&
+                    tr.distance !== '' &&
+                    tr.duration != null &&
+                    tr.duration !== '' &&
+                    tr.start_location_type &&
+                    tr.end_location_type &&
+                    tr.change_reason != null
+                  );
+                });
+              if (cleaned.length === 0) {
+                // Prefer omit broken travel over 500ing the whole T&E write
+                const { travel_records, ...rest } = resolvedPayload;
+                resolvedPayload = rest;
+              } else {
+                resolvedPayload = { ...resolvedPayload, travel_records: cleaned };
+              }
+            }
           }
         }
       }
@@ -715,7 +795,7 @@ async function executeLiveTransmit({
     }
 
     // Automator: write methods always send JSON body ({} when empty) with Content-Type.
-    // Exception: GET never has body. travel/to_store requires body {}.
+    // Exception: GET never has body. travel/to_store and to_home require body {}.
     // Completed-visit step-advance PATCH …/shift-complete/ needs { shift_id } (empty {} → 406).
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(call.method || '').toUpperCase());
     let sendBody;
@@ -809,6 +889,8 @@ async function executeLiveTransmit({
     }
 
     result.callsSent += 1;
+    const httpOk = response.ok && response.status >= 200 && response.status < 300;
+    const businessFail = httpOk && isSasBusinessFailure(response.body);
     const entry = {
       seq: call.seq,
       method: call.method,
@@ -816,17 +898,19 @@ async function executeLiveTransmit({
       status: response.status,
       body: response.body,
       timestamp: now(),
-      ok: response.ok && response.status >= 200 && response.status < 300,
+      ok: httpOk && !businessFail,
+      businessFailure: businessFail || undefined,
+      businessMessage: businessFail ? sasBusinessFailureMessage(response.body) : undefined,
     };
     logEntries.push(entry);
 
     if (!entry.ok) {
       // Automator-aligned soft skips (testMode on already-completed golden visits):
-      // 1) travel/to_store preview — skip if 5xx (completed visit); distance lives on shift/matrix
+      // 1) travel/to_store|to_home preview — skip if 5xx (completed visit); distance lives on shift/matrix
       // 2) shift T&E PATCH returning "Pin filed is required" — automator only does times while
       //    in-progress (schedule/admin punch). Pin is NOT typed in API body; completed visits
       //    refuse field-app shift PATCH. Continue with photos/survey/recomplete (no pin).
-      const softTravel = testMode && isTravelToStoreCall(call) && response.status >= 500;
+      const softTravel = testMode && isTravelCall(call) && response.status >= 500;
       const softPin =
         testMode && isShiftPatchCall(call) && isPinRequiredError(response.body || response.text);
       // First-time complete (PUT shift-complete) on an already-completed visit asks for start_time+reason
@@ -894,7 +978,9 @@ async function executeLiveTransmit({
       }
 
       result.status = 'partial';
-      result.abortReason = `http_${response.status}`;
+      result.abortReason = businessFail
+        ? `sas_business_failure:${entry.businessMessage || 'success_false'}`
+        : `http_${response.status}`;
       result.failedSeq = call.seq;
       persistPartial({
         dryRunId,
@@ -1141,4 +1227,9 @@ module.exports = {
   imagePayloadsPresent,
   draftIdFromParts,
   validateGoldenExport,
+  isSasBusinessFailure,
+  sasBusinessFailureMessage,
+  isTravelToStoreCall,
+  isTravelToHomeCall,
+  isTravelCall,
 };

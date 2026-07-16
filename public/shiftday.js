@@ -207,15 +207,19 @@ function openDetail(id) {
 
   const draft = state.draftByShift[draftKey(s.date, s.actualStore)];
   const startBtn = $('btnSdStartVisit');
+  const abandonRow = $('sdAbandonRow');
   if (draft?.status === 'ready_for_prod') {
-    startBtn.textContent = 'Visit sealed';
-    startBtn.disabled = true;
+    startBtn.textContent = 'View sealed visit';
+    startBtn.disabled = false;
+    if (abandonRow) abandonRow.hidden = true;
   } else if (draft?.status === 'in_progress') {
-    startBtn.textContent = 'Resume Visit';
+    startBtn.textContent = 'Resume visit';
     startBtn.disabled = false;
+    if (abandonRow) abandonRow.hidden = false;
   } else {
-    startBtn.textContent = 'Start Visit';
+    startBtn.textContent = 'Start visit';
     startBtn.disabled = false;
+    if (abandonRow) abandonRow.hidden = true;
   }
 
   const allowed = new Set(s.allowedDays || WORK_DAYS);
@@ -370,16 +374,148 @@ async function init() {
     if (e.target === $('sdOverlay')) closeDetail();
   });
   $('btnSdMove').onclick = moveSelected;
-  $('btnSdStartVisit').onclick = async () => {
+  function todayIsoLocal() {
+    const n = new Date();
+    const y = n.getFullYear();
+    const m = String(n.getMonth() + 1).padStart(2, '0');
+    const d = String(n.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function formatShiftDay(iso) {
+    try {
+      return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  function hideStartConfirm() {
+    const m = $('vfStartConfirm');
+    if (m) m.hidden = true;
+  }
+
+  function hideAbandonConfirm() {
+    const m = $('vfAbandonConfirm');
+    if (m) m.hidden = true;
+  }
+
+  function showStartConfirm(s) {
+    const modal = $('vfStartConfirm');
+    if (!modal) return;
+    const today = todayIsoLocal();
+    const dayLabel = formatShiftDay(s.date);
+    $('vfStartConfirmBody').textContent =
+      'This starts a local visit draft in the app only (not SAS / PROD). Confirm the day and store before continuing.';
+    $('vfStartConfirmList').innerHTML = [
+      `<li><strong>Day:</strong> ${dayLabel}</li>`,
+      `<li><strong>Store:</strong> FM${String(s.actualStore).padStart(3, '0')}${
+        s.store?.name ? ` — ${s.store.name}` : ''
+      }</li>`,
+      s.scheduledStore != null && Number(s.scheduledStore) !== Number(s.actualStore)
+        ? `<li><strong>Scheduled placeholder:</strong> ${s.scheduledStore} (decoded to ${s.actualStore})</li>`
+        : '',
+      `<li><strong>Work:</strong> ${[s.workLoad && 'Work load', s.writeOrder && 'Write order'].filter(Boolean).join(' + ') || 'Service'}</li>`,
+    ]
+      .filter(Boolean)
+      .join('');
+    const warn = $('vfStartConfirmWarn');
+    if (s.date !== today) {
+      warn.hidden = false;
+      warn.textContent =
+        s.date > today
+          ? `⚠ This is a FUTURE day (today is ${formatShiftDay(today)}). Only continue if you really mean to work this visit early.`
+          : `⚠ This is NOT today (today is ${formatShiftDay(today)}). Only continue if you are correcting a past visit.`;
+    } else {
+      warn.hidden = true;
+      warn.textContent = '';
+    }
+    modal.hidden = false;
+    $('vfStartConfirmOk').onclick = async () => {
+      hideStartConfirm();
+      try {
+        await visitFlow.open({ ...s, weekStart: currentWeek().start });
+        closeDetail();
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    };
+    $('vfStartConfirmCancel').onclick = hideStartConfirm;
+    $('vfStartConfirmBackdrop').onclick = hideStartConfirm;
+  }
+
+  async function openVisitForSelected() {
     const s = state.selected;
     if (!s) return;
-    try {
-      await visitFlow.open({ ...s, weekStart: currentWeek().start });
-      closeDetail();
-    } catch (err) {
-      toast(err.message, 'bad');
+    const draft = state.draftByShift[draftKey(s.date, s.actualStore)];
+    // Resume / view sealed: no "start" confirm
+    if (draft?.status === 'in_progress' || draft?.status === 'ready_for_prod') {
+      try {
+        await visitFlow.open({ ...s, weekStart: currentWeek().start });
+        closeDetail();
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+      return;
     }
-  };
+    showStartConfirm(s);
+  }
+
+  function showAbandonConfirm(s) {
+    const modal = $('vfAbandonConfirm');
+    if (!modal || !s) return;
+    $('vfAbandonConfirmDetail').textContent = `${formatShiftDay(s.date)} · FM${String(s.actualStore).padStart(3, '0')}`;
+    modal.hidden = false;
+    $('vfAbandonConfirmOk').onclick = async () => {
+      hideAbandonConfirm();
+      try {
+        const openDraft = visitFlow.getDraft?.();
+        if (
+          openDraft &&
+          openDraft.date === s.date &&
+          Number(openDraft.actualStore) === Number(s.actualStore)
+        ) {
+          await visitFlow.abandon();
+        } else {
+          await api('/shift-day/visit/abandon', {
+            method: 'POST',
+            body: JSON.stringify({
+              repKey: state.repKey,
+              date: s.date,
+              actualStore: s.actualStore,
+            }),
+          });
+          toast('Visit discarded — not started in PROD', 'ok', 4000);
+        }
+        delete state.draftByShift[draftKey(s.date, s.actualStore)];
+        closeDetail();
+        await loadWeek();
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    };
+    $('vfAbandonConfirmCancel').onclick = hideAbandonConfirm;
+    $('vfAbandonConfirmBackdrop').onclick = hideAbandonConfirm;
+  }
+
+  $('btnSdStartVisit').onclick = () => openVisitForSelected();
+  $('btnSdAbandonVisit')?.addEventListener('click', () => {
+    if (state.selected) showAbandonConfirm(state.selected);
+  });
+  // Abandon from inside visit workspace
+  $('vfAbandon')?.addEventListener('click', () => {
+    const d = visitFlow.getDraft?.();
+    if (!d) return;
+    showAbandonConfirm({
+      date: d.date,
+      actualStore: d.actualStore,
+    });
+  });
 
   await loadWeek();
 

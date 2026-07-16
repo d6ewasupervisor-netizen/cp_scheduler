@@ -81,7 +81,11 @@ async function defaultSasGet(token, urlPath, params = {}) {
   for (const [k, v] of Object.entries(params)) {
     if (v != null && v !== '') qs.set(k, String(v));
   }
-  const p = urlPath.startsWith('/api/') ? urlPath : `/api/v1${urlPath.startsWith('/') ? urlPath : `/${urlPath}`}`;
+  // /api/... as-is; /v2/... → /api/v2/...; else → /api/v1/...
+  let p;
+  if (urlPath.startsWith('/api/')) p = urlPath;
+  else if (urlPath.startsWith('/v2/')) p = `/api${urlPath}`;
+  else p = `/api/v1${urlPath.startsWith('/') ? urlPath : `/${urlPath}`}`;
   const url = `${BASE}${p}${qs.toString() ? `?${qs}` : ''}`;
   const res = await fetch(url, {
     headers: {
@@ -157,28 +161,32 @@ function isImageRequiredForAnswer(prodQuestion, answerText) {
 
 const LEG_LOCATION_CODE = { home: 'H' };
 function locationCode(token) {
-  return LEG_LOCATION_CODE[token] || 'S';
+  const t = token == null ? '' : String(token).toLowerCase();
+  if (t === 'home' || t === 'h') return 'H';
+  return 'S';
 }
 
 /**
- * Matrix leg snapshot for dry-run audit / sealed-record mileage only.
- *
- * Automator-aligned send contract (docs/sas-payload-contract.md):
- *  - POST travel/.../to_store/ body is `{}` (establishes travel on first-time visits)
- *  - field-app shift PATCH does NOT include travel_records (including incomplete
- *    CHANGE rows 500s with "TravelRecord has no shift"; null start_time/duration 400s)
- *
- * This helper still returns a fully-specified audit object (filled start_time via
- * default 0.65h drive when unknown) for reporting — callers must NOT attach it
- * to shift PATCH payloads. Use `shiftPatchPayload()` which omits travel_records.
+ * Drive hours from matrix miles (James FM53: 3.4 mi → 0.0833h ≈ 5 min ≈ 41 mph).
+ * Min 5 minutes so short legs still have non-zero duration (prod rejects null duration).
+ */
+function estimateDriveHours(miles, opts = {}) {
+  if (opts.driveHours != null && Number.isFinite(Number(opts.driveHours))) {
+    return Number(opts.driveHours);
+  }
+  const m = Number(miles);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  return Math.max(5 / 60, m / 40);
+}
+
+/**
+ * Matrix leg snapshot for dry-run audit / sealed-record mileage.
+ * Prefer buildTravelChangeRecord() for live shift PATCH travel_records.
  */
 function buildTravelRecordFragment(leg, visitStartIso, opts = {}) {
   if (!leg || leg.miles == null || leg.source === 'same-store') return null;
+  const driveHours = estimateDriveHours(leg.miles, opts);
   const endMs = new Date(visitStartIso).getTime();
-  const driveHours =
-    opts.driveHours != null && Number.isFinite(Number(opts.driveHours))
-      ? Number(opts.driveHours)
-      : 0.65; // HAR H-S default when Google preview is not executed at assemble time
   const startIso = new Date(endMs - Math.round(driveHours * 3600 * 1000)).toISOString();
   return {
     start_location_type: locationCode(leg.from),
@@ -186,17 +194,87 @@ function buildTravelRecordFragment(leg, visitStartIso, opts = {}) {
     start_time: startIso,
     end_time: visitStartIso,
     duration: driveHours.toFixed(4),
-    distance: leg.miles.toFixed(2),
+    distance: Number(leg.miles).toFixed(2),
     record_type: 'CHANGE',
-    is_system_generated: true,
-    // Audit-only — never copy onto a live shift PATCH (see shiftPatchPayload)
+    is_system_generated: false,
     _auditOnly: true,
     _auditNote:
-      'Matrix leg for dry-run/sealed mileage audit. Automator omits travel_records on shift PATCH; to_store {} owns first-time travel. Do not send this object on field-app shifts PATCH.',
+      'Matrix leg audit. For live send use buildTravelChangeRecord (includes shift_id + change_reason).',
   };
 }
 
-/** Shift T&E PATCH body — automator shape (no travel_records). */
+/**
+ * Live travel CHANGE row for PATCH …/shifts/{id}/ (prod completion.har 2026-07-15).
+ *
+ * After to_store/to_home, system may invent ~32 mi. UI corrects with:
+ *   record_type: "CHANGE", change_reason, change_comment, full times, distance, duration.
+ * First create may omit id; later edits include travel_records[].id.
+ *
+ * @param {object} leg - sealed mileage.leg { from, to, miles, source }
+ * @param {object} opts
+ * @param {number} opts.shiftId
+ * @param {string} opts.visitStartIso - UTC ISO
+ * @param {string} opts.visitStopIso - UTC ISO
+ * @param {number} opts.changeReasonId - same catalog as time_change_reason (id 5 etc.)
+ * @param {string} opts.changeComment
+ * @param {number} [opts.existingTravelId]
+ * @param {number} [opts.driveHours]
+ */
+function buildTravelChangeRecord(leg, opts = {}) {
+  if (!leg || leg.miles == null || leg.source === 'same-store') return null;
+  const shiftId = opts.shiftId;
+  if (shiftId == null) return null;
+
+  const from = locationCode(leg.from);
+  const to = locationCode(leg.to);
+  const driveHours = estimateDriveHours(leg.miles, opts);
+  const durationMs = Math.round(driveHours * 3600 * 1000);
+
+  let startIso;
+  let endIso;
+  // Inbound to store: ends at visit start. Outbound from store: starts at visit stop.
+  // Always normalize via Date#toISOString (prod completion.har uses .000Z millis).
+  if (to === 'S' && from === 'H') {
+    endIso = new Date(opts.visitStartIso).toISOString();
+    startIso = new Date(new Date(endIso).getTime() - durationMs).toISOString();
+  } else if (from === 'S' && to === 'H') {
+    startIso = new Date(opts.visitStopIso || opts.visitStartIso).toISOString();
+    endIso = new Date(new Date(startIso).getTime() + durationMs).toISOString();
+  } else if (from === 'S' && to === 'S') {
+    // Store-to-store: arrive at next store at visit start
+    endIso = new Date(opts.visitStartIso).toISOString();
+    startIso = new Date(new Date(endIso).getTime() - durationMs).toISOString();
+  } else {
+    endIso = new Date(opts.visitStartIso).toISOString();
+    startIso = new Date(new Date(endIso).getTime() - durationMs).toISOString();
+  }
+
+  const row = {
+    shift_id: Number(shiftId),
+    start_time: startIso,
+    end_time: endIso,
+    distance: Number(leg.miles).toFixed(2),
+    duration: driveHours.toFixed(4),
+    start_location_type: from,
+    end_location_type: to,
+    is_system_generated: false,
+    is_truncated: false,
+    user_accepted_overlap: null,
+    record_type: 'CHANGE',
+    change_reason: opts.changeReasonId,
+    change_comment: opts.changeComment,
+  };
+  if (opts.existingTravelId != null) row.id = Number(opts.existingTravelId);
+  return row;
+}
+
+/**
+ * Shift T&E PATCH body.
+ * - Time change: always time_change_reason + time_change_comment (James + prod completion).
+ * - Mileage change: optional travel_records[] CHANGE rows with change_reason/comment
+ *   (prod completion.har 01:30:57 — distance 3.50 edit).
+ * Incomplete travel rows must never be sent (500 TravelRecord has no shift).
+ */
 function shiftPatchPayload({
   actualStartDate,
   actualStartTime,
@@ -205,8 +283,10 @@ function shiftPatchPayload({
   timeChangeReasonId,
   timeChangeComment,
   flags = {},
+  travelRecords = null,
+  includeEmptyTravelRecords = false,
 }) {
-  return {
+  const body = {
     actual_start_date: actualStartDate,
     actual_start_time: actualStartTime,
     actual_end_date: actualEndDate,
@@ -220,6 +300,25 @@ function shiftPatchPayload({
     calculate_mileage: flags.calculate_mileage ?? true,
     shift_breaks: [],
   };
+  if (Array.isArray(travelRecords) && travelRecords.length) {
+    body.travel_records = travelRecords;
+  } else if (includeEmptyTravelRecords) {
+    body.travel_records = [];
+  }
+  return body;
+}
+
+/** True if a travel row is safe to send on shift PATCH (prod completion.har shape). */
+function isCompleteTravelChangeRecord(tr) {
+  if (!tr || typeof tr !== 'object') return false;
+  if (tr._auditOnly) return false;
+  if (tr.shift_id == null) return false;
+  if (!tr.start_time || !tr.end_time) return false;
+  if (tr.distance == null || tr.distance === '') return false;
+  if (tr.duration == null || tr.duration === '') return false;
+  if (!tr.start_location_type || !tr.end_location_type) return false;
+  if (tr.change_reason == null) return false;
+  return true;
 }
 
 /** Step-advance / complete pings need shift_id on live completed & in-progress paths. */
@@ -286,6 +385,48 @@ function totalWorkTimeLabel(startIso, stopIso) {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${String(m).padStart(2, '0')}m`;
+}
+
+/** work_time field on team_data (prod completion.har: "0:24:00"). */
+function workTimeColonLabel(startIso, stopIso) {
+  const totalMinutes = totalWorkMinutes(startIso, stopIso);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}:${String(m).padStart(2, '0')}:00`;
+}
+
+/**
+ * Minimal spent_time_reason object (prod completion.har validate-spent-time-reason).
+ * UI sends Restangular noise; API only needs id + text.
+ */
+function spentTimeReasonRef(reason) {
+  if (!reason) return null;
+  return { id: reason.id, text: reason.text };
+}
+
+/** Work duration in minutes (for duration ≤ work-time rules). */
+function totalWorkMinutes(startIso, stopIso) {
+  const ms = new Date(stopIso).getTime() - new Date(startIso).getTime();
+  return Math.max(0, Math.round(ms / 60000));
+}
+
+/**
+ * Category spent_time must never exceed total work time (prod 400:
+ * "Actual duration should not be greater than total work time").
+ * For single-category CP visits the whole shift maps to the one reset row,
+ * so spent_time === work label. Always pair with spent_time_reason when
+ * spent share of work is > 5% (always true when spent === work on one category).
+ */
+function categorySpentTimeLabel(startIso, stopIso) {
+  return totalWorkTimeLabel(startIso, stopIso);
+}
+
+/** True when a single category claiming this spent_time will trip the 5% rule. */
+function needsSpentTimeReason(startIso, stopIso, spentMinutes = null) {
+  const work = totalWorkMinutes(startIso, stopIso);
+  if (work <= 0) return true;
+  const spent = spentMinutes == null ? work : spentMinutes;
+  return spent / work > 0.05;
 }
 
 /* ---------- Assembler ---------- */
@@ -493,27 +634,17 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   if (!primaryResetRow) return abort(result, 'category_reset_row_not_resolved_for_multi_category_visit');
 
   /* ================= Begin assembled write sequence (mirrors HAR order) =================
-   * Send contract: docs/sas-payload-contract.md (automator-aligned after 26822165 live). */
+   * Send contract: docs/sas-payload-contract.md
+   * Re-baselined James FM53 first-time complete HAR 2026-07-15 (visit 27000977). */
 
-  // Audit-only matrix leg (not attached to shift PATCH — see contract)
+  // Matrix leg audit + live CHANGE builder (prod completion.har travel edit)
   const travelAudit = buildTravelRecordFragment(leg, visitStartIso);
   result.mileageAudit = travelAudit;
 
-  // 1. Travel preview — automator: POST body MUST be {} with Content-Type JSON.
-  //    Executor skips when travel_records already exist on the shift.
-  pushCall({
-    method: 'POST',
-    url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
-    payload: {},
-    sourceRef:
-      'HAR entry #132 + sas-retail-automator postTravelToStore — body MUST be {} (JSON). Skip at execute if shift already has travel_records. Establishes first-time H-S travel (Google); matrix leg is sealed-record/audit only.',
-  });
-
-  // 2. Start visit — local wall-clock times; NO travel_records on shift PATCH
-  //    (automator applyRegularShiftTimesViaApi). actual_end provisional = start.
   const storeForTimezone = result.actualStore ?? result.scheduledStore;
   const localStartTime = toStoreLocalTime(visitStartIso, storeForTimezone);
-  if (!localStartTime) {
+  const localStopTime = toStoreLocalTime(visitStopIso, storeForTimezone);
+  if (!localStartTime || !localStopTime) {
     return abort(result, `store_timezone_unresolved:${storeForTimezone ?? 'null'}`);
   }
   const shiftFlags = {
@@ -522,23 +653,99 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     store_to_home: shiftPreState?.store_to_home ?? true,
     calculate_mileage: shiftPreState?.calculate_mileage ?? true,
   };
-  const startShiftPayload = shiftPatchPayload({
+
+  // Work minutes must be known before category completion so spent_time ≤ work time.
+  const workMinutes = totalWorkMinutes(visitStartIso, visitStopIso);
+  if (workMinutes <= 0) {
+    return abort(result, 'visit_duration_zero_or_negative');
+  }
+  result.workTime = {
+    minutes: workMinutes,
+    label: totalWorkTimeLabel(visitStartIso, visitStopIso),
+    needsSpentTimeReason: needsSpentTimeReason(visitStartIso, visitStopIso),
+  };
+
+  const legFrom = locationCode(leg.from);
+  const legTo = locationCode(leg.to);
+  const isHomeToStoreLeg = legFrom === 'H' && legTo === 'S';
+  const isStoreToHomeLeg = legFrom === 'S' && legTo === 'H';
+  const isStoreToStoreLeg = legFrom === 'S' && legTo === 'S';
+
+  // 0. Start schedule — James FM53 HAR: PATCH visit → "Schedule started successfully"
+  //    (before travel / T&E). Empty JSON body with Content-Type application/json.
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/`,
+    payload: {},
+    sourceRef:
+      'James FM53 HAR 2026-07-15 — PATCH /api/v1/field-app/visits/{visitId}/ → "Schedule started successfully". First-time open; body {}.',
+    reconstructed: true,
+  });
+
+  // 1. Travel H→S — POST body MUST be {} with Content-Type JSON.
+  //    System may invent ~32 mi; corrected later via shift PATCH travel CHANGE when leg is H→S.
+  pushCall({
+    method: 'POST',
+    url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
+    payload: {},
+    sourceRef:
+      'James FM53 + HAR #132 + automator postTravelToStore — body MUST be {} (JSON). Skip at execute if shift already has travel_records. System distance often wrong; matrix CHANGE corrects after.',
+  });
+
+  // 2. Full punch times EARLY with time_change_reason + comment (required for T&E edit).
+  //    travel_records: [] on pure time edit (prod completion supervisor patches).
+  //    Full start+stop before category work so duration ≤ total work time.
+  const timeOnlyShiftPayload = shiftPatchPayload({
     actualStartDate: visitStartIso.slice(0, 10),
     actualStartTime: localStartTime,
-    actualEndDate: visitStartIso.slice(0, 10),
-    actualEndTime: localStartTime,
+    actualEndDate: visitStopIso.slice(0, 10),
+    actualEndTime: localStopTime,
     timeChangeReasonId: shiftReason.id,
     timeChangeComment,
     flags: shiftFlags,
+    includeEmptyTravelRecords: true,
   });
   const startShiftSeq = pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-    payload: startShiftPayload,
+    payload: timeOnlyShiftPayload,
     sourceRef:
-      'HAR entry #137 times + automator applyRegularShiftTimesViaApi — local actual_*_time, time_change_reason/comment, mileage flags; NO travel_records on this PATCH (to_store owns first-time travel). actual_end provisional (= start); corrected on stop PATCH.',
+      'James FM53 + prod completion.har — actual_*_time + time_change_reason/comment; travel_records [] on time-only edit. Full start+stop before category spent_time.',
     reconstructed: true,
   });
+
+  // 2b. If leg is home→store (or store→store inbound), correct system H→S/S→S mileage now.
+  let homeToStoreMileageSeq = null;
+  if ((isHomeToStoreLeg || isStoreToStoreLeg) && leg.miles != null) {
+    const inboundChange = buildTravelChangeRecord(leg, {
+      shiftId,
+      visitStartIso,
+      visitStopIso,
+      changeReasonId: shiftReason.id,
+      changeComment: timeChangeComment,
+    });
+    if (inboundChange && isCompleteTravelChangeRecord(inboundChange)) {
+      homeToStoreMileageSeq = pushCall({
+        method: 'PATCH',
+        url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
+        payload: shiftPatchPayload({
+          actualStartDate: visitStartIso.slice(0, 10),
+          actualStartTime: localStartTime,
+          actualEndDate: visitStopIso.slice(0, 10),
+          actualEndTime: localStopTime,
+          timeChangeReasonId: shiftReason.id,
+          timeChangeComment,
+          flags: shiftFlags,
+          travelRecords: [inboundChange],
+        }),
+        dependsOn: [startShiftSeq],
+        sourceRef:
+          'prod completion.har 2026-07-16T01:30:57 — travel_records CHANGE with change_reason/comment + distance/duration/shift_id. Corrects system ~32mi after to_store.',
+        reconstructed: true,
+      });
+      result.mileageCorrection = { direction: `${legFrom}-${legTo}`, distance: inboundChange.distance, phase: 'after_to_store' };
+    }
+  }
 
   // 3. Shift-complete step-advance — live needs { shift_id } (empty {} → 406)
   pushCall({
@@ -602,13 +809,53 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     ...categoryPhotoCounts,
   };
 
-  // 7. Category Reset — completion_status. Request body reconstructed from
-  //    the echoed "data" object (comment/completion_status/exception_id).
+  // 7a. Validate spent-time reason BEFORE completion (prod completion.har).
+  //    Endpoint: PATCH …/category-resets/{id}/validate-spent-time-reason/
+  //    Fail path: spent_time_reason null → success:false is_spent_time (5% rule).
+  //    Pass path: spent_time_reason {id,text} → "Validated Successfully".
+  const spentLabel = categorySpentTimeLabel(visitStartIso, visitStopIso);
+  const spentReasonObj = spentTimeReasonRef(categoryReason);
+  const teamDataRow = {
+    id: shiftEmployee.id,
+    shift_id: Number(shiftId),
+    spent_time: spentLabel,
+    spent_time_reason: spentReasonObj,
+    work_time: workTimeColonLabel(visitStartIso, visitStopIso),
+    is_duration_required: true,
+  };
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/validate-spent-time-reason/`,
+    payload: {
+      id: primaryResetRow.id,
+      shift_id: Number(shiftId),
+      spent_time: spentLabel,
+      spent_time_reason: spentReasonObj,
+      team_data: [teamDataRow],
+    },
+    sourceRef:
+      'prod completion.har 2026-07-16 — PATCH …/validate-spent-time-reason/ with spent_time + spent_time_reason {id,text} + team_data. Always send reason when category share > 5% (single-category CP).',
+    reconstructed: true,
+  });
+
+  // 7b. Category Reset — completion_status + team spent_time/reason id.
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-    payload: { completion_status: true, comment: '', exception_id: null },
-    sourceRef: 'HAR entry #186 — response data:{comment,completion_status,exception_id,time_modified} echoes these fields',
+    payload: {
+      completion_status: true,
+      comment: '',
+      exception_id: null,
+      team: [
+        {
+          id: shiftEmployee.id,
+          spent_time: spentLabel,
+          spent_time_reason: categoryReason.id,
+        },
+      ],
+    },
+    sourceRef:
+      'James FM53 + HAR #186/#414 — completion_status + team[].spent_time (= work time) + spent_time_reason id. Catalog GET /field-app/spent-time-reasons/.',
     reconstructed: true,
   });
 
@@ -646,11 +893,13 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         responder: responderId,
         survey: surveyId,
         runid: runidPlaceholder,
-        // Prod requires run_info (run-infos row id) in addition to runid uuid
+        // Prod requires run_info (run-infos row id); prod completion.har also sends is_field_web
         run_info: `{{step${runInfoSeq}.id}}`,
+        is_field_web: true,
+        delete: false,
       },
       dependsOn: [runInfoSeq, ...(responderCreateSeq ? [responderCreateSeq] : [])],
-      sourceRef: `HAR entry #220 pattern (${q.id}) — response echoes {answer,question,responder,survey,answer_status,runid,id} verbatim`,
+      sourceRef: `HAR #220 + prod completion.har (${q.id}) — answer + question + responder + run_info + is_field_web`,
     });
 
     if (photoRecord) {
@@ -697,13 +946,51 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       'HAR entry #308 + live 26822165 — complete requires responder + run_info (run-infos id); empty body 400s. Responder must be the visit rep row when available.',
   });
 
-  /* ---- Stop time + shift completion ---- */
+  /* ---- Last-stop travel home + time reaffirm + mileage CHANGE + first-time complete ---- */
 
-  const localStopTime = toStoreLocalTime(visitStopIso, storeForTimezone);
-  if (!localStopTime) {
-    return abort(result, `store_timezone_unresolved:${storeForTimezone ?? 'null'}`);
+  // Store→home when last stop OR sealed leg is S→H (James FM53 isLastStop + 3.4 mi home).
+  const isLastStop = sealedRecord.isLastStopOfDay === true;
+  const needsToHome =
+    shiftFlags.store_to_home !== false && (isLastStop || isStoreToHomeLeg);
+  if (needsToHome) {
+    pushCall({
+      method: 'POST',
+      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_home/`,
+      payload: {},
+      sourceRef:
+        'James FM53 HAR — POST /api/v2/field-app/travel/{shiftId}/to_home/ body {}. System may invent ~32mi S-H; corrected next via travel CHANGE.',
+      reconstructed: true,
+    });
+    result.toHomeAssembled = true;
+  } else {
+    result.toHomeAssembled = false;
   }
-  const stopShiftPayload = shiftPatchPayload({
+
+  // Final shift PATCH: reaffirm times (time_change_reason) AND/OR mileage CHANGE.
+  // prod completion.har: travel_records[{ record_type:CHANGE, change_reason, change_comment,
+  //   distance, duration, shift_id, start/end times, S→H }].
+  const finalTravelRecords = [];
+  if (isStoreToHomeLeg && leg.miles != null) {
+    const outboundChange = buildTravelChangeRecord(leg, {
+      shiftId,
+      visitStartIso,
+      visitStopIso,
+      changeReasonId: shiftReason.id,
+      changeComment: timeChangeComment,
+    });
+    if (outboundChange && isCompleteTravelChangeRecord(outboundChange)) {
+      finalTravelRecords.push(outboundChange);
+      result.mileageCorrection = {
+        ...(result.mileageCorrection || {}),
+        direction: 'S-H',
+        distance: outboundChange.distance,
+        phase: needsToHome ? 'after_to_home' : 'final',
+        duration: outboundChange.duration,
+      };
+    }
+  }
+
+  const finalShiftPayload = shiftPatchPayload({
     actualStartDate: visitStartIso.slice(0, 10),
     actualStartTime: localStartTime,
     actualEndDate: visitStopIso.slice(0, 10),
@@ -711,14 +998,18 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     timeChangeReasonId: shiftReason.id,
     timeChangeComment,
     flags: shiftFlags,
+    travelRecords: finalTravelRecords.length ? finalTravelRecords : null,
+    includeEmptyTravelRecords: finalTravelRecords.length === 0,
   });
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-    payload: stopShiftPayload,
-    dependsOn: [startShiftSeq],
+    payload: finalShiftPayload,
+    dependsOn: [startShiftSeq, ...(homeToStoreMileageSeq ? [homeToStoreMileageSeq] : [])],
     sourceRef:
-      'HAR entry #353 + automator — stop times only; no travel_records on shift PATCH',
+      finalTravelRecords.length
+        ? 'prod completion.har mileage edit + James FM53 — times + time_change_reason/comment + travel_records CHANGE (change_reason/comment, distance, duration, shift_id). Corrects system S-H ~32mi to matrix miles.'
+        : 'James FM53 final shift PATCH — reaffirm actual times + time_change_reason/comment after survey; travel_records [].',
     reconstructed: true,
   });
 
@@ -726,30 +1017,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
     payload: shiftCompletePingPayload(shiftId),
-    sourceRef: 'HAR entry #372 step-advance with { shift_id }',
-  });
-
-  // Assign rep + spent time + reason. HAR entry #413 shows this is REQUIRED
-  // once cumulative spent time on a category exceeds 5% of shift time (true
-  // for any single-category-covers-the-whole-shift visit like this one), so
-  // the reason is supplied directly rather than reproducing the doomed
-  // reason-less first attempt (#410/#413) that the real tester's UI exploration
-  // triggered.
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-    payload: {
-      team: [
-        {
-          id: shiftEmployee.id,
-          spent_time: totalWorkTimeLabel(visitStartIso, visitStopIso),
-          spent_time_reason: categoryReason.id,
-        },
-      ],
-    },
-    sourceRef:
-      'HAR entry #414 (successful retry) + #415 (GET confirms applied team[].spent_time/spent_time_reason). Wrapper shape ({"team":[...]}) is response-echo inferred, not a directly observed request body (Chrome HAR omitted it) — flagged per T sign-off.',
-    reconstructed: true,
+    sourceRef: 'HAR entry #372 / James FM53 step-advance with { shift_id }',
   });
 
   pushCall({
@@ -757,18 +1025,57 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
     payload: shiftCompletePingPayload(shiftId),
     sourceRef:
-      'HAR entry #435 first-time complete — live requires shift_id on body; empty {} 400s. Distinct from testMode POST …/recomplete/ for already-completed visits.',
+      'James FM53 + HAR #435 first-time complete — PUT …/shift-complete/ → "Visit completed successfully." Requires { shift_id }. Distinct from testMode POST …/recomplete/.',
   });
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
     payload: shiftCompletePingPayload(shiftId),
-    sourceRef: 'HAR entry #439 final step-advance with { shift_id }',
+    sourceRef: 'HAR entry #439 / James FM53 final step-advance with { shift_id }',
   });
+
+  // testMode / already-completed re-close payload (prod completion.har recomplete).
+  // Empty {} often soft-fails; UI posts category-reset + complete_shift_final.
+  result.recompletePayload = {
+    'category-reset': [
+      {
+        id: primaryResetRow.id,
+        completed: true,
+        category_completion: true,
+        category_id: primaryResetRow.category_id ?? null,
+        name: primaryResetRow.name || null,
+        comment: '',
+        exception: { text: null, id: null },
+        team: [
+          {
+            id: shiftEmployee.id,
+            shift_id: Number(shiftId),
+            spent_time: spentLabel,
+            spent_time_reason: spentReasonObj,
+            work_time: workTimeColonLabel(visitStartIso, visitStopIso),
+            is_duration_required: true,
+          },
+        ],
+      },
+    ],
+    complete_shift_final: {
+      team_lead_feedback: null,
+      allowed_truncation: false,
+      allowed_overlap: false,
+      allowed_missing_ques: false,
+    },
+  };
 
   result.callCount = result.calls.length;
   result.shiftId = shiftId;
+  result.reasonIds = {
+    timeChangeReason: shiftReason.id,
+    timeChangeReasonText: shiftReason.text,
+    spentTimeReason: categoryReason.id,
+    spentTimeReasonText: categoryReason.text,
+    travelChangeReason: shiftReason.id,
+  };
   return result;
 }
 
@@ -780,7 +1087,15 @@ module.exports = {
   shiftCompletePingPayload,
   defaultReadPhotoBase64,
   buildTravelRecordFragment,
+  buildTravelChangeRecord,
+  estimateDriveHours,
+  isCompleteTravelChangeRecord,
   totalWorkTimeLabel,
+  totalWorkMinutes,
+  workTimeColonLabel,
+  spentTimeReasonRef,
+  categorySpentTimeLabel,
+  needsSpentTimeReason,
   isImageRequiredForAnswer,
   resolveStoreTimezone,
   toStoreLocalTime,

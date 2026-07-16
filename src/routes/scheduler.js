@@ -743,6 +743,25 @@ router.post(
   )
 );
 
+/**
+ * POST /shift-day/visit/abandon
+ * Discard an in-progress local visit draft (wrong day, accidental start).
+ * Cannot abandon sealed visits.
+ */
+router.post('/shift-day/visit/abandon', shiftDayScope, (req, res) => {
+  const { repKey, date, actualStore } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  try {
+    const result = visitDraftStore.abandonVisit(repKey, date, actualStore);
+    res.json(result);
+  } catch (err) {
+    const status = err.code === 'SEALED' ? 409 : err.code === 'NO_DRAFT' ? 404 : 400;
+    res.status(status).json({ error: err.message, code: err.code || null });
+  }
+});
+
 router.post(
   '/shift-day/visit/finish',
   shiftDayScope,

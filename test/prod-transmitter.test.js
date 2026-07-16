@@ -9,10 +9,16 @@ const os = require('os');
 const {
   transmitVisit,
   buildTravelRecordFragment,
+  buildTravelChangeRecord,
+  estimateDriveHours,
+  isCompleteTravelChangeRecord,
   shiftPatchPayload,
   shiftCompletePingPayload,
   pickVisitRepResponder,
   totalWorkTimeLabel,
+  totalWorkMinutes,
+  categorySpentTimeLabel,
+  needsSpentTimeReason,
   isImageRequiredForAnswer,
   resolveStoreTimezone,
   toStoreLocalTime,
@@ -500,15 +506,14 @@ describe('transmitVisit — redaction', () => {
 });
 
 describe('unit helpers', () => {
-  it('buildTravelRecordFragment is audit-only matrix leg with filled start/duration (not for shift PATCH)', () => {
+  it('buildTravelRecordFragment is audit-only matrix leg with filled start/duration', () => {
     const leg = { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' };
     const frag = buildTravelRecordFragment(leg, '2026-07-08T13:01:00Z');
     assert.equal(frag.distance, '3.60');
     assert.equal(frag.start_location_type, 'H');
     assert.equal(frag.end_location_type, 'S');
     assert.equal(frag.end_time, '2026-07-08T13:01:00Z');
-    assert.ok(frag.start_time, 'start_time filled (default 0.65h drive)');
-    assert.equal(frag.duration, '0.6500');
+    assert.ok(frag.start_time, 'start_time filled');
     assert.equal(frag._auditOnly, true);
     assert.ok(!frag._unresolvedFields);
   });
@@ -518,9 +523,79 @@ describe('unit helpers', () => {
     assert.equal(buildTravelRecordFragment(leg, '2026-07-08T13:01:00Z'), null);
   });
 
+  it('buildTravelChangeRecord matches prod completion.har CHANGE shape (S→H)', () => {
+    const leg = { from: '53', to: 'home', miles: 3.4, source: 'store-to-home' };
+    const row = buildTravelChangeRecord(leg, {
+      shiftId: 44392384,
+      visitStartIso: '2026-07-15T22:40:00Z',
+      visitStopIso: '2026-07-15T23:04:00Z',
+      changeReasonId: 5,
+      changeComment: 'Entered from Stage 3 sealed record',
+    });
+    assert.equal(row.shift_id, 44392384);
+    assert.equal(row.start_location_type, 'S');
+    assert.equal(row.end_location_type, 'H');
+    assert.equal(row.distance, '3.40');
+    assert.equal(row.record_type, 'CHANGE');
+    assert.equal(row.change_reason, 5);
+    assert.equal(row.change_comment, 'Entered from Stage 3 sealed record');
+    assert.equal(row.is_system_generated, false);
+    assert.equal(row.start_time, '2026-07-15T23:04:00.000Z');
+    assert.ok(isCompleteTravelChangeRecord(row));
+    // ~3.4 mi at 40 mph ≈ 0.085h; min 5 min = 0.0833
+    assert.equal(row.duration, estimateDriveHours(3.4).toFixed(4));
+  });
+
+  it('shiftPatchPayload includes time_change + optional travel CHANGE', () => {
+    const timeOnly = shiftPatchPayload({
+      actualStartDate: '2026-07-15',
+      actualStartTime: '15:40:00',
+      actualEndDate: '2026-07-15',
+      actualEndTime: '16:04:00',
+      timeChangeReasonId: 5,
+      timeChangeComment: 'sealed transmit',
+      includeEmptyTravelRecords: true,
+    });
+    assert.equal(timeOnly.time_change_reason, 5);
+    assert.equal(timeOnly.time_change_comment, 'sealed transmit');
+    assert.deepEqual(timeOnly.travel_records, []);
+
+    const withMiles = shiftPatchPayload({
+      actualStartDate: '2026-07-15',
+      actualStartTime: '15:40:00',
+      actualEndDate: '2026-07-15',
+      actualEndTime: '16:04:00',
+      timeChangeReasonId: 5,
+      timeChangeComment: 'sealed transmit',
+      travelRecords: [
+        {
+          shift_id: 1,
+          start_time: 'a',
+          end_time: 'b',
+          distance: '3.40',
+          duration: '0.0833',
+          start_location_type: 'S',
+          end_location_type: 'H',
+          record_type: 'CHANGE',
+          change_reason: 5,
+          change_comment: 'sealed transmit',
+        },
+      ],
+    });
+    assert.equal(withMiles.travel_records.length, 1);
+    assert.equal(withMiles.travel_records[0].distance, '3.40');
+  });
+
   it('totalWorkTimeLabel matches the HAR format ("Xh Ym")', () => {
     assert.equal(totalWorkTimeLabel('2026-07-08T13:01:00Z', '2026-07-08T18:01:00Z'), '5h 00m');
     assert.equal(totalWorkTimeLabel('2026-07-08T13:01:00Z', '2026-07-08T14:31:00Z'), '1h 30m');
+  });
+
+  it('short-visit work helpers (James FM53 24m rules)', () => {
+    assert.equal(totalWorkMinutes('2026-07-15T22:40:00Z', '2026-07-15T23:04:00Z'), 24);
+    assert.equal(categorySpentTimeLabel('2026-07-15T22:40:00Z', '2026-07-15T23:04:00Z'), '0h 24m');
+    assert.equal(needsSpentTimeReason('2026-07-15T22:40:00Z', '2026-07-15T23:04:00Z'), true);
+    assert.equal(needsSpentTimeReason('2026-07-15T22:40:00Z', '2026-07-15T23:04:00Z', 1), false); // 1/24 < 5%
   });
 
   it('isImageRequiredForAnswer checks choice-level flag first, falling back to question-level', () => {
@@ -580,27 +655,35 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     const shiftPatches = result.calls.filter(
       (c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/44390825/')
     );
-    assert.equal(shiftPatches.length, 2, 'expected start + stop shift PATCHes');
+    // home→store leg: time-only + H→S mileage CHANGE + final reaffirm
+    assert.ok(shiftPatches.length >= 2, 'expected early punch + later shift PATCH(es)');
 
     const startPayload = shiftPatches[0].payload;
-    const stopPayload = shiftPatches[1].payload;
+    const lastPayload = shiftPatches[shiftPatches.length - 1].payload;
 
-    // HAR entry #171 ground truth: local wall clock, not UTC slice
+    // James FM53 + HAR: full start+stop early (not provisional end=start) so work time > 0
     assert.equal(startPayload.actual_start_time, '06:01:00');
-    assert.equal(startPayload.actual_end_time, '06:01:00'); // provisional = start
-    assert.equal(stopPayload.actual_end_time, '11:01:00'); // 18:01Z = 11:01 PDT
+    assert.equal(startPayload.actual_end_time, '11:01:00'); // full stop on first punch
+    assert.equal(lastPayload.actual_end_time, '11:01:00'); // reaffirm
+    assert.equal(startPayload.time_change_reason, writeReasons.shiftTimeChangeReason.selected.id);
+    assert.equal(startPayload.time_change_comment, 'Entered from Stage 3 sealed record');
 
-    // Dates from sealed ISO date portion; travel_records must NOT be on shift PATCH
+    // Time-only first patch uses empty travel_records; home→store also gets a CHANGE patch
+    assert.deepEqual(startPayload.travel_records, []);
+    const mileagePatch = shiftPatches.find((c) => (c.payload.travel_records || []).some((t) => t.record_type === 'CHANGE'));
+    assert.ok(mileagePatch, 'home→store matrix leg should assemble travel CHANGE');
+    assert.equal(mileagePatch.payload.travel_records[0].distance, '3.60');
+    assert.equal(mileagePatch.payload.travel_records[0].change_reason, 5);
+    assert.equal(mileagePatch.payload.travel_records[0].shift_id, 44390825);
+
     assert.equal(startPayload.actual_start_date, '2026-07-08');
-    assert.equal(startPayload.travel_records, undefined);
-    assert.equal(stopPayload.travel_records, undefined);
     assert.ok(result.mileageAudit, 'matrix leg retained as audit-only on result');
     assert.equal(result.mileageAudit.distance, '3.60');
     assert.equal(result.mileageAudit._auditOnly, true);
 
     // Explicit anti-regression: must not reintroduce the UTC-slice bug
     assert.notEqual(startPayload.actual_start_time, '13:01:00');
-    assert.notEqual(stopPayload.actual_end_time, '18:01:00');
+    assert.notEqual(lastPayload.actual_end_time, '18:01:00');
   });
 
   it('assembles automator-aligned travel {} + shift_id pings + survey run_info', async () => {
@@ -630,6 +713,122 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
 
     const ansImg = result.calls.find((c) => c.url.endsWith('/answer-images/'));
     assert.equal(ansImg.payload._executorEncoding, 'multipart-answer-image');
+  });
+
+  it('assembles validate-spent-time-reason before category completion', async () => {
+    const sealed = makeSealedRecord({
+      beforePhotos: [tmpPhoto('before.jpg')],
+      afterPhotos: [tmpPhoto('after.jpg')],
+    });
+    const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
+    assert.equal(result.status, 'ok');
+    const validate = result.calls.find((c) => (c.url || '').includes('/validate-spent-time-reason/'));
+    assert.ok(validate, 'validate-spent-time-reason call');
+    assert.equal(validate.payload.shift_id, 44390825);
+    assert.equal(validate.payload.spent_time_reason.id, 3);
+    assert.match(validate.payload.spent_time_reason.text, /supervisor was contacted/);
+    assert.ok(validate.payload.team_data?.[0]?.work_time);
+
+    const completeIdx = result.calls.findIndex(
+      (c) => c.payload?.completion_status === true && c.url.includes('/category-resets/') && !c.url.includes('validate')
+    );
+    const validateIdx = result.calls.indexOf(validate);
+    assert.ok(validateIdx < completeIdx, 'validate before completion');
+
+    assert.ok(result.recompletePayload?.['category-reset']?.[0]?.id);
+    assert.equal(result.recompletePayload.complete_shift_final.allowed_truncation, false);
+
+    const answer = result.calls.find((c) => c.url.endsWith('/surveys/answers/'));
+    assert.equal(answer.payload.is_field_web, true);
+    assert.equal(answer.payload.delete, false);
+  });
+
+  it('James FM53 path: visit start, time change, spent_time, to_home, S→H mileage CHANGE, PUT complete', async () => {
+    const sealed = makeSealedRecord({
+      visitStart: { actual: '2026-07-15T22:40:00Z' },
+      visitStop: { actual: '2026-07-15T23:04:00Z' },
+      isLastStopOfDay: true,
+      beforePhotos: [tmpPhoto('before.jpg')],
+      afterPhotos: [tmpPhoto('after.jpg')],
+      actualStore: 53,
+      mileage: { leg: { from: '53', to: 'home', miles: 3.4, source: 'store-to-home', warning: null } },
+    });
+    const matched = makeMatchedVisit();
+    matched.prodVisit.actualStore = 53;
+    const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: matched, opts: baseOpts() });
+    assert.equal(result.status, 'ok');
+    assert.equal(result.toHomeAssembled, true);
+    assert.equal(result.workTime.minutes, 24);
+    assert.equal(result.workTime.needsSpentTimeReason, true);
+    assert.equal(result.mileageCorrection.direction, 'S-H');
+    assert.equal(result.mileageCorrection.distance, '3.40');
+
+    const methods = result.calls.map((c) => `${c.method} ${c.url.replace('https://prod.sasretail.com', '')}`);
+    const startVisitIdx = methods.findIndex((m) => m === 'PATCH /api/v1/field-app/visits/27000510/');
+    const toStoreIdx = methods.findIndex((m) => m.includes('/to_store/'));
+    const firstShiftIdx = methods.findIndex((m) => m.startsWith('PATCH /api/v2/field-app/shifts/'));
+    const teamCompleteIdx = result.calls.findIndex(
+      (c) => c.payload?.completion_status === true && c.payload?.team?.[0]?.spent_time_reason != null
+    );
+    const surveyDoneIdx = methods.findIndex((m) => m.includes('/surveys/surveys/') && m.endsWith('/complete/'));
+    const toHomeIdx = methods.findIndex((m) => m.includes('/to_home/'));
+    const putIdx = methods.findIndex((m) => m.startsWith('PUT '));
+
+    assert.ok(startVisitIdx >= 0, 'visit schedule start');
+    assert.ok(startVisitIdx < toStoreIdx, 'start visit before to_store');
+    assert.ok(toStoreIdx < firstShiftIdx, 'to_store before punch');
+    assert.ok(firstShiftIdx >= 0 && teamCompleteIdx > firstShiftIdx, 'full punch before category completion+spent_time');
+    assert.ok(firstShiftIdx < surveyDoneIdx, 'full punch before survey complete');
+    assert.ok(surveyDoneIdx < toHomeIdx, 'to_home after survey');
+    assert.ok(toHomeIdx < putIdx, 'to_home before PUT complete');
+
+    const earlyShift = result.calls.find(
+      (c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/')
+    );
+    assert.equal(earlyShift.payload.actual_start_time, '15:40:00');
+    assert.equal(earlyShift.payload.actual_end_time, '16:04:00');
+    assert.equal(earlyShift.payload.time_change_reason, 5);
+    assert.equal(earlyShift.payload.time_change_comment, 'Entered from Stage 3 sealed record');
+    assert.deepEqual(earlyShift.payload.travel_records, []);
+
+    const teamCall = result.calls.find((c) => c.payload?.team?.[0]?.spent_time_reason != null);
+    assert.ok(teamCall, 'spent_time_reason on category team');
+    assert.equal(teamCall.payload.team[0].spent_time, '0h 24m');
+    assert.equal(teamCall.payload.team[0].spent_time_reason, 3);
+    assert.equal(teamCall.payload.completion_status, true);
+
+    const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
+    assert.deepEqual(toHome.payload, {});
+
+    // Final shift PATCH after to_home carries S→H CHANGE (prod completion.har shape)
+    const finalShift = [...result.calls]
+      .reverse()
+      .find((c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/'));
+    assert.ok(finalShift.payload.travel_records?.length >= 1);
+    const sh = finalShift.payload.travel_records[0];
+    assert.equal(sh.record_type, 'CHANGE');
+    assert.equal(sh.start_location_type, 'S');
+    assert.equal(sh.end_location_type, 'H');
+    assert.equal(sh.distance, '3.40');
+    assert.equal(sh.change_reason, 5);
+    assert.equal(sh.change_comment, 'Entered from Stage 3 sealed record');
+    assert.equal(sh.shift_id, 44390825);
+    assert.equal(finalShift.payload.time_change_reason, 5);
+
+    const put = result.calls.find((c) => c.method === 'PUT' && c.url.includes('/shift-complete/'));
+    assert.equal(put.payload.shift_id, 44390825);
+  });
+
+  it('does not assemble to_home when not last stop of day', async () => {
+    const sealed = makeSealedRecord({
+      isLastStopOfDay: false,
+      beforePhotos: [tmpPhoto('before.jpg')],
+      afterPhotos: [tmpPhoto('after.jpg')],
+    });
+    const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
+    assert.equal(result.status, 'ok');
+    assert.equal(result.toHomeAssembled, false);
+    assert.ok(!result.calls.some((c) => (c.url || '').includes('/to_home/')));
   });
 
   it('pickVisitRepResponder prefers rep sas email over arbitrary first row', () => {

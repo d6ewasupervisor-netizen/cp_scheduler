@@ -9,7 +9,14 @@ const os = require('os');
 const { isLiveTransmitEnabled, isDraftAllowlisted, draftIdFromParts } = require('../src/lib/live-allowlist');
 const liveRegistry = require('../src/lib/live-registry');
 const liveStore = require('../src/lib/live-store');
-const { executeLiveTransmit, resolvePlaceholders } = require('../src/lib/live-executor');
+const {
+  executeLiveTransmit,
+  resolvePlaceholders,
+  isSasBusinessFailure,
+  sasBusinessFailureMessage,
+  isTravelToHomeCall,
+  isTravelCall,
+} = require('../src/lib/live-executor');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'live-executor-test-'));
 const ALLOWLIST = path.join(TMP, 'allowlist.json');
@@ -457,5 +464,51 @@ describe('HTTP gate semantics (route contract)', () => {
     assert.equal(isDraftAllowlisted(DRAFT_ID, ALLOWLIST), false);
     writeAllowlist([DRAFT_ID]);
     assert.equal(isDraftAllowlisted(DRAFT_ID, ALLOWLIST), true);
+  });
+});
+
+describe('James FM53 business-rule failures (HTTP 200 success:false)', () => {
+  it('detects spent-time soft-fail and duration messages', () => {
+    assert.equal(
+      isSasBusinessFailure({
+        success: false,
+        is_spent_time: true,
+        message: ['Please select spent time reason as cummulative spent time on this category is more than 5.00%'],
+      }),
+      true
+    );
+    assert.equal(
+      isSasBusinessFailure({
+        success: false,
+        message: 'Actual duration should not be greater than total work time',
+      }),
+      true
+    );
+    assert.equal(isSasBusinessFailure({ success: true, message: 'ok' }), false);
+    assert.equal(isSasBusinessFailure({ message: 'Category Reset Item updated successfully', success: true }), false);
+    assert.match(
+      sasBusinessFailureMessage({
+        success: false,
+        message: ['Please select spent time reason as cummulative spent time on this category is more than 5.00%'],
+      }),
+      /spent time reason/i
+    );
+  });
+
+  it('recognizes to_home travel calls', () => {
+    assert.equal(
+      isTravelToHomeCall({
+        method: 'POST',
+        url: 'https://prod.sasretail.com/api/v2/field-app/travel/44392384/to_home/',
+      }),
+      true
+    );
+    assert.equal(
+      isTravelCall({
+        method: 'POST',
+        url: 'https://prod.sasretail.com/api/v2/field-app/travel/44392384/to_store/',
+      }),
+      true
+    );
   });
 });

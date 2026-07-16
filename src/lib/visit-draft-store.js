@@ -374,6 +374,41 @@ function previousCompletedStoreForDay(repKey, date, { excludeActualStore = null,
   return filtered[0].actualStore;
 }
 
+/**
+ * Discard an in-progress visit draft (and its photo folder).
+ * Sealed visits (ready_for_prod) cannot be abandoned.
+ */
+function abandonVisit(repKey, date, actualStore) {
+  if (!repKey) throw new Error('repKey required');
+  if (!date) throw new Error('date required');
+  if (actualStore == null) throw new Error('actualStore required');
+
+  const draft = readDraftFile(repKey, date, actualStore);
+  if (!draft) {
+    const err = new Error('No visit draft to discard');
+    err.code = 'NO_DRAFT';
+    throw err;
+  }
+  if (draft.status === 'ready_for_prod') {
+    const err = new Error('This visit is sealed and cannot be discarded');
+    err.code = 'SEALED';
+    throw err;
+  }
+
+  const file = draftFilePath(repKey, date, actualStore);
+  const photos = photoDirPath(repKey, date, actualStore);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+  if (fs.existsSync(photos)) fs.rmSync(photos, { recursive: true, force: true });
+
+  return {
+    ok: true,
+    abandonedId: draft.id,
+    repKey,
+    date,
+    actualStore: Number(actualStore),
+  };
+}
+
 /** Admin-only, read-only: every draft/record across every rep (Planning Desk). */
 function listAllDrafts() {
   if (!fs.existsSync(ROOT)) return [];
@@ -412,6 +447,7 @@ module.exports = {
   setMileage,
   goToStep,
   finishVisit,
+  abandonVisit,
   listDraftsForRep,
   listAllDrafts,
   previousCompletedStoreForDay,

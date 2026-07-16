@@ -89,31 +89,64 @@
       <div class="overlay-actions">
         <button type="button" id="btnSdStartVisit" class="primary">Start Visit</button>
       </div>
+      <div class="overlay-actions" id="sdAbandonRow" hidden>
+        <button type="button" id="btnSdAbandonVisit" class="subtle danger-text">Discard in-progress visit</button>
+      </div>
     </div>
   </div>
 
-  <!-- Stage 3 guided visit flow — free-nav sections, local-only, no SAS writes -->
-  <div id="visitFlowOverlay" class="visit-overlay" hidden>
-    <div class="visit-overlay-backdrop" id="vfBackdrop"></div>
-    <div class="visit-overlay-panel vf-panel" role="dialog" aria-modal="true" aria-labelledby="vfStoreTitle">
-      <header class="visit-overlay-header">
+  <!-- Confirm start — wrong-day guard -->
+  <div id="vfStartConfirm" class="vf-modal" hidden>
+    <div class="vf-modal-backdrop" id="vfStartConfirmBackdrop"></div>
+    <div class="vf-modal-card" role="dialog" aria-modal="true" aria-labelledby="vfStartConfirmTitle">
+      <h2 id="vfStartConfirmTitle">Start this visit?</h2>
+      <p class="overlay-meta" id="vfStartConfirmBody"></p>
+      <ul class="vf-confirm-list" id="vfStartConfirmList"></ul>
+      <p class="overlay-meta vf-confirm-warn" id="vfStartConfirmWarn" hidden></p>
+      <div class="vf-modal-actions">
+        <button type="button" id="vfStartConfirmCancel" class="subtle">Cancel</button>
+        <button type="button" id="vfStartConfirmOk" class="primary">Yes, start visit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm discard / unstart -->
+  <div id="vfAbandonConfirm" class="vf-modal" hidden>
+    <div class="vf-modal-backdrop" id="vfAbandonConfirmBackdrop"></div>
+    <div class="vf-modal-card" role="dialog" aria-modal="true" aria-labelledby="vfAbandonConfirmTitle">
+      <h2 id="vfAbandonConfirmTitle">Discard this visit?</h2>
+      <p class="overlay-meta">This removes the local draft and photos for this store/day only. It does <strong>not</strong> change anything in SAS / PROD. Sealed visits cannot be discarded.</p>
+      <p class="overlay-meta" id="vfAbandonConfirmDetail"></p>
+      <div class="vf-modal-actions">
+        <button type="button" id="vfAbandonConfirmCancel" class="subtle">Keep visit</button>
+        <button type="button" id="vfAbandonConfirmOk" class="primary vf-btn-danger">Yes, discard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-page visit workspace (not a floating overlay) -->
+  <div id="visitWorkspace" class="visit-workspace" hidden>
+    <header class="visit-workspace-header">
+      <div class="visit-workspace-titleblock">
+        <button type="button" id="vfBackToSchedule" class="subtle vf-back">← Schedule</button>
         <div>
-          <h2 id="vfStoreTitle"></h2>
-          <p id="vfStepLabel" class="overlay-flag"></p>
+          <h1 id="vfStoreTitle">Visit</h1>
+          <p id="vfStepLabel" class="visit-workspace-sub"></p>
+          <p id="vfVisitMeta" class="visit-workspace-meta"></p>
         </div>
-        <div class="vf-header-actions">
-          <button type="button" id="vfSidebarToggle" class="subtle vf-sidebar-toggle" aria-label="Sections">Sections</button>
-          <button type="button" id="vfClose" class="subtle" aria-label="Close">Close</button>
-        </div>
-      </header>
-      <div class="vf-layout">
-        <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit sections"></nav>
-        <div class="vf-main">
-          <div id="vfBody" class="vf-body"></div>
-          <div class="vf-nav">
-            <span id="vfSaveState" class="save-state" data-state="saved">Saved</span>
-            <button type="button" id="vfFinish" class="primary" disabled>Finish Visit</button>
-          </div>
+      </div>
+      <div class="vf-header-actions">
+        <button type="button" id="vfSidebarToggle" class="subtle vf-sidebar-toggle" aria-label="Sections">Sections</button>
+        <button type="button" id="vfAbandon" class="subtle danger-text" hidden>Discard visit</button>
+      </div>
+    </header>
+    <div class="vf-layout">
+      <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit sections"></nav>
+      <div class="vf-main">
+        <div id="vfBody" class="vf-body"></div>
+        <div class="vf-nav">
+          <span id="vfSaveState" class="save-state" data-state="saved">Saved</span>
+          <button type="button" id="vfFinish" class="primary" disabled>Finish &amp; seal visit</button>
         </div>
       </div>
     </div>

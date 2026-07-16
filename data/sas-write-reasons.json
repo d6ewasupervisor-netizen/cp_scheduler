@@ -2,7 +2,8 @@
   "_meta": {
     "description": "HAR-sourced reason enums for Stage 4 prod-transmitter writes. The transmitter never hard-codes a reason id — it always exact-string-matches the configured text against a live-fetched (or injected, for tests) reason list, and aborts the visit if no match is found. These 'selected' blocks are only the *default* text to look up; a real run must still resolve id/text from the live GET.",
     "sourceHar": "central pet shifts.json (captured 2026-07-09T14:54-15:01Z, visit 27000510, shift 44390825, store 391 scheduled / 215 decoded)",
-    "signOff": "2026-07-13: T confirmed use of the real prod string in place of the originally-requested 'supervisor was notified' (which does not exist in any SAS reason enum)."
+    "confirmedHar": "James FM53 first-time complete sas-har-20260715-180316 (visit 27000977, shift 44392384) — time_change_reason id 5 + spent_time_reason >5% gate",
+    "signOff": "2026-07-13: T confirmed use of the real prod string in place of the originally-requested 'supervisor was notified' (which does not exist in any SAS reason enum). 2026-07-15: temporary over-hour demo on 24m visit confirmed duration≤work + spent_time_reason path."
   },
   "categorySpentTimeReason": {
     "endpoint": "GET /api/v1/field-app/spent-time-reasons/",

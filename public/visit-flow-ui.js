@@ -6,6 +6,7 @@
 // on Review) is the only gate.
 
 import { toast } from '/shared.js';
+import { createPhotoUploadQueue } from '/photo-upload-queue.js';
 
 const API = '/api/central-pet';
 
@@ -63,16 +64,93 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     pendingAnchor: null,
   };
 
+  /** Background photo uploads — capture never waits for network. */
+  // Concurrency 1: visit draft is a single JSON file — parallel POSTs can race.
+  // Capture stays non-blocking; uploads simply drain the queue in order.
+  const photoQueue = createPhotoUploadQueue({
+    maxConcurrent: 1,
+    uploadFn: async (item) => {
+      if (!vf.draft) throw new Error('No active visit draft');
+      const fd = new FormData();
+      fd.append('file', item.file);
+      fd.append('repKey', getRepKey());
+      fd.append('date', vf.draft.date);
+      fd.append('actualStore', vf.draft.actualStore);
+      for (const [k, v] of Object.entries(item.extra || {})) {
+        if (v != null) fd.append(k, v);
+      }
+      const draft = await apiCall('/shift-day/visit/photo', { method: 'POST', body: fd });
+      return draft;
+    },
+    onChange: (snap) => {
+      updatePhotoQueueSaveState(snap);
+      // Soft refresh: keep capture control free; only re-render photo UI when useful
+      if (vf.draft) {
+        // Prefer light thumb refresh when still on a photo-heavy section
+        const step = vf.draft.currentStep;
+        if (
+          step === 'before_photos' ||
+          step === 'after_photos' ||
+          step === 'category_photos' ||
+          step === 'load_check' ||
+          step === 'write_order_checklist' ||
+          step === 'review'
+        ) {
+          // When an upload finishes, merge draft from latest successful result
+          const lastDone = [...photoQueue.items].reverse().find((i) => i.status === 'done' && i.result);
+          if (lastDone?.result) {
+            vf.draft = lastDone.result;
+            onDraftChanged?.(vf.draft);
+            photoQueue.pruneDone();
+          }
+          renderAll();
+        }
+      }
+      if (snap.failed > 0 && snap.inFlight === 0) {
+        toast(`${snap.failed} photo(s) failed to upload — tap Retry on the red thumb`, 'bad', 5000);
+      }
+    },
+  });
+
   async function ensureStaticData() {
     if (!vf.scopeChecklist) vf.scopeChecklist = await apiCall('/shift-day/visit-flow/scope-checklist');
     if (!vf.survey) vf.survey = await apiCall('/shift-day/visit-flow/survey');
     if (!vf.categoryTargets) vf.categoryTargets = await apiCall('/shift-day/visit-flow/category-targets');
   }
 
-  function setSaveState(s) {
+  function setSaveState(s, label) {
     const el = $('vfSaveState');
+    if (!el) return;
     el.dataset.state = s;
-    el.textContent = s === 'saving' ? 'Saving…' : 'Saved';
+    el.textContent =
+      label ||
+      (s === 'saving' ? 'Saving…' : s === 'error' ? 'Upload error' : 'Saved');
+  }
+
+  // In-flight photo captures live only in this tab's memory until the server
+  // confirms the upload — a refresh/close mid-upload would silently drop them.
+  // Warn (native browser prompt) so the rep waits for "Saved" first.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', (e) => {
+      if (photoQueue.snapshot().inFlight > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+  }
+
+  function updatePhotoQueueSaveState(snap) {
+    const s = snap || photoQueue.snapshot();
+    if (s.inFlight > 0) {
+      setSaveState(
+        'saving',
+        `Uploading ${s.uploading || 0}/${s.inFlight}…${s.queued ? ` (${s.queued} queued)` : ''}`
+      );
+    } else if (s.failed > 0) {
+      setSaveState('error', `${s.failed} photo upload(s) failed`);
+    } else {
+      setSaveState('saved');
+    }
   }
 
   async function refreshDraft() {
@@ -88,7 +166,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     setSaveState('saving');
     try {
       vf.draft = await fn();
-      setSaveState('saved');
+      updatePhotoQueueSaveState();
       onDraftChanged?.(vf.draft);
     } catch (err) {
       toast(`Autosave failed: ${err.message}`, 'bad', 4500);
@@ -98,33 +176,75 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   /* ---------- Photo capture (shared by before/after/category/load/checklist) ---------- */
 
-  function photoCaptureBlock({ label, photos, minRequired = 0, onCapture, onRemove, anchorId }) {
+  function photoCaptureBlock({ label, photos, minRequired = 0, onCapture, onRemove, anchorId, pending = [] }) {
     const wrap = document.createElement('div');
     wrap.className = 'vf-photo-block';
     if (anchorId) wrap.id = anchorId;
-    const count = photos?.length || 0;
+    const uploaded = photos?.length || 0;
+    const pendingCount = (pending || []).filter((p) => p.status !== 'failed').length;
+    const failedCount = (pending || []).filter((p) => p.status === 'failed').length;
+    const totalShown = uploaded + (pending || []).length;
+    let countLabel = `${uploaded} saved`;
+    if (pendingCount) countLabel += ` · ${pendingCount} sending`;
+    if (failedCount) countLabel += ` · ${failedCount} failed`;
+    if (minRequired) countLabel += ` (min ${minRequired})`;
+
+    const serverThumbs = (photos || [])
+      .map(
+        (p, i) =>
+          `<div class="vf-photo-thumb vf-photo-ok" data-seq="${p.seq ?? i + 1}" title="Saved">#${i + 1}${
+            onRemove
+              ? `<button type="button" class="vf-photo-remove" data-seq="${p.seq ?? i + 1}" aria-label="Remove photo">×</button>`
+              : ''
+          }</div>`
+      )
+      .join('');
+
+    const pendingThumbs = (pending || [])
+      .map((p, i) => {
+        const n = uploaded + i + 1;
+        const st = p.status === 'failed' ? 'failed' : p.status === 'uploading' ? 'uploading' : 'queued';
+        const title =
+          p.status === 'failed'
+            ? `Failed: ${escapeHtml(p.error || 'upload error')}`
+            : p.status === 'uploading'
+              ? 'Uploading…'
+              : 'Queued…';
+        const retry =
+          p.status === 'failed'
+            ? `<button type="button" class="vf-photo-retry" data-qid="${p.id}" aria-label="Retry upload">↻</button>`
+            : '';
+        const bg = p.previewUrl
+          ? `style="background-image:url('${p.previewUrl}');background-size:cover;background-position:center"`
+          : '';
+        return `<div class="vf-photo-thumb vf-photo-${st}" data-qid="${p.id}" title="${title}" ${bg}>
+          <span class="vf-photo-badge">${st === 'failed' ? '!' : n}</span>${retry}
+        </div>`;
+      })
+      .join('');
+
     wrap.innerHTML = `
       <div class="vf-photo-head">
         <strong>${label}</strong>
-        <span class="vf-photo-count">${count} photo${count === 1 ? '' : 's'}${minRequired ? ` (min ${minRequired})` : ''}</span>
+        <span class="vf-photo-count">${countLabel}</span>
       </div>
-      <div class="vf-photo-grid">${(photos || [])
-        .map(
-          (p, i) =>
-            `<div class="vf-photo-thumb" data-seq="${p.seq ?? i + 1}">#${i + 1}${
-              onRemove ? `<button type="button" class="vf-photo-remove" data-seq="${p.seq ?? i + 1}" aria-label="Remove photo">×</button>` : ''
-            }</div>`
-        )
-        .join('')}</div>
+      <div class="vf-photo-grid">${serverThumbs}${pendingThumbs}</div>
       <label class="vf-photo-input primary">
         Capture photo
         <input type="file" accept="image/*" capture="environment" hidden>
-      </label>`;
-    wrap.querySelector('input[type=file]').addEventListener('change', async (e) => {
+      </label>
+      <p class="vf-photo-hint overlay-meta">Fire shots as fast as you need — uploads catch up in the background.</p>`;
+
+    // Do NOT await upload — queue immediately so the next capture can open.
+    wrap.querySelector('input[type=file]').addEventListener('change', (e) => {
       const file = e.target.files?.[0];
       e.target.value = '';
       if (!file) return;
-      await onCapture(file);
+      try {
+        onCapture(file);
+      } catch (err) {
+        toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
+      }
     });
     if (onRemove) {
       wrap.querySelectorAll('.vf-photo-remove').forEach((btn) => {
@@ -135,17 +255,20 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         });
       });
     }
+    wrap.querySelectorAll('.vf-photo-retry').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        photoQueue.retry(btn.dataset.qid);
+      });
+    });
     return wrap;
   }
 
-  async function uploadPhoto(file, extra) {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('repKey', getRepKey());
-    fd.append('date', vf.draft.date);
-    fd.append('actualStore', vf.draft.actualStore);
-    for (const [k, v] of Object.entries(extra)) fd.append(k, v);
-    await autosave(() => apiCall('/shift-day/visit/photo', { method: 'POST', body: fd }));
+  /** Queue photo for background upload — returns immediately. */
+  function queuePhoto(file, extra) {
+    photoQueue.enqueue(file, extra);
+    // Instant UI feedback without waiting for network
     renderAll();
   }
 
@@ -178,13 +301,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. (Time-sensitive: capture on arrival.)'
         : 'Same as before: two 4ft sections per photo, full coverage of the Pet Supplies aisle.';
     body.appendChild(p);
+    const extra = { target: kind };
     body.appendChild(
       photoCaptureBlock({
         label: kind === 'before' ? 'Before photos' : 'After photos',
         photos,
         minRequired: 1,
         anchorId: kind === 'before' ? 'before-photos' : 'after-photos',
-        onCapture: (file) => uploadPhoto(file, { target: kind }),
+        pending: photoQueue.pendingFor(extra),
+        onCapture: (file) => queuePhoto(file, extra),
         onRemove: (seq) => removePhoto(kind, seq),
       })
     );
@@ -213,13 +338,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
     if (status === 'yes') {
       instr.textContent = 'Great — take a photo of the load, then work it to the shelf.';
+      const loadExtra = { target: 'load', status: 'yes' };
       body.appendChild(
         photoCaptureBlock({
           label: 'Load photo',
           photos: vf.draft.loadCheck?.photo ? [vf.draft.loadCheck.photo] : [],
           minRequired: 1,
           anchorId: 'load-photo',
-          onCapture: (file) => uploadPhoto(file, { target: 'load', status: 'yes' }),
+          pending: photoQueue.pendingFor(loadExtra),
+          onCapture: (file) => queuePhoto(file, loadExtra),
         })
       );
     } else if (status === 'no_found_later') {
@@ -326,13 +453,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       );
       body.appendChild(row);
       if (item.photoRequired) {
+        const clExtra = { target: 'checklist', itemId: item.id };
         body.appendChild(
           photoCaptureBlock({
             label: `${item.id} photo`,
             photos: vf.draft.checklist[item.id]?.photo ? [vf.draft.checklist[item.id].photo] : [],
             minRequired: 1,
             anchorId: `checklist-photo-${item.id}`,
-            onCapture: (file) => uploadPhoto(file, { target: 'checklist', itemId: item.id }),
+            pending: photoQueue.pendingFor(clExtra),
+            onCapture: (file) => queuePhoto(file, clExtra),
           })
         );
       }
@@ -348,13 +477,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       h.id = `category-${cat.id}`;
       h.textContent = cat.label;
       body.appendChild(h);
+      const catExtra = { target: 'category', categoryId: cat.id };
       body.appendChild(
         photoCaptureBlock({
           label: cat.label,
           photos: vf.draft.categoryPhotos[cat.id] || [],
           minRequired: 1,
           anchorId: `category-block-${cat.id}`,
-          onCapture: (file) => uploadPhoto(file, { target: 'category', categoryId: cat.id }),
+          pending: photoQueue.pendingFor(catExtra),
+          onCapture: (file) => queuePhoto(file, catExtra),
         })
       );
     }
@@ -576,6 +707,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       unmetHtml = `<p class="vf-ready" id="review">All requirements met — you can Finish Visit to seal this record for Stage 4.</p>`;
     }
 
+    const qSnap = photoQueue.snapshot();
+    const uploadLine =
+      qSnap.inFlight || qSnap.failed
+        ? `<div><dt>Photo uploads</dt><dd>${
+            qSnap.inFlight ? `${qSnap.inFlight} in progress` : 'idle'
+          }${qSnap.failed ? ` · ${qSnap.failed} failed` : ''}</dd></div>`
+        : '';
     body.innerHTML = `
       <dl class="sd-detail-meta">
         <div><dt>Before photos</dt><dd>${d.beforePhotos.length}</dd></div>
@@ -584,12 +722,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         <div><dt>Category photos</dt><dd>${Object.values(d.categoryPhotos).reduce((n, a) => n + a.length, 0)}</dd></div>
         <div><dt>Survey</dt><dd>${Object.keys(d.survey).length} answered</dd></div>
         <div><dt>After photos</dt><dd>${d.afterPhotos.length}</dd></div>
+        ${uploadLine}
         <div><dt>Start</dt><dd>${d.visitStart.actual || '—'}</dd></div>
         <div><dt>Stop</dt><dd>${d.visitStop.actual || '—'}</dd></div>
         <div><dt>Mileage</dt><dd>${d.mileage?.leg ? `${d.mileage.leg.from} → ${d.mileage.leg.to} (${d.mileage.leg.miles ?? '—'} mi)` : '—'}</dd></div>
       </dl>
       ${unmetHtml}
-      <p class="overlay-meta">Every section stays editable until you seal. Use the sidebar to jump anywhere — nothing is locked.</p>`;
+      <p class="overlay-meta">Every section stays editable until you seal. Use the sidebar to jump anywhere — nothing is locked. Photo captures upload in the background; Finish stays off until all uploads succeed.</p>`;
 
     body.querySelectorAll('.vf-deep-link').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -640,11 +779,19 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     const btn = $('vfFinish');
     const onReview = vf.draft.currentStep === 'review';
     btn.hidden = !onReview;
-    const can = !!vf.draft.canSeal;
+    const q = photoQueue.snapshot();
+    const uploadsBlocking = q.inFlight > 0 || q.failed > 0;
+    const can = !!vf.draft.canSeal && !uploadsBlocking;
     btn.disabled = !can;
-    btn.title = can
-      ? 'Seal this visit for Stage 4'
-      : `${(vf.draft.unmetRequirements || []).length} requirement(s) still unmet — see Review list`;
+    if (q.inFlight > 0) {
+      btn.title = `Wait for ${q.inFlight} photo upload(s) to finish`;
+    } else if (q.failed > 0) {
+      btn.title = `${q.failed} photo upload(s) failed — retry or remove before sealing`;
+    } else if (can) {
+      btn.title = 'Seal this visit for Stage 4';
+    } else {
+      btn.title = `${(vf.draft.unmetRequirements || []).length} requirement(s) still unmet — see Review list`;
+    }
   }
 
   function renderSectionBody() {
@@ -678,6 +825,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function renderAll() {
     renderSidebar();
     renderSectionBody();
+    updateVisitMeta();
   }
 
   async function goToSection(sectionId, anchor = null) {
@@ -703,6 +851,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   async function finish() {
+    const q = photoQueue.snapshot();
+    if (q.inFlight > 0) {
+      toast(`Still uploading ${q.inFlight} photo(s) — finish when the counter says Saved`, 'warn', 4500);
+      return;
+    }
+    if (q.failed > 0) {
+      toast(`${q.failed} photo(s) failed — retry the red thumbs before sealing`, 'bad', 5000);
+      return;
+    }
     if (!vf.draft.canSeal) {
       toast('Finish blocked — fix the unmet list on Review first', 'bad', 4000);
       renderReview();
@@ -735,17 +892,69 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     }
   }
 
+  function workspaceEl() {
+    return $('visitWorkspace') || $('visitFlowOverlay');
+  }
+
   function closeSidebarDrawer() {
-    $('visitFlowOverlay')?.classList.remove('vf-sidebar-open');
+    workspaceEl()?.classList.remove('vf-sidebar-open');
   }
 
   function toggleSidebarDrawer() {
-    $('visitFlowOverlay')?.classList.toggle('vf-sidebar-open');
+    workspaceEl()?.classList.toggle('vf-sidebar-open');
+  }
+
+  function setVisitShellOpen(open) {
+    const ws = workspaceEl();
+    if (!ws) return;
+    ws.hidden = !open;
+    document.body.classList.toggle('visit-workspace-open', open);
+    const schedule = $('sdApp');
+    const sticky = $('sdSticky');
+    const topbar = document.querySelector('.topbar-shiftday');
+    if (open) {
+      if (schedule) {
+        if (schedule.dataset.wasHidden == null) {
+          schedule.dataset.wasHidden = schedule.hidden ? '1' : '0';
+        }
+        schedule.hidden = true;
+      }
+      if (sticky) sticky.hidden = true;
+      if (topbar) topbar.hidden = true;
+    } else {
+      if (schedule) {
+        schedule.hidden = schedule.dataset.wasHidden === '1';
+        delete schedule.dataset.wasHidden;
+      }
+      if (topbar) topbar.hidden = false;
+    }
   }
 
   function close() {
-    $('visitFlowOverlay').hidden = true;
+    setVisitShellOpen(false);
     closeSidebarDrawer();
+    vf.shift = null;
+  }
+
+  function updateVisitMeta() {
+    const meta = $('vfVisitMeta');
+    if (!meta || !vf.draft) return;
+    const d = vf.draft;
+    const day = d.date
+      ? new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : '—';
+    meta.textContent = `${day} · Store ${d.actualStore}${
+      d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore)
+        ? ` (scheduled ${d.scheduledStore})`
+        : ''
+    } · ${d.status === 'ready_for_prod' ? 'Sealed' : 'In progress'}`;
+    const abandon = $('vfAbandon');
+    if (abandon) abandon.hidden = d.status === 'ready_for_prod';
   }
 
   async function open(shift) {
@@ -759,9 +968,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         shiftId: shift.id,
       }),
     });
-    // Start Visit always lands on Before Photos (starting point, not a lock)
+    // Fresh starts land on Before Photos; resumes keep current section
     if (vf.draft.currentStep !== 'before_photos' && vf.draft.steps.includes('before_photos') && vf.draft.status === 'in_progress') {
-      // Only force landing when brand-new (no edits yet beyond start tap)
       const fresh =
         !vf.draft.beforePhotos.length &&
         !vf.draft.afterPhotos.length &&
@@ -780,15 +988,54 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
     }
     onDraftChanged?.(vf.draft);
+    updateVisitMeta();
     renderAll();
-    $('visitFlowOverlay').hidden = false;
+    setVisitShellOpen(true);
     closeSidebarDrawer();
+    window.scrollTo(0, 0);
   }
 
-  $('vfFinish').addEventListener('click', () => finish());
-  $('vfClose').addEventListener('click', close);
-  $('vfBackdrop').addEventListener('click', close);
+  async function abandon() {
+    if (!vf.draft) return null;
+    if (vf.draft.status === 'ready_for_prod') {
+      toast('Sealed visits cannot be discarded', 'bad', 4000);
+      return null;
+    }
+    const q = photoQueue.snapshot();
+    if (q.inFlight > 0) {
+      toast('Wait for photo uploads to finish (or fail) before discarding', 'warn', 4500);
+      return null;
+    }
+    const result = await apiCall('/shift-day/visit/abandon', {
+      method: 'POST',
+      body: JSON.stringify({
+        repKey: getRepKey(),
+        date: vf.draft.date,
+        actualStore: vf.draft.actualStore,
+      }),
+    });
+    photoQueue.pruneDone();
+    // clear any remaining queue items for this visit
+    for (const item of [...photoQueue.items]) {
+      photoQueue.remove(item.id);
+    }
+    vf.draft = null;
+    close();
+    toast('Visit discarded — not started in PROD', 'ok', 4000);
+    return result;
+  }
+
+  $('vfFinish')?.addEventListener('click', () => finish());
+  $('vfBackToSchedule')?.addEventListener('click', close);
+  $('vfClose')?.addEventListener('click', close);
   $('vfSidebarToggle')?.addEventListener('click', toggleSidebarDrawer);
 
-  return { open, close, refreshDraft, goToSection };
+  return {
+    open,
+    close,
+    abandon,
+    refreshDraft,
+    goToSection,
+    getDraft: () => vf.draft,
+  };
 }

@@ -1,7 +1,7 @@
 # SAS field-app payload contract
 
 **Source of truth for what Stage 4 assembles and the live executor sends.**  
-Re-baselined after the supervised live testMode run on visit **26822165** (2026-07-14) against sas-retail-automator + HAR evidence.
+Re-baselined after the supervised live testMode run on visit **26822165** (2026-07-14) and the **James FM53 first-time complete HAR** (visit **27000977**, 2026-07-15 evening).
 
 Auth is always **morning sas-auth** (`auth_token` + `csrfToken` + `cookieHeader`), not cp_scheduler app users and not a supervisor PIN field.
 
@@ -21,19 +21,30 @@ Automator note: **shift-completion/admin** context without project config often 
 
 ---
 
+## Visit start (first-time)
+
+| Call | Contract |
+|------|----------|
+| `PATCH /api/v1/field-app/visits/{visitId}/` | Body **`{}`**. Response: `"Schedule started successfully"`. James FM53 HAR — first write before travel. |
+
+---
+
 ## Travel
 
 | Call | Contract |
 |------|----------|
-| `POST /api/v2/field-app/travel/{shiftId}/to_store/` | Body **`{}`** (JSON). Automator: empty body without JSON Content-Type → 500 Parser NoneType. |
-| Execute skip | If GET shift already has `travel_records.length > 0`, **skip** to_store. |
-| Matrix mileage | Computed on sealed record / `result.mileageAudit` for audit. **Not** sent as incomplete `travel_records` on shift PATCH. First-time in-progress: to_store establishes travel (Google). |
+| `POST /api/v2/field-app/travel/{shiftId}/to_store/` | Body **`{}`** (JSON). Empty body without JSON Content-Type → 500 Parser NoneType. |
+| `POST /api/v2/field-app/travel/{shiftId}/to_home/` | Body **`{}`**. When last stop or sealed leg is store→home. System may invent ~32mi S-H. |
+| Execute skip | If GET shift already has `travel_records.length > 0`, **skip** to_store/to_home (testMode / already-traveled). |
+| Matrix mileage | Sealed `mileage.leg` + `result.mileageAudit`. Correct system distance via shift PATCH **travel CHANGE** (below). |
 
 ---
 
 ## Shift T&E (`PATCH /api/v2/field-app/shifts/{shiftId}/`)
 
-Automator `applyRegularShiftTimesViaApi` shape:
+### Time change (always)
+
+Assembler writes **full start+stop early** (before category duration) so work time is non-zero:
 
 ```json
 {
@@ -48,15 +59,97 @@ Automator `applyRegularShiftTimesViaApi` shape:
   "calculate_mileage": true,
   "time_change_reason": 5,
   "time_change_comment": "<required real comment>",
-  "shift_breaks": []
+  "shift_breaks": [],
+  "travel_records": []
 }
 ```
 
-**Do not include `travel_records`.**  
-Synthetic `CHANGE` rows without a live shift association → 500 `TravelRecord has no shift`.  
-Null `start_time`/`duration` → 400.
+**Always include `time_change_reason` + `time_change_comment`** on time edits  
+(`GET /api/v1/operations/time-change-reason/?is_admin=true`, exact text).  
+Default text: `Tablet was Not Available` (id 5). Never default comment to HAR placeholder `"k"`.
 
 Times are **store-local wall clock** (`America/Los_Angeles` via store map), not UTC ISO slices.
+
+### Mileage change (`travel_records` CHANGE) — prod completion.har
+
+After `to_store` / `to_home`, correct matrix miles with a **complete** CHANGE row  
+(incomplete rows → 500 `TravelRecord has no shift`):
+
+```json
+{
+  "actual_start_date": "YYYY-MM-DD",
+  "actual_start_time": "HH:mm:ss",
+  "actual_end_date": "YYYY-MM-DD",
+  "actual_end_time": "HH:mm:ss",
+  "no_show": false,
+  "time_change_reason": 5,
+  "time_change_comment": "<required real comment>",
+  "home_to_store": true,
+  "store_to_store": true,
+  "store_to_home": true,
+  "calculate_mileage": true,
+  "shift_breaks": [],
+  "travel_records": [
+    {
+      "shift_id": 44392384,
+      "start_time": "2026-07-15T23:04:00.000Z",
+      "end_time": "2026-07-15T23:10:00.000Z",
+      "distance": "3.50",
+      "duration": "0.1000",
+      "start_location_type": "S",
+      "end_location_type": "H",
+      "is_system_generated": false,
+      "is_truncated": false,
+      "user_accepted_overlap": null,
+      "record_type": "CHANGE",
+      "change_reason": 5,
+      "change_comment": "<same catalog / required comment>"
+    }
+  ]
+}
+```
+
+| Field | Rule |
+|-------|------|
+| `shift_id` | Required on the travel row |
+| `distance` | Matrix miles, 2 decimals (`"3.40"`) |
+| `duration` | Hours, 4 decimals; estimate ≥ 5 min, ~40 mph (James 3.4→0.0833) |
+| `change_reason` | Same id catalog as time_change_reason |
+| `change_comment` | Required free text (assembler uses `timeChangeComment`) |
+| `id` | Include when editing an existing travel record; omit on first create |
+
+**Executor:** send complete CHANGE rows; strip audit-only / incomplete travel; allow `travel_records: []` on time-only patches.
+
+---
+
+## Category duration + spent-time reason (James FM53 + prod completion.har)
+
+| Rule | Behavior |
+|------|----------|
+| Duration ≤ work time | Category actual/spent duration **must not exceed** total work time → else **HTTP 400** `"Actual duration should not be greater than total work time"`. Assembler sets `team[].spent_time` to the work-time label only. |
+| Spent share &gt; 5% | **HTTP 200** with `success: false`, `is_spent_time: true`. Requires `spent_time_reason`. |
+| Validate endpoint | `PATCH …/category-resets/{id}/validate-spent-time-reason/` with `{ id, shift_id, spent_time, spent_time_reason: {id,text}, team_data: [...] }` **before** completion PATCH. |
+| Single-category CP | spent === work → always &gt; 5% → **always send** reason. Default: `Other – supervisor was contacted` (id 3, en dash U+2013). |
+
+**Executor:** treat `success: false` on HTTP 200 as a hard failure (`sas_business_failure:…`), never continue.
+
+### Recomplete (already-completed / testMode)
+
+`POST …/visits/{id}/recomplete/` body (prod completion.har):
+
+```json
+{
+  "category-reset": [{ "id", "completed": true, "category_completion": true, "team": [{ "spent_time", "spent_time_reason": { "id", "text" } }] }],
+  "complete_shift_final": {
+    "team_lead_feedback": null,
+    "allowed_truncation": false,
+    "allowed_overlap": false,
+    "allowed_missing_ques": false
+  }
+}
+```
+
+Assembler stores this on `assembled.recompletePayload`; testMode executor appends it.
 
 ---
 
@@ -65,7 +158,7 @@ Times are **store-local wall clock** (`America/Los_Angeles` via store map), not 
 | Call | Body |
 |------|------|
 | `PATCH …/visits/{id}/shift-complete/` | `{ "shift_id": <n> }` — empty `{}` → 406 `shift_id is required` |
-| `PUT …/visits/{id}/shift-complete/` | `{ "shift_id": <n> }` first-time close (HAR #435 family) |
+| `PUT …/visits/{id}/shift-complete/` | `{ "shift_id": <n> }` first-time close → `"Visit completed successfully."` (James FM53 + HAR #435) |
 | `POST …/visits/{id}/recomplete/` | Empty `{}` — **already-completed** re-close only (testMode). Not a substitute for first-time PUT. |
 
 ---
