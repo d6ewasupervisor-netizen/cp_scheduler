@@ -7,6 +7,7 @@
   <title>Central Pet — Team Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
+  <script src="/sas-beacon.js" defer></script>
   <style>
     /* Mobile-first dashboard chrome on top of shared dark system */
     body.mode-dashboard {
@@ -174,6 +175,17 @@
     .dash-badge.load { background: var(--warn-soft); color: var(--warn); }
     .dash-badge.sealed { background: var(--ok-soft); color: var(--ok); }
     .dash-badge.progress { background: rgba(78,161,232,.12); color: var(--accent); }
+    .dash-badge.run-completed { background: var(--ok-soft); color: var(--ok); }
+    .dash-badge.run-in_progress { background: var(--warn-soft); color: var(--warn); }
+    .dash-badge.run-already_ran { background: rgba(78,161,232,.18); color: var(--accent); }
+    .dash-badge.run-not_started { background: var(--surface-3); color: var(--muted); }
+    .dash-badge.run-unknown,
+    .dash-badge.run-other,
+    .dash-badge.run-deleted { background: var(--surface-3); color: var(--faint); }
+    .dash-shift.run-completed { border-left: 3px solid var(--ok); }
+    .dash-shift.run-in_progress { border-left: 3px solid var(--warn); }
+    .dash-shift.run-already_ran { border-left: 3px solid var(--accent); }
+    .dash-shift.run-not_started { border-left: 3px solid var(--border-strong, #3a4556); }
     .dash-empty {
       color: var(--faint);
       font-size: 0.9rem;

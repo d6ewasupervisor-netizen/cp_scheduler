@@ -7,6 +7,8 @@ import {
   dateForDay,
   shortDate,
   toast,
+  shiftRunStatus,
+  shiftRunStatusBadgeHtml,
 } from '/shared.js';
 
 const state = {
@@ -61,12 +63,14 @@ function showError(msg) {
 }
 
 function badgeHtml(shift, draft) {
-  const bits = [];
+  const run = shiftRunStatus({
+    visitStatus: shift.visitStatus || null,
+    draftStatus: draft?.status || null,
+  });
+  const bits = [shiftRunStatusBadgeHtml(run, { className: 'dash-badge' })];
   if (shift.workLoad) bits.push('<span class="dash-badge load">Load</span>');
   if (shift.writeOrder) bits.push('<span class="dash-badge order">Order</span>');
   if (shift.picksDay) bits.push(`<span class="dash-badge">Picks ${shift.picksDay}</span>`);
-  if (draft?.status === 'ready_for_prod') bits.push('<span class="dash-badge sealed">Sealed</span>');
-  else if (draft?.status === 'in_progress') bits.push('<span class="dash-badge progress">In progress</span>');
   return bits.length ? `<div class="dash-badges">${bits.join('')}</div>` : '';
 }
 
@@ -165,10 +169,14 @@ function renderSchedule() {
       shifts
         .map((s) => {
           const draft = drafts[draftKey(s.date, s.actualStore)];
+          const run = shiftRunStatus({
+            visitStatus: s.visitStatus || null,
+            draftStatus: draft?.status || null,
+          });
           const name = s.store?.name || '';
           const addr = s.store?.address || '';
           const time = shiftTimeLabel(s);
-          return `<button type="button" class="dash-shift" data-id="${s.id}" data-store="${s.actualStore}" data-date="${s.date}">
+          return `<button type="button" class="dash-shift run-${run.key}" data-id="${s.id}" data-store="${s.actualStore}" data-date="${s.date}" title="${String(run.title || '').replace(/"/g, '&quot;')}">
             <div class="dash-shift-top">
               <div class="dash-shift-store">FM ${s.actualStore}${name ? ` <span>· ${name}</span>` : ''}</div>
               ${time ? `<div class="dash-shift-meta">${time}</div>` : ''}
@@ -291,8 +299,12 @@ async function loadActiveWeek({ resync = false, silent = false } = {}) {
     try {
       await pullDashWeekFromProd({ silent });
     } catch (e) {
+      const msg = e.message || '';
+      const sessionHint = /sas_session_|No sas-auth session|session stale/i.test(msg)
+        ? ' — use Refresh auth in the top SAS beacon, then Resync from PROD'
+        : '';
       toast(
-        `PROD sync failed — showing last saved schedule. ${e.message || ''}`.trim(),
+        `PROD sync failed — showing last saved schedule. ${msg}${sessionHint}`.trim(),
         'bad',
         7000
       );
@@ -397,6 +409,14 @@ async function init() {
     $('dashApp').hidden = false;
     // Auto PROD sync on open
     await loadActiveWeek({ resync: true, silent: true });
+
+    // When top SAS beacon recovers auth, re-pull schedules
+    window.addEventListener('cp-sas-auth', (ev) => {
+      if (ev?.detail?.ok) {
+        state.schedules = {};
+        loadActiveWeek({ resync: true, silent: true }).catch(() => {});
+      }
+    });
   } catch (err) {
     $('dashLoading').hidden = true;
     showError(err.message || 'Could not load dashboard');

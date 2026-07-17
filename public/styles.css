@@ -110,6 +110,108 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
 .layer-badge.admin { color: var(--accent); border-color: rgba(78, 161, 232, 0.45); background: var(--accent-soft); }
 .layer-badge.rep   { color: var(--ok); border-color: rgba(52, 201, 138, 0.45); background: var(--ok-soft); }
 
+/* ---------- SAS PROD auth beacon (all pages) ---------- */
+
+.sas-beacon {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+.sas-beacon-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.45rem 1rem;
+  min-height: 44px;
+}
+.sas-beacon-dot {
+  flex: 0 0 auto;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: var(--faint);
+  box-shadow: 0 0 0 3px rgba(154, 163, 178, 0.18);
+}
+.sas-beacon.state-live .sas-beacon-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(52, 201, 138, 0.22);
+  animation: sas-beacon-pulse 2.4s ease-in-out infinite;
+}
+.sas-beacon.state-warn .sas-beacon-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.22);
+}
+.sas-beacon.state-down .sas-beacon-dot {
+  background: var(--bad);
+  box-shadow: 0 0 0 3px rgba(240, 101, 90, 0.22);
+}
+.sas-beacon.state-unknown .sas-beacon-dot {
+  background: var(--muted);
+}
+@keyframes sas-beacon-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.85; }
+}
+.sas-beacon-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  line-height: 1.25;
+}
+.sas-beacon-text strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.sas-beacon-text span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sas-beacon.state-live .sas-beacon-text strong { color: var(--ok); }
+.sas-beacon.state-warn .sas-beacon-text strong { color: var(--warn); }
+.sas-beacon.state-down {
+  background: rgba(240, 101, 90, 0.08);
+  border-bottom-color: rgba(240, 101, 90, 0.35);
+}
+.sas-beacon.state-down .sas-beacon-text strong { color: var(--bad); }
+.sas-beacon.state-warn {
+  background: rgba(240, 180, 41, 0.08);
+  border-bottom-color: rgba(240, 180, 41, 0.35);
+}
+.sas-beacon-refresh {
+  flex: 0 0 auto;
+  min-height: 36px !important;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.78rem !important;
+  border-radius: 999px !important;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  white-space: nowrap;
+}
+.sas-beacon-refresh:hover { background: var(--surface-3); }
+.sas-beacon.state-down .sas-beacon-refresh {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+@media (max-width: 520px) {
+  .sas-beacon-inner { gap: 0.45rem; padding: 0.4rem 0.75rem; }
+  .sas-beacon-text span { font-size: 0.7rem; }
+}
+
 /* ---------- Buttons ---------- */
 
 button {
@@ -1320,6 +1422,50 @@ body.mode-admin .day-col.eligible .day-head::after {
 
 .sd-badge.visit-progress { background: var(--warn-soft); color: var(--warn); }
 .sd-badge.visit-done { background: var(--ok-soft); color: var(--ok); }
+
+/* Shift run status (PROD + app draft) — reps and admin */
+.sd-badge.run-completed,
+.dash-badge.run-completed {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.sd-badge.run-in_progress,
+.dash-badge.run-in_progress {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.sd-badge.run-already_ran,
+.dash-badge.run-already_ran {
+  background: rgba(78, 161, 232, 0.18);
+  color: var(--accent);
+}
+.sd-badge.run-not_started,
+.dash-badge.run-not_started {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.sd-badge.run-unknown,
+.sd-badge.run-other,
+.sd-badge.run-deleted,
+.dash-badge.run-unknown,
+.dash-badge.run-other,
+.dash-badge.run-deleted {
+  background: var(--surface-3);
+  color: var(--faint);
+}
+
+.sd-pill.run-completed {
+  border-left-color: var(--ok);
+}
+.sd-pill.run-in_progress {
+  border-left-color: var(--warn);
+}
+.sd-pill.run-already_ran {
+  border-left-color: var(--accent);
+}
+.sd-pill.run-not_started {
+  border-left-color: var(--border-strong);
+}
 
 .vf-panel {
   width: min(100%, 920px) !important;

@@ -6,6 +6,7 @@
   <title>Shift Day — Central Pet D8</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
+  <script src="/sas-beacon.js" defer></script>
 </head>
 <body class="mode-shiftday has-sticky-bar">
   <header class="topbar topbar-shiftday">
@@ -59,9 +60,13 @@
       </div>
 
       <p class="week-status" id="sdWeekStatus"></p>
+      <p class="week-status" id="sdStoreDecodeHint" style="margin:.15rem 0 .5rem; color:var(--muted,#9aa3b2)">
+        PROD often schedules every visit at <strong>store 391</strong>. This board decodes the visit note and shows the
+        <strong>real store</strong> you work (and the address). Use that store — not 391 — for your day.
+      </p>
       <div class="btn-stack sd-resync-row" style="margin:.4rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center">
         <button type="button" id="btnSdResyncProd" class="primary">Resync from PROD</button>
-        <span class="week-status" id="sdResyncHint" style="margin:0">Pulls the latest visits from SAS so stores and match status stay current.</span>
+        <span class="week-status" id="sdResyncHint" style="margin:0">Pulls the latest visits from SAS so real stores and match status stay current.</span>
       </div>
 
       <div class="calendar" id="sdCalendar" aria-label="Week calendar"></div>

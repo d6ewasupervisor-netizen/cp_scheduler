@@ -268,6 +268,7 @@ function statusForShift(matchResult, shiftId) {
       visitId: m.prodVisit.visitId,
       scheduledStore: m.prodVisit.scheduledStore,
       actualStore: m.prodVisit.actualStore,
+      visitStatus: m.prodVisit.visitStatus || m.appShift.visitStatus || null,
     };
   }
   const a = matchResult.ambiguous.find((x) => String(x.appShift.id) === String(shiftId));
@@ -275,10 +276,16 @@ function statusForShift(matchResult, shiftId) {
     return {
       status: 'ambiguous',
       candidates: a.candidates.map((c) => c.visitId),
+      visitStatus: a.appShift?.visitStatus || null,
     };
   }
   const u = matchResult.unmatched.find((x) => String(x.appShift.id) === String(shiftId));
-  if (u) return { status: 'unmatched' };
+  if (u) {
+    return {
+      status: 'unmatched',
+      visitStatus: u.appShift?.visitStatus || null,
+    };
+  }
   return { status: 'unknown' };
 }
 

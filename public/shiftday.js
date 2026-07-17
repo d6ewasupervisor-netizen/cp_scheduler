@@ -10,6 +10,8 @@ import {
   toast,
   setSaveState,
   stopSelectBubble,
+  shiftRunStatus,
+  shiftRunStatusBadgeHtml,
 } from '/shared.js';
 import { createVisitFlowController } from '/visit-flow-ui.js';
 
@@ -121,14 +123,21 @@ function matchDot(shift) {
   return `<span class="match-dot match-warn" title="No prod visit linked">?</span>`;
 }
 
+function runStatusForShift(s) {
+  const draft = state.draftByShift[draftKey(s.date, s.actualStore)];
+  // Prefer live match visitStatus when present (fresher than last week sync)
+  const match = state.matchByShift[s.id];
+  const visitStatus = match?.visitStatus || s.visitStatus || null;
+  return shiftRunStatus({ visitStatus, draftStatus: draft?.status || null });
+}
+
 function badgeHtml(s) {
   const bits = [];
+  const run = runStatusForShift(s);
+  bits.push(shiftRunStatusBadgeHtml(run, { className: 'sd-badge' }));
   if (s.workLoad) bits.push('<span class="sd-badge load">LOAD</span>');
   if (s.writeOrder) bits.push('<span class="sd-badge order">ORDER</span>');
   if (s.picksDay) bits.push(`<span class="sd-badge picks">PICKS ${s.picksDay}</span>`);
-  const draft = state.draftByShift[draftKey(s.date, s.actualStore)];
-  if (draft?.status === 'ready_for_prod') bits.push('<span class="sd-badge visit-done">VISIT SEALED</span>');
-  else if (draft?.status === 'in_progress') bits.push('<span class="sd-badge visit-progress">VISIT IN PROGRESS</span>');
   return bits.join('');
 }
 
@@ -141,7 +150,8 @@ function renderCalendar() {
     const pills = (byDay[day] || [])
       .map((s) => {
         const name = s.store?.name || '';
-        return `<button type="button" class="sd-pill" data-id="${s.id}">
+        const run = runStatusForShift(s);
+        return `<button type="button" class="sd-pill run-${run.key}" data-id="${s.id}" title="${run.title.replace(/"/g, '&quot;')}">
           <span class="sd-pill-top">${matchDot(s)} <strong>${s.actualStore}</strong> ${name}</span>
           <span class="sd-pill-badges">${badgeHtml(s)}</span>
         </button>`;
@@ -163,27 +173,36 @@ function openDetail(id) {
   if (!s) return;
   state.selected = s;
   const addr = s.store;
-  $('sdDetailStore').textContent = `Store ${s.actualStore}${addr?.name ? ` — ${addr.name}` : ''}`;
+  const isRedirect = s.redirected || (s.scheduledStore != null && Number(s.scheduledStore) !== Number(s.actualStore));
+  $('sdDetailStore').textContent =
+    `Store ${s.actualStore}${addr?.name ? ` — ${addr.name}` : ''}` +
+    (isRedirect ? `  (PROD placeholder ${s.scheduledStore})` : '');
   $('sdDetailAddr').textContent = addr?.address || 'Address not on file';
   $('sdDetailBadges').innerHTML = badgeHtml(s);
 
   const m = state.matchByShift[s.id];
+  const run = runStatusForShift(s);
   const matchEl = $('sdDetailMatch');
+  const runLine = `Run status: ${run.label}${run.source ? ` (${run.source === 'prod' ? 'SAS PROD' : 'app'})` : ''}`;
   if (m?.status === 'matched') {
-    matchEl.className = 'sd-detail-match ok';
-    matchEl.textContent = `Linked to prod visit ${m.visitId}`;
+    matchEl.className = `sd-detail-match ok run-${run.key}`;
+    matchEl.textContent = `${runLine} · Linked to prod visit ${m.visitId}${
+      m.visitStatus ? ` · PROD ${m.visitStatus}` : s.visitStatus ? ` · PROD ${s.visitStatus}` : ''
+    }`;
   } else if (m?.status === 'ambiguous') {
-    matchEl.className = 'sd-detail-match bad';
-    matchEl.textContent = `Ambiguous — candidates: ${(m.candidates || []).join(', ')}`;
+    matchEl.className = `sd-detail-match bad run-${run.key}`;
+    matchEl.textContent = `${runLine} · Ambiguous — candidates: ${(m.candidates || []).join(', ')}`;
   } else if (m?.status === 'unmatched') {
-    matchEl.className = 'sd-detail-match warn';
-    matchEl.textContent = 'No matching prod visit yet';
+    matchEl.className = `sd-detail-match warn run-${run.key}`;
+    matchEl.textContent = `${runLine} · No matching prod visit yet`;
   } else {
-    matchEl.className = 'sd-detail-match';
-    matchEl.textContent = 'Visit match not loaded';
+    matchEl.className = `sd-detail-match run-${run.key}`;
+    matchEl.textContent = `${runLine}${s.visitStatus ? ` · PROD ${s.visitStatus}` : ' · Visit match not loaded'}`;
   }
 
   $('sdDetailMeta').innerHTML = [
+    ['Run status', run.label],
+    ['PROD status', m?.visitStatus || s.visitStatus || '—'],
     ['Type', [s.workLoad && 'Work load', s.writeOrder && 'Write order'].filter(Boolean).join(' + ') || '—'],
     ['Delivery', s.delivery || '—'],
     ['Picks', s.picksDay || '—'],
@@ -208,7 +227,11 @@ function openDetail(id) {
   const draft = state.draftByShift[draftKey(s.date, s.actualStore)];
   const startBtn = $('btnSdStartVisit');
   const abandonRow = $('sdAbandonRow');
-  if (draft?.status === 'ready_for_prod') {
+  if (run.key === 'completed') {
+    startBtn.textContent = draft ? 'View visit (completed in PROD)' : 'Completed in PROD';
+    startBtn.disabled = !draft;
+    if (abandonRow) abandonRow.hidden = true;
+  } else if (draft?.status === 'ready_for_prod') {
     startBtn.textContent = 'View sealed visit';
     startBtn.disabled = false;
     if (abandonRow) abandonRow.hidden = true;
@@ -217,7 +240,7 @@ function openDetail(id) {
     startBtn.disabled = false;
     if (abandonRow) abandonRow.hidden = false;
   } else {
-    startBtn.textContent = 'Start visit';
+    startBtn.textContent = run.key === 'in_progress' ? 'Start / resume visit' : 'Start visit';
     startBtn.disabled = false;
     if (abandonRow) abandonRow.hidden = true;
   }
@@ -360,8 +383,12 @@ async function loadWeek({ resync = false, silent = false } = {}) {
     try {
       await pullWeekFromProd({ silent });
     } catch (err) {
+      const msg = err.message || '';
+      const sessionHint = /sas_session_|No sas-auth session|session stale/i.test(msg)
+        ? ' — use Refresh auth in the top SAS beacon, then Resync from PROD'
+        : '';
       toast(
-        `PROD sync failed — showing last saved schedule. ${err.message || ''}`.trim(),
+        `PROD sync failed — showing last saved schedule. ${msg}${sessionHint}`.trim(),
         'bad',
         7000
       );
@@ -606,6 +633,13 @@ async function init() {
 
   // Auto PROD sync on open — mandatory freshest board for field
   await loadWeek({ resync: true, silent: true });
+
+  // When the top SAS beacon recovers auth, re-pull the week automatically
+  window.addEventListener('cp-sas-auth', (ev) => {
+    if (ev?.detail?.ok) {
+      loadWeek({ resync: true, silent: true }).catch(() => {});
+    }
+  });
 
   // Deep-link from dashboard: open a specific store shift
   const qDate = params.get('date');

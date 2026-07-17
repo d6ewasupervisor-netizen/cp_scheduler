@@ -6,6 +6,7 @@
   <title>Planning Desk — Central Pet Scheduler</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
+  <script src="/sas-beacon.js" defer></script>
 </head>
 <body class="mode-admin has-sticky-bar">
   <header class="topbar">
@@ -78,6 +79,20 @@
             </label>
             <button type="button" id="btnIngestExport" class="subtle">Upload to week</button>
           </div>
+          <h3 style="margin:1rem 0 .35rem; font-size:1rem">Push day-moves to PROD</h3>
+          <p class="week-status">
+            After you move visits on <a href="/shiftday.html?preview=1">Shift Day</a> (or this desk),
+            local dates can differ from SAS. <strong>Preview</strong> lists what would change;
+            <strong>Apply to PROD</strong> creates the visit on the new day, copies the rep + 391 note,
+            and soft-deletes the old day (SAS does not allow in-place date PATCH).
+            Requires server flag <code>LIVE_SCHEDULE_WRITE=1</code>. Completed / in-progress visits are blocked.
+          </p>
+          <p class="week-status" id="scheduleWriteStatus">Checking schedule-write status…</p>
+          <div class="btn-stack" style="margin:.5rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap">
+            <button type="button" id="btnPreviewSchedulePush" class="subtle">Preview day-moves → PROD</button>
+            <button type="button" id="btnApplySchedulePush" class="primary">Apply day-moves to PROD</button>
+          </div>
+          <div id="schedulePushResults"></div>
           <div id="matchWarnings"></div>
         </section>
 

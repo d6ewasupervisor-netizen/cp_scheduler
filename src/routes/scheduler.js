@@ -35,6 +35,13 @@ const { loadD8ShiftReps, shiftRepByEmail, shiftRepByKey } = require('../lib/d8-s
 const { getStoreAddress } = require('../lib/store-addresses');
 const { matchVisits, statusForShift } = require('../lib/visit-matcher');
 const { syncWeekFromProd } = require('../lib/prod-week-sync');
+const { getSasSessionStatus, loadSasSession, SasSessionError } = require('../lib/sas-session');
+const { eodApiBase } = require('../lib/eod-api-proxy');
+const {
+  pushWeekDayMovesToProd,
+  rescheduleVisitDay,
+  isLiveScheduleWriteEnabled,
+} = require('../lib/schedule-writer');
 const visitFlow = require('../lib/visit-flow');
 const visitDraftStore = require('../lib/visit-draft-store');
 const { runDryRun } = require('../lib/dryrun-runner');
@@ -406,10 +413,14 @@ function WORK_DAYS_FALLBACK() {
   return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 }
 
-router.post('/shift-day/move', shiftDayScope, (req, res) => {
-  const { repKey, weekStart, shiftId, dayOfWeek } = req.body || {};
+router.post('/shift-day/move', shiftDayScope, async (req, res) => {
+  const { repKey, weekStart, shiftId, dayOfWeek, pushToProd = false, dryRun = true } = req.body || {};
   if (!repKey || !weekStart || !shiftId || !dayOfWeek) {
     return res.status(400).json({ error: 'repKey, weekStart, shiftId, dayOfWeek required' });
+  }
+  // Only admins may push schedule mutations to PROD
+  if (pushToProd && req.user?.layer !== 'admin') {
+    return res.status(403).json({ error: 'Admin required to push schedule changes to PROD' });
   }
   const shiftRep = shiftRepByKey(repKey);
   if (!shiftRep) return res.status(404).json({ error: 'Unknown Shift Day rep' });
@@ -432,7 +443,73 @@ router.post('/shift-day/move', shiftDayScope, (req, res) => {
 
   const scheduledDate = dayToDateInWeek(weekStart, dayOfWeek);
   const updated = updateShiftDay(weekStart, shiftId, dayOfWeek, scheduledDate);
-  res.json({ ok: true, shift: updated });
+
+  if (!pushToProd) {
+    return res.json({ ok: true, shift: updated, prod: null });
+  }
+
+  try {
+    const prod = await pushWeekDayMovesToProd({
+      weekStart,
+      shiftIds: [shiftId],
+      dryRun: dryRun !== false && dryRun !== 'false' && dryRun !== 0,
+    });
+    return res.json({ ok: prod.ok, shift: updated, prod });
+  } catch (err) {
+    return res.status(502).json({
+      error: err.message,
+      shift: updated,
+      code: err.code,
+    });
+  }
+});
+
+/**
+ * Admin: preview or apply local day-moves that differ from PROD visit dates.
+ * Body: { weekStart, shiftIds?, dryRun? }
+ * Live requires LIVE_SCHEDULE_WRITE=1.
+ */
+router.post('/shift-day/push-schedule-to-prod', requireAdmin, async (req, res) => {
+  const weekStart = req.body?.weekStart || req.query.weekStart;
+  const shiftIds = req.body?.shiftIds || null;
+  const dryRun = req.body?.dryRun !== false && req.body?.dryRun !== 'false' && req.body?.dryRun !== 0;
+  if (!weekStart) return res.status(400).json({ error: 'weekStart required' });
+  try {
+    const result = await pushWeekDayMovesToProd({ weekStart, shiftIds, dryRun });
+    result.requestedBy = req.user?.email || null;
+    result.liveScheduleWrite = isLiveScheduleWriteEnabled();
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: err.message, code: err.code });
+  }
+});
+
+/**
+ * Admin: reschedule one PROD visit by id (copy+delete pattern).
+ * Body: { visitId, toDate, dryRun? }
+ */
+router.post('/shift-day/reschedule-visit', requireAdmin, async (req, res) => {
+  const visitId = req.body?.visitId;
+  const toDate = req.body?.toDate;
+  const dryRun = req.body?.dryRun !== false && req.body?.dryRun !== 'false' && req.body?.dryRun !== 0;
+  if (!visitId || !toDate) return res.status(400).json({ error: 'visitId and toDate required' });
+  try {
+    const result = await rescheduleVisitDay({ visitId, toDate, dryRun });
+    result.requestedBy = req.user?.email || null;
+    result.liveScheduleWrite = isLiveScheduleWriteEnabled();
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    res.status(502).json({ error: err.message, code: err.code });
+  }
+});
+
+router.get('/shift-day/schedule-write-status', requireAdmin, (_req, res) => {
+  res.json({
+    liveScheduleWrite: isLiveScheduleWriteEnabled(),
+    liveTransmit: process.env.LIVE_TRANSMIT === '1',
+    note:
+      'Day-moves to PROD use copy-visit + soft-delete (SAS ignores scheduled_date PATCH). Requires LIVE_SCHEDULE_WRITE=1.',
+  });
 });
 
 router.get('/shift-day/match', requireAdmin, async (req, res) => {
@@ -497,7 +574,12 @@ router.get('/shift-day/match-status', shiftDayScope, async (req, res) => {
     });
     const byShift = {};
     for (const s of appShifts) {
-      byShift[s.id] = statusForShift(result, s.id);
+      const st = statusForShift(result, s.id);
+      // Prefer live match visitStatus; fall back to last PROD sync on the shift
+      byShift[s.id] = {
+        ...st,
+        visitStatus: st.visitStatus || s.visitStatus || null,
+      };
     }
     res.json({ week, byShift, summary: result.summary });
   } catch (err) {
@@ -562,6 +644,95 @@ function resolveSupervisorId(req) {
   );
 }
 
+/**
+ * SAS morning-auth status for the app (no secrets).
+ * Any signed-in user — beacon polls this; surfaces bridge/session health.
+ */
+router.get('/shift-day/sas-status', async (_req, res) => {
+  const status = await getSasSessionStatus();
+  res.status(status.ok ? 200 : 503).json(status);
+});
+
+/**
+ * Force-refresh SAS PROD auth via eod-api in-process auto-refresh, then re-probe.
+ * Any signed-in user (same policy as eod-api /api/trigger-auth).
+ * Body/query: { force?: boolean } default true.
+ */
+router.post('/shift-day/sas-refresh', async (req, res) => {
+  const force =
+    req.query.force === '1' ||
+    req.query.force === 'true' ||
+    req.body?.force === true ||
+    req.body?.force === 1 ||
+    req.query.force == null; // default force on
+
+  const base = eodApiBase();
+  const userAuth = req.headers.authorization || '';
+  let trigger = null;
+
+  try {
+    const r = await fetch(`${base}/api/trigger-auth?force=${force ? '1' : '0'}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(userAuth ? { Authorization: userAuth } : {}),
+      },
+      signal: AbortSignal.timeout(Number(process.env.SAS_REFRESH_TIMEOUT_MS) || 90000),
+    });
+    let body = null;
+    try {
+      body = await r.json();
+    } catch {
+      body = { error: r.statusText };
+    }
+    trigger = {
+      ok: r.ok && body?.success !== false,
+      status: r.status,
+      message: body?.message || body?.error || null,
+      skipped: !!body?.skipped,
+      reason: body?.reason || null,
+      elapsed_ms: body?.elapsed_ms || null,
+    };
+  } catch (err) {
+    trigger = {
+      ok: false,
+      status: 0,
+      message: err.message || 'Failed to reach eod-api trigger-auth',
+    };
+  }
+
+  // Give eod-api a moment to install the minted session before we pull it.
+  await new Promise((r) => setTimeout(r, trigger?.ok ? 1200 : 400));
+
+  // Clear any cached assumptions by re-loading; status never returns secrets.
+  let pull = null;
+  try {
+    const session = await loadSasSession();
+    pull = {
+      ok: true,
+      source: session.source,
+      generatedAt: session.generatedAt,
+      hasToken: !!session.token,
+    };
+  } catch (err) {
+    pull = {
+      ok: false,
+      code: err.code || 'sas_session_unavailable',
+      error: err.message,
+    };
+  }
+
+  const status = await getSasSessionStatus();
+  const http = status.ok ? 200 : trigger?.ok ? 202 : 503;
+  res.status(http).json({
+    status,
+    trigger,
+    pull,
+    refreshedAt: new Date().toISOString(),
+  });
+});
+
 router.post('/shift-day/sync-from-prod', async (req, res) => {
   const weekStart = req.body?.weekStart || req.query.weekStart;
   const supervisorId = resolveSupervisorId(req);
@@ -588,7 +759,14 @@ router.post('/shift-day/sync-from-prod', async (req, res) => {
     result.requestedBy = req.user?.email || null;
     res.json(result);
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    const code = err.code || (err instanceof SasSessionError ? err.code : null);
+    const message =
+      code === 'sas_session_stale' || /sas_session_stale|session stale/i.test(err.message || '')
+        ? `SAS session stale — run morning auth / wait for eod-api refresh. ${err.message}`
+        : code === 'sas_session_unavailable' || /sas_session_unavailable|No sas-auth session/i.test(err.message || '')
+          ? `SAS session unavailable — ${err.message}`
+          : err.message;
+    res.status(502).json({ error: message, code: code || undefined });
   }
 });
 

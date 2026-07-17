@@ -17,6 +17,109 @@ export function normalizeRepAvailability(value) {
     : REP_AVAILABILITY.AVAILABLE;
 }
 
+/**
+ * Normalize SAS PROD visitStatus (keep in sync with src/lib/shift-run-status.js).
+ * @param {string|null|undefined} visitStatus
+ */
+export function normalizeProdVisitStatus(visitStatus) {
+  const raw = String(visitStatus || '')
+    .toLowerCase()
+    .trim()
+    .replace(/_/g, '-');
+  if (!raw) return { key: 'unknown', label: 'Status unknown' };
+  if (raw === 'completed' || raw === 'complete') {
+    return { key: 'completed', label: 'Completed' };
+  }
+  if (raw === 'in-progress' || raw === 'in progress' || raw === 'active') {
+    return { key: 'in_progress', label: 'In progress' };
+  }
+  if (raw === 'not started' || raw === 'not-started' || raw === 'scheduled') {
+    return { key: 'not_started', label: 'Not started' };
+  }
+  if (raw === 'deleted') return { key: 'deleted', label: 'Deleted' };
+  return { key: 'other', label: String(visitStatus) };
+}
+
+/**
+ * Human-facing run status for calendar / dashboard (reps + admin).
+ * Priority: PROD completed → PROD in progress → sealed (Already ran) →
+ * draft in progress → PROD not started → unknown.
+ * Keep in sync with src/lib/shift-run-status.js.
+ */
+export function shiftRunStatus({ visitStatus = null, draftStatus = null } = {}) {
+  const prod = normalizeProdVisitStatus(visitStatus);
+  if (prod.key === 'completed') {
+    return {
+      key: 'completed',
+      label: 'Completed',
+      source: 'prod',
+      title: 'Shift completed in SAS PROD — already ran',
+    };
+  }
+  if (prod.key === 'in_progress') {
+    return {
+      key: 'in_progress',
+      label: 'In progress',
+      source: 'prod',
+      title: 'Shift in progress in SAS PROD',
+    };
+  }
+  if (draftStatus === 'ready_for_prod') {
+    return {
+      key: 'already_ran',
+      label: 'Already ran',
+      source: 'draft',
+      title: 'Visit sealed in the app — already ran locally; PROD may still be open',
+    };
+  }
+  if (draftStatus === 'in_progress') {
+    return {
+      key: 'in_progress',
+      label: 'In progress',
+      source: 'draft',
+      title: 'Visit draft open in the app',
+    };
+  }
+  if (prod.key === 'not_started') {
+    return {
+      key: 'not_started',
+      label: 'Not started',
+      source: 'prod',
+      title: 'Not started in SAS PROD',
+    };
+  }
+  if (prod.key === 'deleted') {
+    return {
+      key: 'deleted',
+      label: 'Deleted',
+      source: 'prod',
+      title: 'Visit deleted in SAS PROD',
+    };
+  }
+  if (prod.key === 'other') {
+    return {
+      key: 'other',
+      label: prod.label,
+      source: 'prod',
+      title: `PROD status: ${prod.label}`,
+    };
+  }
+  return {
+    key: 'unknown',
+    label: 'Status unknown',
+    source: null,
+    title: 'Resync from PROD to refresh shift status',
+  };
+}
+
+/** Badge HTML for shift run status (shared class prefix: run-status / dash-run). */
+export function shiftRunStatusBadgeHtml(status, { className = 'sd-badge' } = {}) {
+  if (!status) return '';
+  const cls = `${className} run-${status.key}`;
+  const title = status.title ? ` title="${String(status.title).replace(/"/g, '&quot;')}"` : '';
+  return `<span class="${cls}"${title}>${status.label}</span>`;
+}
+
 /** Set or clear rep availability on a placement (clears when available). */
 export function applyRepAvailability(placement, value) {
   if (normalizeRepAvailability(value) === REP_AVAILABILITY.NOT_AVAILABLE) {
@@ -213,6 +316,11 @@ export function toast(message, kind = 'info', ms = 3200) {
     el.classList.remove('show');
     setTimeout(() => el.remove(), 250);
   }, ms);
+}
+
+// Beacon (non-module) and other scripts call window.cpToast
+if (typeof window !== 'undefined') {
+  window.cpToast = toast;
 }
 
 /* Two-tap confirm: first tap arms the button, second tap within 4s fires. */
