@@ -2,10 +2,12 @@
  * Global buffering overlay — shows the cat asset when the UI is unusable.
  * Reference-counted so nested ops don't dismiss early.
  * Debounces short flashes (~280ms) unless force: true.
+ * Night → bufferingcat.gif · Light → buffering_light.gif
  */
 
 const DEBOUNCE_MS = 280;
-const ASSET = '/assets/bufferingcat.gif';
+const ASSET_DARK = '/assets/bufferingcat.gif';
+const ASSET_LIGHT = '/assets/buffering_light.gif';
 
 let depth = 0;
 let showTimer = null;
@@ -13,8 +15,25 @@ let overlayEl = null;
 let labelEl = null;
 let imgEl = null;
 
+function resolvedTheme() {
+  return document.documentElement?.dataset?.theme === 'light' ? 'light' : 'dark';
+}
+
+export function bufferingAssetForTheme(theme = resolvedTheme()) {
+  return theme === 'light' ? ASSET_LIGHT : ASSET_DARK;
+}
+
+function syncAssetSrc() {
+  if (!imgEl) return;
+  const next = bufferingAssetForTheme();
+  if (imgEl.getAttribute('src') !== next) imgEl.setAttribute('src', next);
+}
+
 function ensureOverlay() {
-  if (overlayEl) return overlayEl;
+  if (overlayEl) {
+    syncAssetSrc();
+    return overlayEl;
+  }
   overlayEl = document.createElement('div');
   overlayEl.id = 'cpBuffering';
   overlayEl.className = 'cp-buffering';
@@ -24,7 +43,7 @@ function ensureOverlay() {
   overlayEl.setAttribute('aria-busy', 'false');
   overlayEl.innerHTML = `
     <div class="cp-buffering-card">
-      <img class="cp-buffering-img" src="${ASSET}" alt="" width="120" height="120" decoding="async" />
+      <img class="cp-buffering-img" src="${bufferingAssetForTheme()}" alt="" width="120" height="120" decoding="async" />
       <p class="cp-buffering-label">Buffering…</p>
     </div>`;
   labelEl = overlayEl.querySelector('.cp-buffering-label');
@@ -35,6 +54,7 @@ function ensureOverlay() {
 
 function paintOpen(label) {
   const el = ensureOverlay();
+  syncAssetSrc();
   if (labelEl) labelEl.textContent = label || 'Buffering…';
   el.hidden = false;
   el.setAttribute('aria-busy', 'true');
@@ -92,7 +112,6 @@ export function setBusyLabel(label) {
 }
 
 /**
- * Run an async fn under the buffering overlay.
  * @template T
  * @param {() => Promise<T>} fn
  * @param {string} [label]
@@ -108,24 +127,26 @@ export async function withBusy(fn, label = 'Buffering…', opts = {}) {
   }
 }
 
-/** Busy-aware fetch for long API calls (force open for known-slow routes). */
 export async function busyFetch(input, init = {}, busyOpts = {}) {
   const label = busyOpts.label || 'Buffering…';
   const force = !!busyOpts.force;
   beginBusy(label, { force });
   try {
-    const fetchFn = typeof window !== 'undefined' && window.cpAuthFetch
-      ? window.cpAuthFetch.bind(window)
-      : fetch;
+    const fetchFn =
+      typeof window !== 'undefined' && window.cpAuthFetch
+        ? window.cpAuthFetch.bind(window)
+        : fetch;
     return await fetchFn(input, init);
   } finally {
     endBusy();
   }
 }
 
-// Non-module callers (sas-beacon, admin inline)
 if (typeof window !== 'undefined') {
   window.cpBeginBusy = beginBusy;
   window.cpEndBusy = endBusy;
   window.cpWithBusy = withBusy;
+  window.addEventListener('cp-theme-change', () => {
+    syncAssetSrc();
+  });
 }

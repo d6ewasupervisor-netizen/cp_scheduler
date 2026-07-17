@@ -12,6 +12,7 @@ import {
 } from '/shared.js';
 import { initAppShell } from '/ux/app-shell.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
+import { needsProdSync, markProdSynced } from '/ux/prod-sync.js';
 
 const state = {
   user: null,
@@ -235,7 +236,7 @@ async function ensureSchedule(repKey) {
 
 let dashSyncInFlight = null;
 
-/** Auto/manual PROD pull for the selected week (shared by open + Resync button). */
+/** PROD pull for the selected week (manual Resync or gated auto). */
 async function pullDashWeekFromProd({ silent = false } = {}) {
   const week = currentWeek();
   if (!week) return null;
@@ -258,6 +259,7 @@ async function pullDashWeekFromProd({ silent = false } = {}) {
         busy: 'Syncing from PROD…',
         busyForce: true,
       });
+      markProdSynced(week.start);
       state.schedules = {};
       state.weeks = await api('/shift-day/weeks');
       const idx = state.weeks.findIndex((w) => w.start === week.start);
@@ -270,11 +272,7 @@ async function pullDashWeekFromProd({ silent = false } = {}) {
           4000
         );
       } else {
-        toast(
-          `Synced ${data.shiftCount ?? 0} shifts from PROD`,
-          'ok',
-          2500
-        );
+        toast(`Synced ${data.shiftCount ?? 0} shifts from PROD`, 'ok', 2200);
       }
       return data;
     } finally {
@@ -290,16 +288,27 @@ async function pullDashWeekFromProd({ silent = false } = {}) {
 }
 
 /**
- * @param {{ resync?: boolean, silent?: boolean }} opts
+ * @param {{ resync?: boolean|'auto', silent?: boolean, force?: boolean }} opts
+ * resync true = always pull · false = never · 'auto' = only when worth the wait
  */
-async function loadActiveWeek({ resync = false, silent = false } = {}) {
+async function loadActiveWeek({ resync = false, silent = false, force = false } = {}) {
   showError('');
   const week = currentWeek();
   if (!week) return;
   $('weekSelect').value = String(state.weekIndex);
   $('dashSubtitle').textContent = week.label || 'Team schedule';
 
-  if (resync) {
+  let doSync = false;
+  if (resync === true || force) {
+    doSync = true;
+  } else if (resync === 'auto') {
+    doSync = needsProdSync(week.start, {
+      hasSchedule: week.hasSchedule !== false,
+      lastSyncedAt: week.lastSyncedAt || null,
+    });
+  }
+
+  if (doSync) {
     try {
       await pullDashWeekFromProd({ silent });
     } catch (e) {
@@ -457,26 +466,26 @@ async function init() {
     $('weekSelect').onchange = async () => {
       state.weekIndex = Number($('weekSelect').value);
       state.schedules = {};
-      await loadActiveWeek({ resync: true, silent: true });
+      await loadActiveWeek({ resync: 'auto', silent: true });
     };
     $('btnPrevWeek').onclick = async () => {
       if (state.weekIndex > 0) {
         state.weekIndex -= 1;
         state.schedules = {};
-        await loadActiveWeek({ resync: true, silent: true });
+        await loadActiveWeek({ resync: 'auto', silent: true });
       }
     };
     $('btnNextWeek').onclick = async () => {
       if (state.weekIndex < state.weeks.length - 1) {
         state.weekIndex += 1;
         state.schedules = {};
-        await loadActiveWeek({ resync: true, silent: true });
+        await loadActiveWeek({ resync: 'auto', silent: true });
       }
     };
 
     $('btnDashResync')?.addEventListener('click', async () => {
       try {
-        await loadActiveWeek({ resync: true, silent: false });
+        await loadActiveWeek({ resync: true, silent: false, force: true });
       } catch (e) {
         toast(e.message || 'Resync failed', 'bad', 5000);
       }
@@ -485,15 +494,15 @@ async function init() {
     renderWho();
     $('dashLoading').hidden = true;
     $('dashApp').hidden = false;
-    // Auto PROD sync on open
-    await loadActiveWeek({ resync: true, silent: true });
+    // Load cached week first; PROD only if stale / missing / first session open
+    await loadActiveWeek({ resync: 'auto', silent: true });
     startLiveMonitorPoll();
 
-    // When top SAS beacon recovers auth, re-pull schedules
+    // SAS auth recovered → worth a fresh pull
     window.addEventListener('cp-sas-auth', (ev) => {
       if (ev?.detail?.ok) {
         state.schedules = {};
-        loadActiveWeek({ resync: true, silent: true }).catch(() => {});
+        loadActiveWeek({ resync: true, silent: true, force: true }).catch(() => {});
         refreshLiveMonitor();
       }
     });

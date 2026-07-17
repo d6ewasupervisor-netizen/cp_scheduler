@@ -19,19 +19,24 @@
     <div class="topbar-row">
       <div>
         <h1>Planning Desk</h1>
-        <p class="subtitle">Central Pet · D1 / D8 · project 9293</p>
+        <p class="subtitle">Admin · build weekly routes &amp; PROD tools · project 9293</p>
       </div>
       <div class="user-bar" id="userBar" hidden>
         <span class="layer-badge admin">Admin</span>
         <span class="user-email" id="userEmail"></span>
-        <a class="subtle nav-link" href="/shiftday.html?preview=1">Shift Day</a>
-        <button type="button" id="btnRepView" class="subtle" title="Preview the rep experience">Rep view</button>
+        <button type="button" id="btnRepView" class="subtle" title="Preview My Week as a rep">Preview My Week</button>
         <button type="button" id="btnSignOut" class="subtle">Sign out</button>
       </div>
     </div>
   </header>
 
   <div class="page">
+    <div class="plan-intro" role="note">
+      <strong>Admin only.</strong>
+      Use this desk to build/edit weeks, sync from PROD, and run dry-run / live transmit.
+      Day-to-day field work is on <a href="/dashboard.html">Schedule</a> and <a href="/shiftday.html">Shift Day</a>
+      (same tabs as the bottom bar).
+    </div>
     <p id="initError" class="rep-error" hidden></p>
     <section class="toolbar" aria-label="Schedule selection">
       <label class="field">District

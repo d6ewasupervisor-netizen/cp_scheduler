@@ -36,6 +36,14 @@ export function applyTheme(pref = getThemePref()) {
     m.content = resolved === 'light' ? META_LIGHT : META_DARK;
     document.head.appendChild(m);
   }
+  // Let buffering overlay (and others) swap theme-specific assets
+  try {
+    window.dispatchEvent(
+      new CustomEvent('cp-theme-change', { detail: { theme: resolved, pref } })
+    );
+  } catch {
+    /* ignore */
+  }
   return resolved;
 }
 

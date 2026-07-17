@@ -1870,6 +1870,24 @@ html[data-theme="light"] .vf-photo-badge {
   background: rgba(15, 23, 42, 0.55);
 }
 
+/* Planning Desk intro */
+.plan-intro {
+  max-width: 1280px;
+  margin: 0.75rem auto 0.5rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(78, 161, 232, 0.35);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.plan-intro a {
+  color: var(--accent);
+  font-weight: 700;
+}
+.plan-intro strong { color: var(--accent); }
+
 /* Global buffering overlay */
 .cp-buffering {
   position: fixed;

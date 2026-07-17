@@ -30,6 +30,7 @@ import {
 } from '/shared.js';
 import { initAppShell } from '/ux/app-shell.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
+import { markProdSynced } from '/ux/prod-sync.js';
 
 const state = {
   user: null,
@@ -1009,6 +1010,7 @@ function showInitError(err) {
           busy: 'Syncing from PROD…',
           busyForce: true,
         });
+        markProdSynced(week.start);
         toast(
           `Synced ${data.shiftCount} shifts from PROD` +
             (data.cycle?.name ? ` (${data.cycle.name})` : '') +

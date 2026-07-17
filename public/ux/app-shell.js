@@ -1,66 +1,89 @@
 /**
- * Mobile bottom nav + theme toggle mount for field pages.
+ * App chrome: bottom nav (consistent on every authenticated page) + theme toggle.
  */
 
 import { initTheme, mountThemeToggle } from '/ux/theme.js';
 import { initNavGuard } from '/ux/nav-guard.js';
 
-const PAGES = {
-  dashboard: { href: '/dashboard.html', label: 'Schedule', match: (p) => p.endsWith('/dashboard.html') || p === '/' },
-  shiftday: { href: '/shiftday.html', label: 'Shift Day', match: (p) => p.includes('shiftday') },
-  rep: { href: '/rep.html', label: 'My Week', match: (p) => p.includes('rep.html') },
-  planning: { href: '/', label: 'Planning', match: (p) => p === '/' || p.endsWith('/index.html') },
-};
+/**
+ * Canonical bottom tabs — same order and labels on every screen.
+ * Planning is admin-only (week builder / PROD tools), not the field path.
+ */
+const TABS = [
+  {
+    key: 'dashboard',
+    href: '/dashboard.html',
+    label: 'Schedule',
+    title: 'Team schedule board',
+    match: (p) => p.includes('dashboard.html'),
+  },
+  {
+    key: 'shiftday',
+    href: '/shiftday.html',
+    label: 'Shift Day',
+    title: 'Field week & start visits',
+    match: (p) => p.includes('shiftday.html'),
+  },
+  {
+    key: 'rep',
+    href: '/rep.html',
+    label: 'My Week',
+    title: 'Your planning calendar',
+    match: (p) => p.includes('rep.html'),
+  },
+  {
+    key: 'planning',
+    href: '/',
+    label: 'Plan',
+    title: 'Admin Planning Desk — build & sync weeks',
+    adminOnly: true,
+    match: (p) => p === '/' || p.endsWith('/index.html') || p === '',
+  },
+];
+
+function detectActive(path) {
+  // Prefer specific pages before Plan (/)
+  for (const t of TABS) {
+    if (t.key === 'planning') continue;
+    if (t.match(path)) return t.key;
+  }
+  if (TABS.find((t) => t.key === 'planning').match(path)) return 'planning';
+  return 'dashboard';
+}
 
 /**
- * @param {{ isAdmin?: boolean, active?: 'dashboard'|'shiftday'|'rep'|'planning', hideWhenVisit?: boolean }} opts
+ * @param {{ isAdmin?: boolean, active?: string }} opts
  */
 export function mountBottomNav(opts = {}) {
   const path = location.pathname || '';
-  const active =
-    opts.active ||
-    (PAGES.shiftday.match(path)
-      ? 'shiftday'
-      : PAGES.rep.match(path)
-        ? 'rep'
-        : PAGES.planning.match(path) && !path.includes('dashboard')
-          ? 'planning'
-          : 'dashboard');
+  const active = opts.active || detectActive(path);
+  const isAdmin = !!opts.isAdmin;
 
-  const items = [
-    { key: 'dashboard', ...PAGES.dashboard },
-    { key: 'shiftday', ...PAGES.shiftday },
-    { key: 'rep', ...PAGES.rep },
-  ];
-  if (opts.isAdmin) items.push({ key: 'planning', ...PAGES.planning });
+  const items = TABS.filter((t) => !t.adminOnly || isAdmin);
 
   let nav = document.getElementById('cpBottomNav');
   if (!nav) {
     nav = document.createElement('nav');
     nav.id = 'cpBottomNav';
     nav.className = 'cp-bottom-nav';
-    nav.setAttribute('aria-label', 'Main');
+    nav.setAttribute('aria-label', 'Main navigation');
     document.body.appendChild(nav);
   }
+
   nav.innerHTML = items
     .map(
       (it) =>
-        `<a href="${it.href}" class="cp-bottom-nav-item${it.key === active ? ' active' : ''}" data-nav="${it.key}">
+        `<a href="${it.href}" class="cp-bottom-nav-item${it.key === active ? ' active' : ''}" data-nav="${it.key}" title="${it.title || it.label}">
           <span class="cp-bottom-nav-label">${it.label}</span>
         </a>`
     )
     .join('');
 
   document.body.classList.add('has-bottom-nav');
-  if (opts.hideWhenVisit) {
-    // visit workspace toggles body.visit-workspace-open which CSS uses to hide nav
-  }
+  // Visit workspace sets body.visit-workspace-open → CSS hides this nav
   return nav;
 }
 
-/**
- * Add theme toggle into #userBar or topbar user-bar.
- */
 export function mountChromeThemeToggle() {
   const bar = document.querySelector('.user-bar') || document.getElementById('userBar');
   if (!bar) return null;
@@ -69,8 +92,7 @@ export function mountChromeThemeToggle() {
 }
 
 /**
- * Standard field-page boot: theme + optional bottom nav.
- * @param {{ isAdmin?: boolean, active?: string, bottomNav?: boolean }} opts
+ * @param {{ isAdmin?: boolean, active?: string, bottomNav?: boolean, navGuard?: object }} opts
  */
 export function initAppShell(opts = {}) {
   initTheme();
@@ -79,10 +101,9 @@ export function initAppShell(opts = {}) {
     mountBottomNav({
       isAdmin: !!opts.isAdmin,
       active: opts.active,
-      hideWhenVisit: true,
     });
   }
   initNavGuard(opts.navGuard || {});
 }
 
-export { initTheme, mountThemeToggle };
+export { initTheme, mountThemeToggle, TABS, detectActive };

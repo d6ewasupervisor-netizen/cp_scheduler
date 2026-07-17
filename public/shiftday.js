@@ -16,6 +16,7 @@ import {
 import { createVisitFlowController } from '/visit-flow-ui.js';
 import { initAppShell } from '/ux/app-shell.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
+import { needsProdSync, markProdSynced } from '/ux/prod-sync.js';
 
 const state = {
   user: null,
@@ -351,6 +352,7 @@ async function pullWeekFromProd({ silent = false } = {}) {
           supervisorId: state.supervisorId,
         }),
       });
+      markProdSynced(week.start);
       const n = data.shiftCount ?? 0;
       const matched = data.matchSummary?.matched;
       const msg =
@@ -358,7 +360,7 @@ async function pullWeekFromProd({ silent = false } = {}) {
         (matched != null ? ` · ${matched} matched` : '') +
         (data.matchError ? ` · match warn: ${data.matchError}` : '');
       if (!silent) toast(msg, 'ok', 5000);
-      else toast(msg, 'ok', 2800);
+      else toast(msg, 'ok', 2200);
       return data;
     } finally {
       syncInFlight = null;
@@ -373,19 +375,44 @@ async function pullWeekFromProd({ silent = false } = {}) {
 }
 
 /**
- * @param {{ resync?: boolean, silent?: boolean }} opts
- * resync=true pulls PROD first (default true on open / week change)
+ * @param {{ resync?: boolean|'auto', silent?: boolean, force?: boolean }} opts
+ * true = always pull · false = never · 'auto' = only when stale/missing/first open
  */
-async function loadWeek({ resync = false, silent = false } = {}) {
+async function loadWeek({ resync = false, silent = false, force = false } = {}) {
   const week = currentWeek();
   if (!week) return;
   $('sdWeekTitle').textContent = week.label;
   $('sdWeekDates').textContent = `${shortDate(week.start)} – ${shortDate(week.end)}`;
   $('sdWeekSelect').value = String(state.weekIndex);
 
-  if (resync) {
+  // Peek local schedule first so auto can see matchStale / lastSyncedAt without a PROD hit
+  let peek = null;
+  if (resync === 'auto' && !force) {
+    try {
+      peek = await api(
+        `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
+      );
+    } catch {
+      peek = null;
+    }
+  }
+
+  let doSync = false;
+  if (resync === true || force) {
+    doSync = true;
+  } else if (resync === 'auto') {
+    doSync = needsProdSync(week.start, {
+      matchStale: !!peek?.matchStale,
+      hasSchedule: week.hasSchedule !== false && !!(peek?.shifts?.length || peek?.source),
+      lastSyncedAt: peek?.lastSyncedAt || week.lastSyncedAt || null,
+      shiftCount: peek?.shifts?.length ?? null,
+    });
+  }
+
+  if (doSync) {
     try {
       await pullWeekFromProd({ silent });
+      peek = null; // force re-fetch after sync
     } catch (err) {
       const msg = err.message || '';
       const sessionHint = /sas_session_|No sas-auth session|session stale/i.test(msg)
@@ -399,23 +426,30 @@ async function loadWeek({ resync = false, silent = false } = {}) {
     }
   }
 
-  const data = await api(
-    `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
-  );
+  const data =
+    peek ||
+    (await api(
+      `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
+    ));
+  // Fresh enough without a new PROD pull — still mark session so sibling pages skip
+  if (!doSync && data?.lastSyncedAt) markProdSynced(week.start);
+
   state.rep = data.rep;
   state.shifts = data.shifts || [];
   $('sdBannerTitle').textContent = data.rep.name;
   $('sdBannerMeta').textContent = `${state.shifts.length} shifts · ${week.label}`;
   $('sdSubtitle').textContent = data.rep.name;
   const stale = data.matchStale ? ' · MATCH STALE — tap Resync from PROD' : '';
-  const synced = data.lastSyncedAt ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}` : '';
+  const synced = data.lastSyncedAt
+    ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}`
+    : '';
   $('sdWeekStatus').textContent = data.source
     ? `Schedule source: ${data.source}${synced}${stale}`
-    : `No schedule for this week yet — resync failed or empty week${stale}`;
+    : `No schedule for this week yet — tap Resync from PROD${stale}`;
   if ($('sdResyncHint')) {
     $('sdResyncHint').textContent = data.matchStale
-      ? 'Schedule may be out of date — auto-sync runs on open; use Resync if PROD just changed.'
-      : 'Auto-syncs when you open Shift Day. Use Resync anytime for the freshest PROD data.';
+      ? 'Schedule may be out of date — tap Resync from PROD.'
+      : 'Uses the last saved week when fresh. Resync only when PROD changed or status looks wrong.';
   }
 
   await loadMatch();
@@ -427,7 +461,7 @@ async function loadWeek({ resync = false, silent = false } = {}) {
 
 async function resyncFromProd() {
   try {
-    await loadWeek({ resync: true, silent: false });
+    await loadWeek({ resync: true, silent: false, force: true });
   } catch (err) {
     toast(err.message || 'Resync failed', 'bad', 6000);
   }
@@ -483,18 +517,18 @@ async function init() {
 
   $('sdWeekSelect').onchange = async () => {
     state.weekIndex = Number($('sdWeekSelect').value);
-    await loadWeek({ resync: true, silent: true });
+    await loadWeek({ resync: 'auto', silent: true });
   };
   $('btnSdPrev').onclick = async () => {
     if (state.weekIndex > 0) {
       state.weekIndex -= 1;
-      await loadWeek({ resync: true, silent: true });
+      await loadWeek({ resync: 'auto', silent: true });
     }
   };
   $('btnSdNext').onclick = async () => {
     if (state.weekIndex < state.weeks.length - 1) {
       state.weekIndex += 1;
-      await loadWeek({ resync: true, silent: true });
+      await loadWeek({ resync: 'auto', silent: true });
     }
   };
   $('btnSdResyncProd')?.addEventListener('click', () => resyncFromProd());
@@ -646,13 +680,13 @@ async function init() {
     });
   });
 
-  // Auto PROD sync on open — mandatory freshest board for field
-  await loadWeek({ resync: true, silent: true });
+  // Cached week when fresh; PROD only if stale / missing / first session open
+  await loadWeek({ resync: 'auto', silent: true });
 
-  // When the top SAS beacon recovers auth, re-pull the week automatically
+  // SAS auth recovered → force a fresh pull
   window.addEventListener('cp-sas-auth', (ev) => {
     if (ev?.detail?.ok) {
-      loadWeek({ resync: true, silent: true }).catch(() => {});
+      loadWeek({ resync: true, silent: true, force: true }).catch(() => {});
     }
   });
 
