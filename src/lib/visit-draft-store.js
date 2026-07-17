@@ -317,6 +317,21 @@ function finishVisit(repKey, date, actualStore) {
 
 function summarize(draft) {
   const pd = draft.photoDelivery || null;
+  const categoryPhotoCount = Object.values(draft.categoryPhotos || {}).reduce(
+    (n, a) => n + (Array.isArray(a) ? a.length : 0),
+    0
+  );
+  const checklistChecked = Object.values(draft.checklist || {}).filter((c) => c?.checked).length;
+  const STEP_LABELS = {
+    before_photos: 'Before Photos',
+    load_check: 'Load',
+    write_order_checklist: 'Order Checklist',
+    category_photos: 'Category Photos',
+    survey: 'Survey',
+    after_photos: 'After Photos',
+    time: 'Time',
+    review: 'Review & Finish',
+  };
   return {
     id: draft.id,
     repKey: draft.repKey,
@@ -325,9 +340,17 @@ function summarize(draft) {
     scheduledStore: draft.scheduledStore,
     status: draft.status,
     currentStep: draft.currentStep,
+    currentStepLabel: STEP_LABELS[draft.currentStep] || draft.currentStep || null,
     startedAt: draft.startedAt,
     updatedAt: draft.updatedAt,
     sealedAt: draft.sealedAt,
+    beforePhotoCount: (draft.beforePhotos || []).length,
+    afterPhotoCount: (draft.afterPhotos || []).length,
+    categoryPhotoCount,
+    checklistChecked,
+    surveyAnswerCount: Object.keys(draft.survey || {}).length,
+    hasStartTime: !!(draft.visitStart && draft.visitStart.actual),
+    hasStopTime: !!(draft.visitStop && draft.visitStop.actual),
     photoDelivery: pd
       ? {
           status: pd.status,

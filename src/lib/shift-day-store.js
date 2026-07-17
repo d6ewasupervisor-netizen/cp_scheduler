@@ -3,7 +3,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const FILE = path.join(__dirname, '../../data/shift-day-schedules.json');
+/**
+ * Week board persistence.
+ * On Railway the only durable volume is /app/data/visit-drafts — keep the week
+ * schedule there so auto-resync results survive deploys/restarts. Local dev
+ * still uses data/shift-day-schedules.json.
+ */
+function resolveStorePath() {
+  if (process.env.SHIFT_DAY_STORE_PATH) return process.env.SHIFT_DAY_STORE_PATH;
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME) {
+    return path.join(__dirname, '../../data/visit-drafts/shift-day-schedules.json');
+  }
+  return path.join(__dirname, '../../data/shift-day-schedules.json');
+}
+
+const FILE = resolveStorePath();
 
 function readStore() {
   if (!fs.existsSync(FILE)) return { weeks: {} };

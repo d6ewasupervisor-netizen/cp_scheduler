@@ -2,6 +2,11 @@
  * Non-blocking photo upload queue for Shift Day capture.
  * Capture returns immediately; uploads run in the background with limited concurrency.
  * Pure logic — no DOM. Used by visit-flow-ui.js.
+ *
+ * Optional lifecycle hooks (offline IDB):
+ *   onEnqueued(item) — after item is pushed (persist blob)
+ *   onUploaded(item) — success (drop from IDB)
+ *   onFailed(item, err) — failed upload
  */
 
 let _idSeq = 0;
@@ -10,6 +15,9 @@ export function createPhotoUploadQueue({
   maxConcurrent = 2,
   uploadFn,
   onChange = () => {},
+  onEnqueued = null,
+  onUploaded = null,
+  onFailed = null,
 } = {}) {
   if (typeof uploadFn !== 'function') {
     throw new Error('createPhotoUploadQueue requires uploadFn(item) => Promise');
@@ -72,11 +80,21 @@ export function createPhotoUploadQueue({
           next.result = result;
           next.error = null;
           next.finishedAt = Date.now();
+          try {
+            onUploaded?.(next);
+          } catch {
+            /* ignore hook errors */
+          }
         })
         .catch((err) => {
           next.status = 'failed';
           next.error = err?.message || String(err);
           next.finishedAt = Date.now();
+          try {
+            onFailed?.(next, err);
+          } catch {
+            /* ignore */
+          }
         })
         .finally(() => {
           active -= 1;
@@ -88,12 +106,15 @@ export function createPhotoUploadQueue({
 
   /**
    * Enqueue a captured file. Returns the queue item immediately (does not wait for upload).
+   * @param {Blob|File} file
+   * @param {object} [extra]
+   * @param {{ id?: string }} [opts] restore with a stable id from IndexedDB
    */
-  function enqueue(file, extra = {}) {
+  function enqueue(file, extra = {}, opts = {}) {
     if (closed) throw new Error('Photo queue is closed');
     if (!file) throw new Error('file required');
     const item = {
-      id: `pq-${Date.now()}-${++_idSeq}`,
+      id: opts.id || `pq-${Date.now()}-${++_idSeq}`,
       file,
       extra: { ...extra },
       status: 'queued',
@@ -108,8 +129,14 @@ export function createPhotoUploadQueue({
       createdAt: Date.now(),
       startedAt: null,
       finishedAt: null,
+      restored: !!opts.id,
     };
     items.push(item);
+    try {
+      onEnqueued?.(item);
+    } catch {
+      /* ignore */
+    }
     emit();
     pump();
     return item;

@@ -14,6 +14,8 @@ import {
   shiftRunStatusBadgeHtml,
 } from '/shared.js';
 import { createVisitFlowController } from '/visit-flow-ui.js';
+import { initAppShell } from '/ux/app-shell.js';
+import { beginBusy, endBusy } from '/ux/buffering.js';
 
 const state = {
   user: null,
@@ -341,6 +343,8 @@ async function pullWeekFromProd({ silent = false } = {}) {
     try {
       if (!silent) toast('Resyncing week from PROD…', 'ok', 3000);
       const data = await api('/shift-day/sync-from-prod', {
+        busy: 'Syncing from PROD…',
+        busyForce: true,
         method: 'POST',
         body: JSON.stringify({
           weekStart: week.start,
@@ -431,8 +435,10 @@ async function resyncFromProd() {
 
 async function init() {
   try {
+    beginBusy('Loading Shift Day…', { force: true });
     state.user = await loadMe();
   } catch {
+    endBusy();
     $('sdLoading').textContent = 'Sign in required';
     return;
   }
@@ -444,6 +450,15 @@ async function init() {
   $('userBar').hidden = false;
   $('userEmail').textContent = state.user.email;
   $('btnSignOut').onclick = signOut;
+  initAppShell({
+    isAdmin: !!state.user.isAdmin,
+    active: 'shiftday',
+    bottomNav: true,
+    navGuard: {
+      hasBlockingWork: () => (visitFlow.photoQueueSnapshot?.()?.inFlight || 0) > 0,
+      isVisitOpen: () => !!visitFlow.getDraft?.(),
+    },
+  });
 
   state.repKey = await resolveRepKey();
   $('sdLoading').hidden = true;
@@ -650,9 +665,11 @@ async function init() {
     );
     if (hit) openDetail(hit.id);
   }
+  endBusy();
 }
 
 init().catch((err) => {
+  endBusy();
   $('sdLoading').hidden = true;
   $('sdError').hidden = false;
   $('sdError').textContent = err.message;

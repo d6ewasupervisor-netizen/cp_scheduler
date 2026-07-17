@@ -24,6 +24,8 @@ import {
   chitFlagLabel,
   REP_AVAILABILITY,
 } from '/shared.js';
+import { initAppShell } from '/ux/app-shell.js';
+import { beginBusy, endBusy } from '/ux/buffering.js';
 
 const state = {
   user: null,
@@ -518,16 +520,23 @@ function showInitError(err) {
 
 (async function init() {
   try {
+    beginBusy('Loading My Week…', { force: true });
     await window.cpAuth.bootPromise;
     state.user = await loadMe();
 
     if (state.user.layer === 'admin' && !isPreview()) {
+      endBusy();
       window.location.replace('/');
       return;
     }
 
     $('userEmail').textContent = state.user.email || '';
     $('userBar').hidden = false;
+    initAppShell({
+      isAdmin: state.user.layer === 'admin',
+      active: 'rep',
+      bottomNav: true,
+    });
 
     state.weeks = await api('/weeks');
     state.weekIndex = defaultWeekIndex(state.weeks);
@@ -552,7 +561,9 @@ function showInitError(err) {
     });
 
     await loadWeek();
+    endBusy();
   } catch (err) {
+    endBusy();
     console.error('[rep]', err);
     showInitError(err);
   }

@@ -10,6 +10,8 @@ import {
   shiftRunStatus,
   shiftRunStatusBadgeHtml,
 } from '/shared.js';
+import { initAppShell } from '/ux/app-shell.js';
+import { beginBusy, endBusy } from '/ux/buffering.js';
 
 const state = {
   user: null,
@@ -253,6 +255,8 @@ async function pullDashWeekFromProd({ silent = false } = {}) {
       const data = await api('/shift-day/sync-from-prod', {
         method: 'POST',
         body: JSON.stringify({ weekStart: week.start }),
+        busy: 'Syncing from PROD…',
+        busyForce: true,
       });
       state.schedules = {};
       state.weeks = await api('/shift-day/weeks');
@@ -339,10 +343,83 @@ async function loadActiveWeek({ resync = false, silent = false } = {}) {
   }
 }
 
+function relativeTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+async function refreshLiveMonitor() {
+  const panel = $('liveMonitor');
+  const list = $('liveMonitorList');
+  const meta = $('liveMonitorMeta');
+  if (!panel || !list || !canSeeAll()) {
+    if (panel) panel.hidden = true;
+    return;
+  }
+  try {
+    const drafts = await api('/shift-day/visit/drafts');
+    const live = (drafts || []).filter((d) => d.status === 'in_progress');
+    panel.hidden = false;
+    meta.textContent = live.length
+      ? `${live.length} visit(s) in progress · updated ${new Date().toLocaleTimeString()}`
+      : `No in-progress visits · updated ${new Date().toLocaleTimeString()}`;
+    if (!live.length) {
+      list.innerHTML = `<p class="dash-empty">When a rep starts a visit, it appears here for live assist.</p>`;
+      return;
+    }
+    list.innerHTML = live
+      .map((d) => {
+        const step = d.currentStepLabel || d.currentStep || '—';
+        const photos = `B ${d.beforePhotoCount ?? 0} · A ${d.afterPhotoCount ?? 0} · Cat ${d.categoryPhotoCount ?? 0}`;
+        const when = relativeTime(d.updatedAt);
+        return `<button type="button" class="live-card" data-rep="${d.repKey}" data-date="${d.date}" data-store="${d.actualStore}" data-step="${d.currentStep || ''}">
+          <div class="live-card-top">
+            <span>${d.repKey} · FM ${d.actualStore}</span>
+            <span class="live-card-meta">${when}</span>
+          </div>
+          <div class="live-card-step">${step}</div>
+          <div class="live-card-meta">${photos} · survey ${d.surveyAnswerCount ?? 0}</div>
+        </button>`;
+      })
+      .join('');
+    list.querySelectorAll('.live-card').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const params = new URLSearchParams();
+        params.set('rep', btn.dataset.rep);
+        params.set('date', btn.dataset.date);
+        params.set('store', btn.dataset.store);
+        params.set('preview', '1');
+        location.assign(`/shiftday.html?${params.toString()}`);
+      });
+    });
+  } catch (err) {
+    panel.hidden = false;
+    meta.textContent = `Live monitor unavailable: ${err.message || err}`;
+  }
+}
+
+let livePollTimer = null;
+function startLiveMonitorPoll() {
+  if (!canSeeAll()) return;
+  refreshLiveMonitor();
+  if (livePollTimer) clearInterval(livePollTimer);
+  livePollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshLiveMonitor();
+  }, 12000);
+}
+
 async function init() {
   try {
+    beginBusy('Loading schedule…', { force: true });
     state.user = await loadMe();
   } catch {
+    endBusy();
     $('dashLoading').textContent = 'Sign in required';
     return;
   }
@@ -350,6 +427,7 @@ async function init() {
   $('userBar').hidden = false;
   $('userEmail').textContent = state.user.email;
   $('btnSignOut').onclick = signOut;
+  initAppShell({ isAdmin: !!state.user.isAdmin, active: 'dashboard', bottomNav: true });
 
   try {
     state.reps = await api('/shift-day/reps');
@@ -409,15 +487,19 @@ async function init() {
     $('dashApp').hidden = false;
     // Auto PROD sync on open
     await loadActiveWeek({ resync: true, silent: true });
+    startLiveMonitorPoll();
 
     // When top SAS beacon recovers auth, re-pull schedules
     window.addEventListener('cp-sas-auth', (ev) => {
       if (ev?.detail?.ok) {
         state.schedules = {};
         loadActiveWeek({ resync: true, silent: true }).catch(() => {});
+        refreshLiveMonitor();
       }
     });
+    endBusy();
   } catch (err) {
+    endBusy();
     $('dashLoading').hidden = true;
     showError(err.message || 'Could not load dashboard');
   }

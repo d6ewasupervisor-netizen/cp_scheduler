@@ -27,7 +27,17 @@ npm start
 
 Open http://127.0.0.1:3847
 
-**Mobile:** Days swipe horizontally with snap scrolling. Controls stack full-width, touch targets are 48px+, and each visit card has a **Move to** day picker (drag-and-drop is desktop-only on admin).
+**Mobile:** Days swipe horizontally with snap scrolling. Controls stack full-width, touch targets are 48px+, and each visit card has a **Move to** day picker (drag-and-drop is desktop-only on admin). Field pages have a bottom nav (Schedule / Shift Day / My Week), light/night theme toggle, and a global buffering overlay for slow ops.
+
+### Field visit path (rep)
+
+1. **Schedule / Shift Day** → open store card → **Start visit**  
+2. **Before photos** (burst capture until **Done capturing**)  
+3. **Load** (if work-load) → **Order checklist** (write order in Amp by Movista, then check off)  
+4. **Category photos** → **Survey** → **After photos**  
+5. **Time** (start/stop + mileage) → **Review & seal**  
+
+Photos upload in the background and are backed up in IndexedDB until the server confirms. Leaving mid-visit prompts with an optional “don’t ask again.” Admins see a **Live field activity** panel on the dashboard (polls in-progress drafts).
 
 **Production (Railway):** https://cpscheduler-production.up.railway.app
 

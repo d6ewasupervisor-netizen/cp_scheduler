@@ -164,14 +164,31 @@ export const isMobileLayout = () =>
 
 /* ---------- API ---------- */
 
+/**
+ * @param {string} path
+ * @param {RequestInit & { busy?: boolean|string, busyForce?: boolean }} [opts]
+ *   busy: true | label string — show buffering overlay for this call
+ *   busyForce: open overlay immediately (long PROD ops)
+ */
 export async function api(path, opts = {}) {
-  const res = await window.cpAuthFetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    ...opts,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
-  return data;
+  const { busy, busyForce, ...fetchOpts } = opts;
+  const begin = typeof window !== 'undefined' ? window.cpBeginBusy : null;
+  const end = typeof window !== 'undefined' ? window.cpEndBusy : null;
+  const useBusy = busy === true || typeof busy === 'string';
+  if (useBusy && begin) {
+    begin(typeof busy === 'string' ? busy : 'Buffering…', { force: !!busyForce });
+  }
+  try {
+    const res = await window.cpAuthFetch(`${API}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(fetchOpts.headers || {}) },
+      ...fetchOpts,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  } finally {
+    if (useBusy && end) end();
+  }
 }
 
 export async function loadMe() {

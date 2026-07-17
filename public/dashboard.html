@@ -8,6 +8,11 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
   <script src="/sas-beacon.js" defer></script>
+  <script type="module">
+    import { initTheme } from '/ux/theme.js';
+    import '/ux/buffering.js';
+    initTheme();
+  </script>
   <style>
     /* Mobile-first dashboard chrome on top of shared dark system */
     body.mode-dashboard {
@@ -267,6 +272,12 @@
       </div>
 
       <div id="dashSchedule"></div>
+
+      <section class="live-monitor" id="liveMonitor" hidden>
+        <h2>Live field activity</h2>
+        <p class="live-monitor-meta" id="liveMonitorMeta">Watching in-progress visits…</p>
+        <div id="liveMonitorList"></div>
+      </section>
 
       <div class="dash-actions">
         <button type="button" id="btnDashResync" class="primary">Resync from PROD</button>

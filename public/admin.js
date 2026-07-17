@@ -28,6 +28,8 @@ import {
   chitFlagLabel,
   REP_AVAILABILITY,
 } from '/shared.js';
+import { initAppShell } from '/ux/app-shell.js';
+import { beginBusy, endBusy } from '/ux/buffering.js';
 
 const state = {
   user: null,
@@ -924,10 +926,12 @@ function showInitError(err) {
 
 (async function init() {
   try {
+    beginBusy('Loading Planning Desk…', { force: true });
     await window.cpAuth.bootPromise;
     state.user = await loadMe();
 
     if (state.user.layer === 'rep') {
+      endBusy();
       window.location.replace('/rep.html');
       return;
     }
@@ -935,6 +939,7 @@ function showInitError(err) {
     $('userEmail').textContent = state.user.email || '';
     $('userBar').hidden = false;
     $('stickyBar').hidden = false;
+    initAppShell({ isAdmin: true, active: 'planning', bottomNav: true });
 
     $('btnSave').addEventListener('click', saveDraft);
     $('btnApprove').addEventListener('click', approveWeek);
@@ -1001,6 +1006,8 @@ function showInitError(err) {
             weekStart: week.start,
             supervisorId: supervisorId(),
           }),
+          busy: 'Syncing from PROD…',
+          busyForce: true,
         });
         toast(
           `Synced ${data.shiftCount} shifts from PROD` +
@@ -1015,6 +1022,115 @@ function showInitError(err) {
         toast(err.message, 'bad', 6000);
       }
     });
+
+    async function refreshScheduleWriteStatus() {
+      const el = $('scheduleWriteStatus');
+      if (!el) return;
+      try {
+        const st = await api('/shift-day/schedule-write-status');
+        el.textContent = st.liveScheduleWrite
+          ? 'LIVE_SCHEDULE_WRITE is ON — Apply will mutate SAS team-scheduling.'
+          : 'LIVE_SCHEDULE_WRITE is OFF — Preview works; Apply will refuse live writes until the flag is set.';
+        el.className = st.liveScheduleWrite ? 'week-status tag-matched' : 'week-status tag-ambiguous';
+      } catch (err) {
+        el.textContent = `Could not load schedule-write status: ${err.message}`;
+      }
+    }
+
+    function renderSchedulePushResults(data) {
+      const host = $('schedulePushResults');
+      if (!host) return;
+      const rows = (data.results || []).filter((r) => r.code !== 'in_sync');
+      const head = `<p class="week-status">${data.dryRun ? 'DRY-RUN' : 'LIVE'} · to-move ${data.toMoveCount || 0} · moved ${data.movedCount || 0} · failed ${data.failedCount || 0} · skipped ${data.skippedCount || 0}</p>`;
+      if (!rows.length) {
+        host.innerHTML = head + '<div class="mw-row">No day-moves pending — local board matches PROD dates.</div>';
+        return;
+      }
+      host.innerHTML =
+        head +
+        rows
+          .map((r) => {
+            const tag = r.ok === false ? 'unmatched' : r.dryRun || r.code === 'would_reschedule' ? 'ambiguous' : 'matched';
+            const store = r.actualStore != null ? ` store ${r.actualStore}` : '';
+            const dates =
+              r.prodDate && r.localDate
+                ? ` ${r.prodDate} → ${r.localDate}`
+                : r.fromDate && r.toDate
+                  ? ` ${r.fromDate} → ${r.toDate}`
+                  : '';
+            return `<div class="mw-row"><span class="tag-${tag}">${r.code || (r.ok ? 'ok' : 'fail')}</span> ${r.repKey || ''}${store}${dates} · visit ${r.visitId || r.sourceVisitId || '—'} ${r.destVisitId ? `→ ${r.destVisitId}` : ''} — ${r.message || ''}</div>`;
+          })
+          .join('');
+    }
+
+    $('btnPreviewSchedulePush')?.addEventListener('click', async () => {
+      const week = state.week;
+      if (!week) return toast('Pick a week first', 'warn');
+      try {
+        toast('Previewing day-moves vs PROD…', 'ok', 3000);
+        const data = await api('/shift-day/push-schedule-to-prod', {
+          method: 'POST',
+          body: JSON.stringify({ weekStart: week.start, dryRun: true }),
+        });
+        renderSchedulePushResults(data);
+        toast(
+          data.toMoveCount
+            ? `Preview: ${data.toMoveCount} move(s) would go to PROD`
+            : 'Preview: nothing to push (in sync)',
+          'ok',
+          5000
+        );
+      } catch (err) {
+        toast(err.message, 'bad', 6000);
+      }
+    });
+
+    $('btnApplySchedulePush')?.addEventListener('click', async () => {
+      const week = state.week;
+      if (!week) return toast('Pick a week first', 'warn');
+      if (
+        !confirm(
+          `Apply pending day-moves for ${week.label || week.start} to SAS PROD?\n\n` +
+            'This creates visits on the new dates, copies reps + store notes, and soft-deletes the old day.\n' +
+            'Completed / in-progress visits are skipped.\n\n' +
+            'Tap OK only if you intend a LIVE schedule change.'
+        )
+      ) {
+        return;
+      }
+      // Two-tap
+      if (!confirm('Second confirm: push schedule changes to production now?')) return;
+      try {
+        toast('Applying day-moves to PROD…', 'ok', 4000);
+        const data = await api('/shift-day/push-schedule-to-prod', {
+          method: 'POST',
+          body: JSON.stringify({ weekStart: week.start, dryRun: false }),
+        });
+        renderSchedulePushResults(data);
+        if (data.failedCount) {
+          toast(`PROD push finished with ${data.failedCount} failure(s)`, 'bad', 7000);
+        } else if (!data.toMoveCount && !data.movedCount) {
+          toast('Nothing to push — board already matches PROD', 'warn', 5000);
+        } else {
+          toast(`Pushed ${data.movedCount} day-move(s) to PROD`, 'ok', 6000);
+        }
+        // Refresh board from PROD so visit ids stay accurate
+        try {
+          await api('/shift-day/sync-from-prod', {
+            method: 'POST',
+            body: JSON.stringify({ weekStart: week.start, supervisorId: supervisorId() }),
+          });
+          await refreshShiftDayWeekMeta();
+        } catch {
+          /* preview still useful */
+        }
+        await refreshScheduleWriteStatus();
+      } catch (err) {
+        toast(err.message, 'bad', 7000);
+      }
+    });
+
+    refreshScheduleWriteStatus().catch(() => {});
 
     $('btnRunMatcher')?.addEventListener('click', async () => {
       const week = state.week;
@@ -1075,6 +1191,8 @@ function showInitError(err) {
             repKeys: repKeys.length ? repKeys : undefined,
             timeChangeComment,
           }),
+          busy: 'Assembling dry run…',
+          busyForce: true,
         });
         renderDryRunManifest(manifest);
         toast(`Dry run assembled (${manifest.summary.assembled} visit(s))`, 'ok');
@@ -1142,7 +1260,9 @@ function showInitError(err) {
     await loadRepWeek();
     await refreshShiftDayWeekMeta();
     await loadVisitDrafts();
+    endBusy();
   } catch (err) {
+    endBusy();
     console.error('[admin]', err);
     showInitError(err);
   }

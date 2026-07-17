@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f16">
   <title>Shift Day — Central Pet D8</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/auth-gate.js"></script>
   <script src="/sas-beacon.js" defer></script>
+  <script type="module">
+    import { initTheme } from '/ux/theme.js';
+    import '/ux/buffering.js';
+    initTheme();
+  </script>
 </head>
 <body class="mode-shiftday has-sticky-bar">
   <header class="topbar topbar-shiftday">
@@ -135,6 +141,7 @@
 
   <!-- Full-page visit workspace (not a floating overlay) -->
   <div id="visitWorkspace" class="visit-workspace" hidden>
+    <div id="vfAssistBanner" class="vf-assist-banner" hidden></div>
     <header class="visit-workspace-header">
       <div class="visit-workspace-titleblock">
         <button type="button" id="vfBackToSchedule" class="subtle vf-back">← Schedule</button>
@@ -153,6 +160,7 @@
       <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit sections"></nav>
       <div class="vf-main">
         <div id="vfBody" class="vf-body"></div>
+        <div id="vfGuidedNav" class="vf-guided-nav" aria-label="Guided visit steps"></div>
         <div class="vf-nav">
           <span id="vfSaveState" class="save-state" data-state="saved">Saved</span>
           <button type="button" id="vfFinish" class="primary" disabled>Finish &amp; seal visit</button>

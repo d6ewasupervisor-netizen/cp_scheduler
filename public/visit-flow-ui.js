@@ -3,10 +3,18 @@
 // touches the local JSON draft store — no SAS writes.
 //
 // Navigation is free: any section is tappable any time. Seal-time (Finish Visit
-// on Review) is the only gate.
+// on Review) is the only gate. Guided Continue + burst photo + offline IDB.
 
 import { toast } from '/shared.js';
 import { createPhotoUploadQueue } from '/photo-upload-queue.js';
+import { beginBusy, endBusy, withBusy } from '/ux/buffering.js';
+import { confirmLeaveVisit, setNavGuardHooks, installBeforeUnload } from '/ux/nav-guard.js';
+import {
+  putPendingPhoto,
+  markPhotoDone,
+  markPhotoFailed,
+  listPendingPhotos,
+} from '/ux/offline-store.js';
 
 const API = '/api/central-pet';
 
@@ -24,6 +32,17 @@ async function apiCall(path, opts = {}) {
   }
   return data;
 }
+
+const STEP_HINTS = {
+  before_photos: 'Arrive and photograph the Pet Supplies aisle (two 4ft sections per shot).',
+  load_check: 'Find the load, photograph it if present, then work it to the shelf.',
+  write_order_checklist: 'Open Amp by Movista, write the order from product tags, then check off scope items.',
+  category_photos: 'Photograph each category target (endcaps, clipstrips, wings, etc.).',
+  survey: 'Answer the service survey. Some questions appear based on earlier answers.',
+  after_photos: 'Photograph the finished Pet Supplies aisle (two 4ft sections per shot).',
+  time: 'Set actual start/stop times and compute your mileage leg.',
+  review: 'Fix any unmet items, then seal the visit.',
+};
 
 const STEP_LABELS = {
   before_photos: 'Before Photos',
@@ -62,6 +81,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     survey: null,
     categoryTargets: null,
     pendingAnchor: null,
+    /** @type {null | { key: string, input: HTMLInputElement | null }} */
+    burst: null,
+    photoEditMode: false,
   };
 
   /** Background photo uploads — capture never waits for network. */
@@ -81,6 +103,25 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
       const draft = await apiCall('/shift-day/visit/photo', { method: 'POST', body: fd });
       return draft;
+    },
+    onEnqueued: (item) => {
+      if (!vf.draft) return;
+      putPendingPhoto({
+        id: item.id,
+        repKey: getRepKey(),
+        date: vf.draft.date,
+        actualStore: vf.draft.actualStore,
+        extra: item.extra,
+        file: item.file,
+      }).catch(() => {
+        /* offline store optional on private mode */
+      });
+    },
+    onUploaded: (item) => {
+      markPhotoDone(item.id).catch(() => {});
+    },
+    onFailed: (item, err) => {
+      markPhotoFailed(item.id, err?.message || String(err)).catch(() => {});
     },
     onChange: (snap) => {
       updatePhotoQueueSaveState(snap);
@@ -103,7 +144,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             onDraftChanged?.(vf.draft);
             photoQueue.pruneDone();
           }
-          renderAll();
+          // Avoid full re-render thrash while burst camera is open
+          if (!vf.burst) renderAll();
+          else {
+            updateFinishButton();
+            updateGuidedNav();
+          }
         }
       }
       if (snap.failed > 0 && snap.inFlight === 0) {
@@ -111,6 +157,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
     },
   });
+
+  setNavGuardHooks({
+    hasBlockingWork: () => photoQueue.snapshot().inFlight > 0,
+    isVisitOpen: () => !!(vf.draft && workspaceEl() && !workspaceEl().hidden),
+  });
+  installBeforeUnload();
 
   async function ensureStaticData() {
     if (!vf.scopeChecklist) vf.scopeChecklist = await apiCall('/shift-day/visit-flow/scope-checklist');
@@ -125,18 +177,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     el.textContent =
       label ||
       (s === 'saving' ? 'Saving…' : s === 'error' ? 'Upload error' : 'Saved');
-  }
-
-  // In-flight photo captures live only in this tab's memory until the server
-  // confirms the upload — a refresh/close mid-upload would silently drop them.
-  // Warn (native browser prompt) so the rep waits for "Saved" first.
-  if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', (e) => {
-      if (photoQueue.snapshot().inFlight > 0) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    });
   }
 
   function updatePhotoQueueSaveState(snap) {
@@ -176,24 +216,81 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   /* ---------- Photo capture (shared by before/after/category/load/checklist) ---------- */
 
-  function photoCaptureBlock({ label, photos, minRequired = 0, onCapture, onRemove, anchorId, pending = [] }) {
+  function burstKey(extra) {
+    const e = extra || {};
+    return `${e.target || ''}|${e.categoryId || ''}|${e.itemId || ''}|${e.status || ''}`;
+  }
+
+  function stopBurst() {
+    vf.burst = null;
+    const bar = document.getElementById('vfBurstBar');
+    if (bar) bar.hidden = true;
+  }
+
+  function startBurst(key, inputEl) {
+    vf.burst = { key, input: inputEl };
+    let bar = document.getElementById('vfBurstBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'vfBurstBar';
+      bar.className = 'vf-burst-bar';
+      bar.innerHTML = `
+        <span class="vf-burst-status" id="vfBurstStatus">Capturing…</span>
+        <button type="button" class="primary" id="vfBurstDone">Done capturing</button>`;
+      const main = document.querySelector('.vf-main') || workspaceEl();
+      if (main) main.appendChild(bar);
+      bar.querySelector('#vfBurstDone').addEventListener('click', () => {
+        stopBurst();
+        renderAll();
+        toast('Photo capture finished', 'ok', 2000);
+      });
+    }
+    bar.hidden = false;
+    updateBurstStatus();
+  }
+
+  function updateBurstStatus() {
+    const el = document.getElementById('vfBurstStatus');
+    if (!el || !vf.draft) return;
+    const q = photoQueue.snapshot();
+    el.textContent = `Capturing… ${q.inFlight ? `${q.inFlight} uploading` : 'ready for next'} · tap Done when finished`;
+  }
+
+  function reOpenCamera(inputEl) {
+    // Best-effort: iOS may block programmatic re-open without a fresh gesture.
+    try {
+      requestAnimationFrame(() => {
+        try {
+          inputEl.click();
+        } catch {
+          toast('Tap Capture again for the next photo', 'info', 2500);
+        }
+      });
+    } catch {
+      toast('Tap Capture again for the next photo', 'info', 2500);
+    }
+  }
+
+  function photoCaptureBlock({ label, photos, minRequired = 0, onCapture, onRemove, anchorId, pending = [], extra = {} }) {
     const wrap = document.createElement('div');
     wrap.className = 'vf-photo-block';
     if (anchorId) wrap.id = anchorId;
     const uploaded = photos?.length || 0;
     const pendingCount = (pending || []).filter((p) => p.status !== 'failed').length;
     const failedCount = (pending || []).filter((p) => p.status === 'failed').length;
-    const totalShown = uploaded + (pending || []).length;
     let countLabel = `${uploaded} saved`;
     if (pendingCount) countLabel += ` · ${pendingCount} sending`;
     if (failedCount) countLabel += ` · ${failedCount} failed`;
     if (minRequired) countLabel += ` (min ${minRequired})`;
+    const bKey = burstKey(extra);
+    const bursting = vf.burst?.key === bKey;
 
+    const showRemove = vf.photoEditMode && onRemove;
     const serverThumbs = (photos || [])
       .map(
         (p, i) =>
           `<div class="vf-photo-thumb vf-photo-ok" data-seq="${p.seq ?? i + 1}" title="Saved">#${i + 1}${
-            onRemove
+            showRemove
               ? `<button type="button" class="vf-photo-remove" data-seq="${p.seq ?? i + 1}" aria-label="Remove photo">×</button>`
               : ''
           }</div>`
@@ -229,24 +326,41 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         <span class="vf-photo-count">${countLabel}</span>
       </div>
       <div class="vf-photo-grid">${serverThumbs}${pendingThumbs}</div>
-      <label class="vf-photo-input primary">
-        Capture photo
-        <input type="file" accept="image/*" capture="environment" hidden>
-      </label>
-      <p class="vf-photo-hint overlay-meta">Fire shots as fast as you need — uploads catch up in the background.</p>`;
+      <div class="vf-photo-actions">
+        <label class="vf-photo-input primary">
+          ${bursting ? 'Next photo' : 'Start capturing'}
+          <input type="file" accept="image/*" capture="environment" hidden>
+        </label>
+        ${
+          onRemove
+            ? `<button type="button" class="subtle vf-photo-edit-toggle">${
+                vf.photoEditMode ? 'Done editing' : 'Edit / remove'
+              }</button>`
+            : ''
+        }
+      </div>
+      <p class="vf-photo-hint overlay-meta">Shots upload in the background. Keep capturing until you tap <strong>Done capturing</strong>.</p>`;
 
-    // Do NOT await upload — queue immediately so the next capture can open.
-    wrap.querySelector('input[type=file]').addEventListener('change', (e) => {
+    const input = wrap.querySelector('input[type=file]');
+    input.addEventListener('change', (e) => {
       const file = e.target.files?.[0];
       e.target.value = '';
       if (!file) return;
       try {
         onCapture(file);
+        if (!vf.burst || vf.burst.key !== bKey) startBurst(bKey, input);
+        updateBurstStatus();
+        // Auto re-open for continuous capture
+        reOpenCamera(input);
       } catch (err) {
         toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
       }
     });
-    if (onRemove) {
+    wrap.querySelector('.vf-photo-edit-toggle')?.addEventListener('click', () => {
+      vf.photoEditMode = !vf.photoEditMode;
+      renderAll();
+    });
+    if (showRemove) {
       wrap.querySelectorAll('.vf-photo-remove').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
@@ -268,8 +382,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   /** Queue photo for background upload — returns immediately. */
   function queuePhoto(file, extra) {
     photoQueue.enqueue(file, extra);
-    // Instant UI feedback without waiting for network
-    renderAll();
+    // Instant UI feedback without waiting for network (skip full re-render in burst)
+    if (vf.burst) {
+      updateBurstStatus();
+      updatePhotoQueueSaveState(photoQueue.snapshot());
+    } else {
+      renderAll();
+    }
   }
 
   async function removePhoto(target, seq) {
@@ -302,6 +421,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         : 'Same as before: two 4ft sections per photo, full coverage of the Pet Supplies aisle.';
     body.appendChild(p);
     const extra = { target: kind };
+    const guide = document.createElement('p');
+    guide.className = 'vf-step-guide';
+    guide.textContent = STEP_HINTS[kind === 'before' ? 'before_photos' : 'after_photos'];
+    body.appendChild(guide);
     body.appendChild(
       photoCaptureBlock({
         label: kind === 'before' ? 'Before photos' : 'After photos',
@@ -309,6 +432,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         minRequired: 1,
         anchorId: kind === 'before' ? 'before-photos' : 'after-photos',
         pending: photoQueue.pendingFor(extra),
+        extra,
         onCapture: (file) => queuePhoto(file, extra),
         onRemove: (seq) => removePhoto(kind, seq),
       })
@@ -346,6 +470,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           minRequired: 1,
           anchorId: 'load-photo',
           pending: photoQueue.pendingFor(loadExtra),
+          extra: loadExtra,
           onCapture: (file) => queuePhoto(file, loadExtra),
         })
       );
@@ -417,11 +542,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function renderChecklist() {
     const body = $('vfBody');
     body.innerHTML = '';
-    const note = document.createElement('p');
-    note.className = 'overlay-meta';
-    note.innerHTML =
-      'Amp by Movista: scan item tags on the product itself (not shelf tags) for items that aren\'t missing, where available.';
-    body.appendChild(note);
+    const amp = document.createElement('div');
+    amp.className = 'vf-amp-callout';
+    amp.innerHTML = `
+      <div class="vf-amp-title">Write the order in Amp by Movista</div>
+      <ol class="vf-amp-steps">
+        <li>Open the <strong>Amp by Movista</strong> app on this phone.</li>
+        <li>Scan <strong>product tags on the item</strong> (not shelf tags) for items that aren't missing.</li>
+        <li>Write the order in Amp, then return here and check off each scope item below.</li>
+      </ol>
+      <p class="overlay-meta" style="margin:0">Tip: stay on this step until the order is submitted in Amp — checklist is your proof of work in our app.</p>`;
+    body.appendChild(amp);
 
     let lastSection = null;
     for (const item of writeOrderItems()) {
@@ -461,6 +592,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             minRequired: 1,
             anchorId: `checklist-photo-${item.id}`,
             pending: photoQueue.pendingFor(clExtra),
+            extra: clExtra,
             onCapture: (file) => queuePhoto(file, clExtra),
           })
         );
@@ -471,6 +603,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function renderCategoryPhotos() {
     const body = $('vfBody');
     body.innerHTML = '';
+    const guide = document.createElement('p');
+    guide.className = 'vf-step-guide';
+    guide.textContent = STEP_HINTS.category_photos;
+    body.appendChild(guide);
     for (const cat of vf.categoryTargets) {
       const h = document.createElement('h3');
       h.className = 'vf-section-head';
@@ -485,6 +621,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           minRequired: 1,
           anchorId: `category-block-${cat.id}`,
           pending: photoQueue.pendingFor(catExtra),
+          extra: catExtra,
           onCapture: (file) => queuePhoto(file, catExtra),
         })
       );
@@ -581,20 +718,27 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function renderTime() {
     const body = $('vfBody');
     body.innerHTML = `
-      <label class="field" id="time-start">Actual start time
-        <input type="datetime-local" id="vfStart" value="${toLocalInput(vf.draft.visitStart.actual)}">
-      </label>
-      <label class="field" id="time-stop">Stop time
-        <input type="datetime-local" id="vfStop" value="${toLocalInput(vf.draft.visitStop.actual)}">
-      </label>
-      <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
-        <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
-      </label>
-      <button type="button" id="vfCalcMileage" class="subtle">Compute mileage leg</button>
-      <div id="time-mileage" class="overlay-meta"></div>
-      <label class="field">Note (if the leg looks wrong — don't recalculate, just note it)
-        <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
-      </label>`;
+      <p class="vf-step-guide">${STEP_HINTS.time}</p>
+      <div class="vf-time-card">
+        <label class="field" id="time-start">Actual start time
+          <input type="datetime-local" id="vfStart" value="${toLocalInput(vf.draft.visitStart.actual)}">
+        </label>
+        <label class="field" id="time-stop">Stop time
+          <input type="datetime-local" id="vfStop" value="${toLocalInput(vf.draft.visitStop.actual)}">
+        </label>
+        <div class="vf-btn-row" style="margin:.35rem 0 .6rem">
+          <button type="button" id="vfNowStart" class="subtle">Set start to now</button>
+          <button type="button" id="vfNowStop" class="subtle">Set stop to now</button>
+        </div>
+        <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
+          <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
+        </label>
+        <button type="button" id="vfCalcMileage" class="primary">Compute mileage leg</button>
+        <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
+        <label class="field">Note (if the leg looks wrong — don't recalculate, just note it)
+          <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
+        </label>
+      </div>`;
 
     const renderLeg = () => {
       const leg = vf.draft.mileage?.leg;
@@ -604,32 +748,49 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     };
     renderLeg();
 
-    $('vfStart').addEventListener('change', (e) =>
-      autosave(() =>
+    async function saveStart(iso) {
+      await autosave(() =>
         apiCall('/shift-day/visit/time', {
           method: 'POST',
           body: JSON.stringify({
             repKey: getRepKey(),
             date: vf.draft.date,
             actualStore: vf.draft.actualStore,
-            startActual: new Date(e.target.value).toISOString(),
+            startActual: iso,
           }),
         })
-      ).then(renderSidebar)
-    );
-    $('vfStop').addEventListener('change', (e) =>
-      autosave(() =>
+      );
+      renderSidebar();
+      updateGuidedNav();
+    }
+    async function saveStop(iso) {
+      await autosave(() =>
         apiCall('/shift-day/visit/time', {
           method: 'POST',
           body: JSON.stringify({
             repKey: getRepKey(),
             date: vf.draft.date,
             actualStore: vf.draft.actualStore,
-            stopActual: new Date(e.target.value).toISOString(),
+            stopActual: iso,
           }),
         })
-      ).then(renderSidebar)
-    );
+      );
+      renderSidebar();
+      updateGuidedNav();
+    }
+
+    $('vfStart').addEventListener('change', (e) => saveStart(new Date(e.target.value).toISOString()));
+    $('vfStop').addEventListener('change', (e) => saveStop(new Date(e.target.value).toISOString()));
+    $('vfNowStart')?.addEventListener('click', () => {
+      const now = new Date();
+      $('vfStart').value = toLocalInput(now.toISOString());
+      saveStart(now.toISOString());
+    });
+    $('vfNowStop')?.addEventListener('click', () => {
+      const now = new Date();
+      $('vfStop').value = toLocalInput(now.toISOString());
+      saveStop(now.toISOString());
+    });
     $('vfLastStop').addEventListener('change', (e) =>
       autosave(() =>
         apiCall('/shift-day/visit/time', {
@@ -773,10 +934,86 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     });
 
     updateFinishButton();
+    updateGuidedNav();
+  }
+
+  function nextIncompleteStep() {
+    if (!vf.draft) return null;
+    const statuses = vf.draft.sectionStatuses || [];
+    const byId = Object.fromEntries(statuses.map((s) => [s.id, s]));
+    const steps = vf.draft.steps || [];
+    const cur = vf.draft.currentStep;
+    const curIdx = steps.indexOf(cur);
+    // Prefer next after current that is not complete
+    for (let i = curIdx + 1; i < steps.length; i++) {
+      const st = byId[steps[i]];
+      if (!st || st.status !== 'complete') return steps[i];
+    }
+    // Or first incomplete before end
+    for (const id of steps) {
+      const st = byId[id];
+      if (!st || st.status !== 'complete') return id;
+    }
+    return steps[steps.length - 1] || null;
+  }
+
+  function updateGuidedNav() {
+    const nav = document.getElementById('vfGuidedNav');
+    if (!nav || !vf.draft) return;
+    const steps = vf.draft.steps || [];
+    const cur = vf.draft.currentStep;
+    const statuses = Object.fromEntries((vf.draft.sectionStatuses || []).map((s) => [s.id, s]));
+    const dots = steps
+      .map((id) => {
+        const st = statuses[id]?.status || 'empty';
+        const active = id === cur ? 'active' : '';
+        return `<button type="button" class="vf-rail-dot status-${st} ${active}" data-section="${id}" title="${escapeHtml(
+          STEP_LABELS[id] || id
+        )}" aria-label="${escapeHtml(STEP_LABELS[id] || id)}"></button>`;
+      })
+      .join('');
+    const curIdx = steps.indexOf(cur);
+    const prevId = curIdx > 0 ? steps[curIdx - 1] : null;
+    const nextId = nextIncompleteStep();
+    const onReview = cur === 'review';
+    nav.innerHTML = `
+      <div class="vf-rail-dots" role="tablist" aria-label="Visit steps">${dots}</div>
+      <div class="vf-rail-actions">
+        <button type="button" class="subtle" id="vfGuidedBack" ${prevId ? '' : 'disabled'}>Back</button>
+        ${
+          onReview
+            ? ''
+            : `<button type="button" class="primary" id="vfGuidedContinue">Continue</button>`
+        }
+      </div>
+      <p class="vf-rail-hint">${escapeHtml(STEP_HINTS[cur] || '')}</p>`;
+    nav.querySelectorAll('.vf-rail-dot').forEach((btn) => {
+      btn.addEventListener('click', () => goToSection(btn.dataset.section));
+    });
+    nav.querySelector('#vfGuidedBack')?.addEventListener('click', () => {
+      if (prevId) goToSection(prevId);
+    });
+    nav.querySelector('#vfGuidedContinue')?.addEventListener('click', () => {
+      if (nextId && nextId !== cur) goToSection(nextId);
+      else if (curIdx < steps.length - 1) goToSection(steps[curIdx + 1]);
+    });
+  }
+
+  function ensureGuidedNav() {
+    let nav = document.getElementById('vfGuidedNav');
+    if (nav) return nav;
+    nav = document.createElement('div');
+    nav.id = 'vfGuidedNav';
+    nav.className = 'vf-guided-nav';
+    const vfNav = document.querySelector('.vf-nav');
+    if (vfNav) vfNav.parentNode.insertBefore(nav, vfNav);
+    else document.querySelector('.vf-main')?.appendChild(nav);
+    return nav;
   }
 
   function updateFinishButton() {
     const btn = $('vfFinish');
+    if (!btn || !vf.draft) return;
     const onReview = vf.draft.currentStep === 'review';
     btn.hidden = !onReview;
     const q = photoQueue.snapshot();
@@ -823,9 +1060,65 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function renderAll() {
+    ensureGuidedNav();
     renderSidebar();
     renderSectionBody();
     updateVisitMeta();
+    updateOnlineBadge();
+  }
+
+  function updateOnlineBadge() {
+    let el = document.getElementById('vfOnlineBadge');
+    if (!el) {
+      const header = document.querySelector('.vf-header-actions');
+      if (!header) return;
+      el = document.createElement('span');
+      el.id = 'vfOnlineBadge';
+      el.className = 'vf-online-badge';
+      header.insertBefore(el, header.firstChild);
+    }
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    const q = photoQueue.snapshot();
+    if (!online) {
+      el.dataset.state = 'offline';
+      el.textContent = 'Offline — photos safe locally';
+    } else if (q.inFlight > 0) {
+      el.dataset.state = 'syncing';
+      el.textContent = `Syncing ${q.inFlight}…`;
+    } else {
+      el.dataset.state = 'online';
+      el.textContent = 'Online';
+    }
+  }
+
+  async function restoreOfflinePhotos() {
+    if (!vf.draft) return;
+    try {
+      const pending = await listPendingPhotos({
+        repKey: getRepKey(),
+        date: vf.draft.date,
+        actualStore: vf.draft.actualStore,
+      });
+      if (!pending.length) return;
+      beginBusy(`Restoring ${pending.length} saved photo(s)…`, { force: true });
+      try {
+        for (const row of pending) {
+          if (photoQueue.items.some((i) => i.id === row.id)) continue;
+          const blob = row.file;
+          if (!blob) continue;
+          const file =
+            blob instanceof File
+              ? blob
+              : new File([blob], row.fileName || 'photo.jpg', { type: row.fileType || 'image/jpeg' });
+          photoQueue.enqueue(file, row.extra || {}, { id: row.id });
+        }
+        toast(`Restored ${pending.length} photo(s) from local backup`, 'ok', 3500);
+      } finally {
+        endBusy();
+      }
+    } catch {
+      /* IDB unavailable */
+    }
   }
 
   async function goToSection(sectionId, anchor = null) {
@@ -866,17 +1159,23 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       return;
     }
     try {
-      await autosave(() =>
-        apiCall('/shift-day/visit/finish', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-          }),
-        })
+      await withBusy(
+        () =>
+          autosave(() =>
+            apiCall('/shift-day/visit/finish', {
+              method: 'POST',
+              body: JSON.stringify({
+                repKey: getRepKey(),
+                date: vf.draft.date,
+                actualStore: vf.draft.actualStore,
+              }),
+            })
+          ),
+        'Sealing visit…',
+        { force: true }
       );
       toast('Visit sealed — ready for Stage 4', 'ok');
+      stopBurst();
       close();
     } catch (err) {
       if (err.code === 'SEAL_BLOCKED' && err.unmet) {
@@ -931,9 +1230,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function close() {
+    stopBurst();
     setVisitShellOpen(false);
     closeSidebarDrawer();
     vf.shift = null;
+  }
+
+  async function requestClose() {
+    const ok = await confirmLeaveVisit();
+    if (!ok) return false;
+    close();
+    return true;
   }
 
   function updateVisitMeta() {
@@ -959,40 +1266,60 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   async function open(shift) {
     vf.shift = shift;
-    await ensureStaticData();
-    vf.draft = await apiCall('/shift-day/visit/start', {
-      method: 'POST',
-      body: JSON.stringify({
-        repKey: getRepKey(),
-        weekStart: shift.weekStart,
-        shiftId: shift.id,
-      }),
-    });
-    // Fresh starts land on Before Photos; resumes keep current section
-    if (vf.draft.currentStep !== 'before_photos' && vf.draft.steps.includes('before_photos') && vf.draft.status === 'in_progress') {
-      const fresh =
-        !vf.draft.beforePhotos.length &&
-        !vf.draft.afterPhotos.length &&
-        !Object.keys(vf.draft.survey || {}).length &&
-        !(vf.draft.loadCheck && vf.draft.loadCheck.status);
-      if (fresh && vf.draft.currentStep !== 'before_photos') {
-        vf.draft = await apiCall('/shift-day/visit/step', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-            step: 'before_photos',
-          }),
-        });
+    stopBurst();
+    vf.photoEditMode = false;
+    await withBusy(async () => {
+      await ensureStaticData();
+      vf.draft = await apiCall('/shift-day/visit/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          repKey: getRepKey(),
+          weekStart: shift.weekStart,
+          shiftId: shift.id,
+        }),
+      });
+      // Fresh starts land on Before Photos; resumes keep current section
+      if (
+        vf.draft.currentStep !== 'before_photos' &&
+        vf.draft.steps.includes('before_photos') &&
+        vf.draft.status === 'in_progress'
+      ) {
+        const fresh =
+          !vf.draft.beforePhotos.length &&
+          !vf.draft.afterPhotos.length &&
+          !Object.keys(vf.draft.survey || {}).length &&
+          !(vf.draft.loadCheck && vf.draft.loadCheck.status);
+        if (fresh && vf.draft.currentStep !== 'before_photos') {
+          vf.draft = await apiCall('/shift-day/visit/step', {
+            method: 'POST',
+            body: JSON.stringify({
+              repKey: getRepKey(),
+              date: vf.draft.date,
+              actualStore: vf.draft.actualStore,
+              step: 'before_photos',
+            }),
+          });
+        }
       }
-    }
+    }, 'Opening visit…', { force: true });
     onDraftChanged?.(vf.draft);
     updateVisitMeta();
-    renderAll();
     setVisitShellOpen(true);
     closeSidebarDrawer();
     window.scrollTo(0, 0);
+    renderAll();
+    await restoreOfflinePhotos();
+    // Assist mode chrome when admin previews another rep
+    const assist = document.getElementById('vfAssistBanner');
+    if (assist) {
+      const q = new URLSearchParams(location.search);
+      if (q.get('preview') === '1' && q.get('rep')) {
+        assist.hidden = false;
+        assist.textContent = `Assisting ${q.get('rep')} — edits save to their local draft`;
+      } else {
+        assist.hidden = true;
+      }
+    }
   }
 
   async function abandon() {
@@ -1026,16 +1353,26 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   $('vfFinish')?.addEventListener('click', () => finish());
-  $('vfBackToSchedule')?.addEventListener('click', close);
-  $('vfClose')?.addEventListener('click', close);
+  $('vfBackToSchedule')?.addEventListener('click', () => requestClose());
+  $('vfClose')?.addEventListener('click', () => requestClose());
   $('vfSidebarToggle')?.addEventListener('click', toggleSidebarDrawer);
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+      updateOnlineBadge();
+      if (vf.draft) restoreOfflinePhotos();
+    });
+    window.addEventListener('offline', () => updateOnlineBadge());
+  }
 
   return {
     open,
     close,
+    requestClose,
     abandon,
     refreshDraft,
     goToSection,
     getDraft: () => vf.draft,
+    photoQueueSnapshot: () => photoQueue.snapshot(),
   };
 }

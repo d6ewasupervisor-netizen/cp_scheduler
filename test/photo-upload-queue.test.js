@@ -117,6 +117,33 @@ describe('photo-upload-queue', () => {
     assert.equal(n, 2);
   });
 
+  it('lifecycle hooks fire on enqueue, upload, and failure', async () => {
+    const events = [];
+    let resolveUpload;
+    const q = createPhotoUploadQueue({
+      maxConcurrent: 1,
+      uploadFn: () =>
+        new Promise((resolve, reject) => {
+          resolveUpload = { resolve, reject };
+        }),
+      onEnqueued: (item) => events.push(['enqueued', item.id]),
+      onUploaded: (item) => events.push(['uploaded', item.id]),
+      onFailed: (item) => events.push(['failed', item.id]),
+    });
+    const item = q.enqueue({ name: 'hook.jpg' }, { target: 'before' }, { id: 'stable-id-1' });
+    assert.equal(item.id, 'stable-id-1');
+    assert.equal(events[0][0], 'enqueued');
+    await delay(10);
+    resolveUpload.reject(new Error('boom'));
+    await delay(20);
+    assert.ok(events.some((e) => e[0] === 'failed'));
+    q.retry(item.id);
+    await delay(10);
+    resolveUpload.resolve({ ok: 1 });
+    await delay(20);
+    assert.ok(events.some((e) => e[0] === 'uploaded'));
+  });
+
   it('maxConcurrent limits parallel uploads', async () => {
     let concurrent = 0;
     let maxSeen = 0;

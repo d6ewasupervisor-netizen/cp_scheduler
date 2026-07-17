@@ -470,4 +470,27 @@ describe('scope enforcement — reps never see each other\'s drafts', () => {
     assert.ok(reps.has(REP_A));
     assert.ok(reps.has(REP_B));
   });
+
+  it('summarize includes step label and photo counts for live monitor', () => {
+    const date = '2026-07-18';
+    const S = 215;
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: S,
+      scheduledStore: 391,
+      writeOrder: true,
+      workLoad: false,
+      shiftId: 'sum-1',
+      weekStart: '2026-07-13',
+    });
+    store.recordBeforePhoto(REP_A, date, S, { photoPath: 'fake/before.jpg' });
+    const draft = store.getDraft(REP_A, date, S);
+    const sum = store.summarize(draft);
+    assert.equal(sum.beforePhotoCount, 1);
+    assert.equal(sum.afterPhotoCount, 0);
+    assert.equal(sum.currentStepLabel, 'Before Photos');
+    assert.ok(sum.updatedAt);
+    assert.equal(sum.surveyAnswerCount >= 0, true);
+  });
 });
