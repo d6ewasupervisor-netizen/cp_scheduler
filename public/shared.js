@@ -61,7 +61,7 @@ export function shiftRunStatus({ visitStatus = null, draftStatus = null } = {}) 
       key: 'in_progress',
       label: 'In progress',
       source: 'prod',
-      title: 'Shift in progress in SAS PROD',
+      title: 'Shift in progress in SAS PROD — you can still finish photos, times, and seal in the app',
     };
   }
   if (draftStatus === 'ready_for_prod') {

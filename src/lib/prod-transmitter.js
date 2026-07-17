@@ -513,10 +513,20 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     return abort(result, 'already_completed_in_prod');
   }
   const shiftEmployee = (shiftComplete?.employees || []).find((e) => String(e.shift_id) === String(shiftId));
-  if (shiftEmployee?.actual_start_time) {
-    return abort(result, 'already_started_in_prod');
-  }
   if (!shiftEmployee) return abort(result, 'shift_employee_not_found_on_visit');
+  // Cohesive path: rep may have opened/punched the shift in SAS PROD field app first.
+  // Still assemble completion writes (times, photos, survey, mileage fix, close).
+  // Do NOT abort — skip first-time-only start steps below when already punched.
+  const alreadyStartedInProd = Boolean(shiftEmployee.actual_start_time);
+  result.alreadyStartedInProd = alreadyStartedInProd;
+  if (alreadyStartedInProd) {
+    result.prodCohesion = {
+      mode: 'complete_prod_started',
+      message:
+        'Shift already has actual_start_time in PROD — assembling overlay to finish via app (skip visit-start; travel skipped if records exist)',
+      prodActualStartTime: shiftEmployee.actual_start_time,
+    };
+  }
 
   pushCall({
     method: 'GET',
@@ -524,6 +534,14 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     sourceRef: 'HAR entry #128 — pre-state (home_to_store/store_to_store/store_to_home/calculate_mileage flags)',
   });
   const shiftPreState = await sasGet(token, `/v2/field-app/shifts/${shiftId}/`);
+  const existingTravelRecords = Array.isArray(shiftPreState?.travel_records)
+    ? shiftPreState.travel_records
+    : [];
+  const hasExistingTravel = existingTravelRecords.length > 0;
+  result.prodTravelPreState = {
+    travelRecordCount: existingTravelRecords.length,
+    hasExistingTravel,
+  };
 
   pushCall({
     method: 'GET',
@@ -673,24 +691,34 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
 
   // 0. Start schedule — James FM53 HAR: PATCH visit → "Schedule started successfully"
   //    (before travel / T&E). Empty JSON body with Content-Type application/json.
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/`,
-    payload: {},
-    sourceRef:
-      'James FM53 HAR 2026-07-15 — PATCH /api/v1/field-app/visits/{visitId}/ → "Schedule started successfully". First-time open; body {}.',
-    reconstructed: true,
-  });
+  //    Skip when the rep already started the visit in PROD (already has actual_start_time).
+  if (!alreadyStartedInProd) {
+    pushCall({
+      method: 'PATCH',
+      url: `${BASE}/api/v1/field-app/visits/${visitId}/`,
+      payload: {},
+      sourceRef:
+        'James FM53 HAR 2026-07-15 — PATCH /api/v1/field-app/visits/{visitId}/ → "Schedule started successfully". First-time open; body {}.',
+      reconstructed: true,
+    });
+  } else {
+    result.skippedVisitStart = true;
+  }
 
   // 1. Travel H→S — POST body MUST be {} with Content-Type JSON.
   //    System may invent ~32 mi; corrected later via shift PATCH travel CHANGE when leg is H→S.
-  pushCall({
-    method: 'POST',
-    url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
-    payload: {},
-    sourceRef:
-      'James FM53 + HAR #132 + automator postTravelToStore — body MUST be {} (JSON). Skip at execute if shift already has travel_records. System distance often wrong; matrix CHANGE corrects after.',
-  });
+  //    Skip when PROD already has travel_records (rep started/traveled in field app first).
+  if (!hasExistingTravel) {
+    pushCall({
+      method: 'POST',
+      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
+      payload: {},
+      sourceRef:
+        'James FM53 + HAR #132 + automator postTravelToStore — body MUST be {} (JSON). Skip at execute if shift already has travel_records. System distance often wrong; matrix CHANGE corrects after.',
+    });
+  } else {
+    result.skippedToStore = true;
+  }
 
   // 2. Full punch times EARLY with time_change_reason + comment (required for T&E edit).
   //    travel_records: [] on pure time edit (prod completion supervisor patches).
@@ -949,21 +977,30 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   /* ---- Last-stop travel home + time reaffirm + mileage CHANGE + first-time complete ---- */
 
   // Store→home when last stop OR sealed leg is S→H (James FM53 isLastStop + 3.4 mi home).
+  // If PROD already has an S→H travel row, skip (rep may have ended travel in field app).
   const isLastStop = sealedRecord.isLastStopOfDay === true;
+  const hasStoreToHomeTravel = existingTravelRecords.some(
+    (tr) =>
+      String(tr?.start_location_type || '').toUpperCase() === 'S' &&
+      String(tr?.end_location_type || '').toUpperCase() === 'H'
+  );
   const needsToHome =
-    shiftFlags.store_to_home !== false && (isLastStop || isStoreToHomeLeg);
+    shiftFlags.store_to_home !== false &&
+    (isLastStop || isStoreToHomeLeg) &&
+    !hasStoreToHomeTravel;
   if (needsToHome) {
     pushCall({
       method: 'POST',
       url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_home/`,
       payload: {},
       sourceRef:
-        'James FM53 HAR — POST /api/v2/field-app/travel/{shiftId}/to_home/ body {}. System may invent ~32mi S-H; corrected next via travel CHANGE.',
+        'James FM53 HAR — POST /api/v2/field-app/travel/{shiftId}/to_home/ body {}. System may invent ~32mi S-H; corrected next via travel CHANGE. Skipped when S→H travel already on shift.',
       reconstructed: true,
     });
     result.toHomeAssembled = true;
   } else {
     result.toHomeAssembled = false;
+    if (hasStoreToHomeTravel) result.skippedToHome = true;
   }
 
   // Final shift PATCH: reaffirm times (time_change_reason) AND/OR mileage CHANGE.

@@ -310,6 +310,31 @@ describe('pre-flight failures send zero calls', () => {
     assert.equal(sasFetch.sent.length, 0);
   });
 
+  it('already started in prod does NOT block mode=start (cohesive complete path)', async () => {
+    const sasFetch = mockSasFetchFactory();
+    const result = await executeLiveTransmit({
+      dryRunId: DRY_RUN_ID,
+      visitFile: VISIT_FILE,
+      confirmStore: 215,
+      mode: 'start',
+      inject: {
+        ...baseInject(),
+        sasFetch,
+        sasGet: async () => ({
+          current_status: 'in-progress',
+          employees: [{ shift_id: 44390825, actual_start_time: '06:01:00' }],
+        }),
+      },
+    });
+    assert.notEqual(result.abortReason, 'preflight_failed');
+    assert.ok(
+      !(result.preflightFailures || []).some((f) => f.code === 'already_started_in_prod'),
+      'must allow finish when PROD already punched'
+    );
+    assert.equal(result.status, 'complete', JSON.stringify(result));
+    assert.ok(result.callsSent > 0);
+  });
+
   it('missing photo file aborts before any write', async () => {
     const sasFetch = mockSasFetchFactory();
     const result = await executeLiveTransmit({

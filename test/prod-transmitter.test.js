@@ -226,17 +226,50 @@ describe('transmitVisit — guards (Part C)', () => {
     assert.equal(result.abortReason, 'already_completed_in_prod');
   });
 
-  it('aborts when the shift already has an actual_start_time in prod', async () => {
+  it('assembles completion when the shift already has actual_start_time in prod (cohesive path)', async () => {
     const opts = baseOpts();
     opts.sasGet = makeFixtureSasGet({
       'field-app/visits/27000510/shift-complete/': async () => ({
         current_status: 'in-progress',
         employees: [{ id: 354456, shift_id: 44390825, actual_start_time: '06:01:00' }],
       }),
+      'v2/field-app/shifts/44390825/': async () => ({
+        home_to_store: true,
+        store_to_store: true,
+        store_to_home: true,
+        calculate_mileage: true,
+        travel_records: [
+          {
+            start_location_type: 'H',
+            end_location_type: 'S',
+            distance: '32.20',
+          },
+        ],
+      }),
     });
-    const result = await transmitVisit({ sealedRecord: makeSealedRecord(), matchedVisit: makeMatchedVisit(), opts });
-    assert.equal(result.status, 'aborted');
-    assert.equal(result.abortReason, 'already_started_in_prod');
+    const sealed = makeSealedRecord({
+      beforePhotos: [tmpPhoto('before.jpg')],
+      afterPhotos: [tmpPhoto('after.jpg')],
+    });
+    const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts });
+    assert.equal(result.status, 'ok', result.abortReason);
+    assert.equal(result.alreadyStartedInProd, true);
+    assert.equal(result.skippedVisitStart, true);
+    assert.equal(result.skippedToStore, true);
+    // Must not re-send first-time start schedule when PROD already punched
+    assert.ok(
+      !result.calls.some(
+        (c) => c.method === 'PATCH' && /\/field-app\/visits\/27000510\/?$/.test(c.url) && Object.keys(c.payload || {}).length === 0
+      ),
+      'should skip empty visit-start PATCH'
+    );
+    assert.ok(
+      !result.calls.some((c) => c.method === 'POST' && /\/travel\/44390825\/to_store\/?$/.test(c.url)),
+      'should skip to_store when travel_records exist'
+    );
+    // Completion path still includes T&E times + final close
+    assert.ok(result.calls.some((c) => c.method === 'PATCH' && /\/field-app\/shifts\/44390825\/?$/.test(c.url)));
+    assert.ok(result.calls.some((c) => c.method === 'PUT' && /shift-complete/.test(c.url)));
   });
 
   it('aborts when isAlreadyTransmitted() reports true (local bookkeeping)', async () => {

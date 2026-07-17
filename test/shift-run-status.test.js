@@ -28,6 +28,7 @@ describe('shiftRunStatus', () => {
     const s = shiftRunStatus({ visitStatus: 'in-progress', draftStatus: 'in_progress' });
     assert.equal(s.key, 'in_progress');
     assert.equal(s.source, 'prod');
+    assert.match(s.title, /finish|app/i);
   });
 
   it('shows Already ran when sealed but PROD still open', () => {

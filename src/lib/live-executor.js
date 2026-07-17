@@ -257,8 +257,11 @@ function imagePayloadsPresent(calls) {
 }
 
 /**
- * Read-only pre-flight. On resume, skip the "not started" check (shift may
- * already have actual_start_time from the partial run).
+ * Read-only pre-flight.
+ * Cohesive PROD+app path: if the rep already started the shift in SAS PROD
+ * (actual_start_time set), allow mode=start so the app can still finish the
+ * visit (photos, survey, times, mileage, close). Resume still skips the same
+ * check for partial *app* transmits.
  * testMode: also skip not-completed / not-started (round-trip against a
  * completed golden visit); require validated golden export.
  */
@@ -342,8 +345,10 @@ async function runPreflight({
     failures.push({ code: 'session_invalid', message: err.message });
   }
 
-  // Prod idempotency (read-only). Resume skips "already started".
-  // testMode bypasses not-completed + not-started so writes can re-land on a golden completed visit.
+  // Prod idempotency (read-only).
+  // Completed visits are blocked (unless testMode). Already-started PROD shifts
+  // are allowed so reps who punched in SAS can still complete via the app.
+  // testMode also bypasses not-completed so writes can re-land on a golden visit.
   if (sessionToken && sasGet && assembled?.visitId) {
     try {
       const shiftComplete = await sasGet(sessionToken, `/field-app/visits/${assembled.visitId}/shift-complete/`);
@@ -351,16 +356,7 @@ async function runPreflight({
       if (status === 'completed' && !testMode) {
         failures.push({ code: 'already_completed_in_prod', message: 'Visit already completed in prod' });
       }
-      if (mode === 'start' && !testMode) {
-        const employees = shiftComplete?.employees || [];
-        const started = employees.some((e) => e.actual_start_time);
-        if (started) {
-          failures.push({
-            code: 'already_started_in_prod',
-            message: 'Shift already has actual_start_time in prod — refuse fresh start (use resume if partial)',
-          });
-        }
-      }
+      // Note: do not fail on employees[].actual_start_time — cohesive complete path.
     } catch (err) {
       failures.push({ code: 'preflight_read_failed', message: err.message });
     }
@@ -698,15 +694,34 @@ async function executeLiveTransmit({
       }
     }
 
-    // Automator: if travel_records already on shift, skip to_store/to_home (completed visits 500 the preview)
-    if (isTravelCall(call) && testMode) {
+    // If matching travel already on shift, skip that leg (PROD-started cohesive path + testMode).
+    // to_store: any inbound-to-store record (end S) or any travel when only to_store is being sent.
+    // to_home: only when an S→H row already exists (do not block last-stop home after H→S only).
+    if (isTravelCall(call)) {
       try {
         const shiftPath = (call.url || '').replace(/\/travel\/(\d+)\/(to_store|to_home)\/?$/, '/shifts/$1/');
         const pref = await sasFetch(shiftPath, {
           method: 'GET',
           headers: buildSessionHeaders(session, { visitId: assembled.visitId, write: false }),
         });
-        if (pref.ok && Array.isArray(pref.body?.travel_records) && pref.body.travel_records.length) {
+        const records = Array.isArray(pref.body?.travel_records) ? pref.body.travel_records : [];
+        let shouldSkipTravel = false;
+        let skipReason = 'travel already on shift';
+        if (pref.ok && records.length) {
+          if (isTravelToHomeCall(call)) {
+            shouldSkipTravel = records.some(
+              (tr) =>
+                String(tr?.start_location_type || '').toUpperCase() === 'S' &&
+                String(tr?.end_location_type || '').toUpperCase() === 'H'
+            );
+            skipReason = 'S→H travel already on shift — skip to_home';
+          } else if (isTravelToStoreCall(call)) {
+            // Any existing travel usually means to_store already ran (or multi-stop day).
+            shouldSkipTravel = true;
+            skipReason = 'travel already on shift — skip to_store';
+          }
+        }
+        if (shouldSkipTravel) {
           softSkipped.push(call.seq);
           stepResults[call.seq] = { softSkipped: true, reason: 'travel_records_already_present' };
           result.lastSuccessfulSeq = call.seq;
@@ -717,7 +732,7 @@ async function executeLiveTransmit({
             status: 200,
             body: { softSkipped: true, reason: 'travel_records_already_present' },
             softSkipped: true,
-            skipReason: 'travel already on shift — automator skips to_store/to_home',
+            skipReason,
             timestamp: now(),
             ok: true,
           });

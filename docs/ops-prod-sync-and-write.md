@@ -143,6 +143,18 @@ If SAS is down, the app shows a warning and falls back to the last saved local w
 6. Two-tap store confirm → Transmit.  
 7. Disarm: LIVE off, clear allowlist.
 
+### Cohesive path — already started in SAS PROD
+
+Reps may open/punch the shift in the SAS field app first, then finish photos/times/mileage in Central Pet.
+
+| PROD state | Assembler / live behavior |
+|------------|---------------------------|
+| **Not started** | Full sequence: visit-start → travel → T&E → photos → survey → complete |
+| **In progress** (`actual_start_time` set) | **Allowed.** Skip visit-start; skip `to_store` if travel_records exist; still write times, mileage CHANGE, photos, survey, PUT complete |
+| **Completed** | Blocked (use testMode + recomplete for golden round-trips only) |
+
+Shift Day shows **Continue in app (PROD started)** when SAS is already in progress.
+
 Contract: `docs/sas-payload-contract.md` · checklist: `docs/live-first-run.md`.
 
 ## Field test playbook (today)

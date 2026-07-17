@@ -243,7 +243,9 @@ function openDetail(id) {
     startBtn.disabled = false;
     if (abandonRow) abandonRow.hidden = false;
   } else {
-    startBtn.textContent = run.key === 'in_progress' ? 'Start / resume visit' : 'Start visit';
+    // PROD in-progress (rep punched in SAS) still allows app completion.
+    startBtn.textContent =
+      run.key === 'in_progress' ? 'Continue in app (PROD started)' : 'Start visit';
     startBtn.disabled = false;
     if (abandonRow) abandonRow.hidden = true;
   }
@@ -573,8 +575,11 @@ async function init() {
     if (!modal) return;
     const today = todayIsoLocal();
     const dayLabel = formatShiftDay(s.date);
-    $('vfStartConfirmBody').textContent =
-      'This starts a local visit draft in the app only (not SAS / PROD). Confirm the day and store before continuing.';
+    const runForConfirm = runStatusForShift(s);
+    const prodInProgress = runForConfirm.key === 'in_progress' && runForConfirm.source === 'prod';
+    $('vfStartConfirmBody').textContent = prodInProgress
+      ? 'This visit is already started in SAS PROD. Opening it here lets you finish photos, times, mileage, and seal so PROD and the app stay in sync. Confirm the day and store before continuing.'
+      : 'This starts a local visit draft in the app only (not SAS / PROD). Confirm the day and store before continuing.';
     $('vfStartConfirmList').innerHTML = [
       `<li><strong>Day:</strong> ${dayLabel}</li>`,
       `<li><strong>Store:</strong> FM${String(s.actualStore).padStart(3, '0')}${
@@ -582,6 +587,9 @@ async function init() {
       }</li>`,
       s.scheduledStore != null && Number(s.scheduledStore) !== Number(s.actualStore)
         ? `<li><strong>Scheduled placeholder:</strong> ${s.scheduledStore} (decoded to ${s.actualStore})</li>`
+        : '',
+      prodInProgress
+        ? `<li><strong>PROD:</strong> Already in progress — app will complete remaining work and write back when sealed/transmitted</li>`
         : '',
       `<li><strong>Work:</strong> ${[s.workLoad && 'Work load', s.writeOrder && 'Write order'].filter(Boolean).join(' + ') || 'Service'}</li>`,
     ]
