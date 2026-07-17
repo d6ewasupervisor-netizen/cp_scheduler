@@ -5,7 +5,7 @@
  */
 
 const DEBOUNCE_MS = 280;
-const ASSET = '/assets/buffering-cat.png';
+const ASSET = '/assets/bufferingcat.gif';
 
 let depth = 0;
 let showTimer = null;
