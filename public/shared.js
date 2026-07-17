@@ -269,6 +269,123 @@ export function orderTimingLine(slot, slots) {
   return taskLine(slot);
 }
 
+/** Mon → Monday (surface pills / variance visibility). */
+const FULL_DAY_NAMES = {
+  Sun: 'Sunday',
+  Mon: 'Monday',
+  Tue: 'Tuesday',
+  Wed: 'Wednesday',
+  Thu: 'Thursday',
+  Fri: 'Friday',
+  Sat: 'Saturday',
+};
+
+export function fullDayName(token) {
+  if (!token) return null;
+  const raw = String(token).trim();
+  if (!raw) return null;
+  const short =
+    FULL_DAY_NAMES[raw] ||
+    FULL_DAY_NAMES[raw.slice(0, 1).toUpperCase() + raw.slice(1, 3).toLowerCase()] ||
+    null;
+  if (short) return short;
+  // Already a full name?
+  const hit = Object.values(FULL_DAY_NAMES).find((d) => d.toLowerCase() === raw.toLowerCase());
+  if (hit) return hit;
+  // Relative tokens
+  const rel = raw.toLowerCase();
+  if (rel === 'today' || rel === 'yesterday' || rel === 'tomorrow') {
+    return rel.charAt(0).toUpperCase() + rel.slice(1);
+  }
+  return raw;
+}
+
+/**
+ * Resolve surface-level scope tags for a shift pill.
+ * Order: Delivers {day} → Work Load → Write Order → Picks {day}
+ * Fills gaps from masterRoute.slots when note fields are missing.
+ *
+ * @param {object} shift
+ * @returns {{ workLoad: boolean, writeOrder: boolean, deliveryDay: string|null, picksDay: string|null, tags: Array<{key:string,label:string,className:string}> }}
+ */
+export function resolveShiftScopeTags(shift) {
+  if (!shift) {
+    return { workLoad: false, writeOrder: false, deliveryDay: null, picksDay: null, tags: [] };
+  }
+  const workLoad = !!shift.workLoad;
+  const writeOrder = !!shift.writeOrder;
+  const slots = shift.masterRoute?.slots || [];
+  const day = shift.dayOfWeek || null;
+  const slot =
+    (day && slots.find((x) => x.anchorServiceDay === day)) || slots[0] || null;
+
+  let deliveryDay = shift.deliveryDay || null;
+  let picksDay = shift.picksDay || null;
+
+  if (!deliveryDay && shift.delivery) {
+    const text = String(shift.delivery);
+    const paren = text.match(/\(([a-z]+)\)/i);
+    const candidates = [];
+    if (paren) candidates.push(paren[1]);
+    for (const part of text.split(/[^a-zA-Z]+/)) {
+      if (part) candidates.push(part);
+    }
+    for (const c of candidates) {
+      for (const [abbr, full] of Object.entries(FULL_DAY_NAMES)) {
+        if (full.toLowerCase() === c.toLowerCase() || abbr.toLowerCase() === c.toLowerCase()) {
+          deliveryDay = abbr;
+          break;
+        }
+      }
+      if (deliveryDay) break;
+    }
+  }
+
+  if (slot) {
+    const idx = slot.visitIndex ?? 0;
+    const prev = idx > 0 ? slots.find((x) => (x.visitIndex ?? 0) === idx - 1) || null : null;
+    if (!picksDay && writeOrder && slot.pickDay) picksDay = slot.pickDay;
+    if (!deliveryDay && workLoad) {
+      deliveryDay = prev?.deliveryDay || slot.deliveryDay || null;
+    }
+  }
+
+  const tags = [];
+  if (workLoad) {
+    const dayLabel = fullDayName(deliveryDay);
+    tags.push({
+      key: 'delivers',
+      label: dayLabel ? `Delivers ${dayLabel}` : 'Delivers TBD',
+      className: 'delivery',
+    });
+    tags.push({ key: 'work_load', label: 'Work Load', className: 'load' });
+  }
+  if (writeOrder) {
+    tags.push({ key: 'write_order', label: 'Write Order', className: 'order' });
+    const pickLabel = fullDayName(picksDay);
+    tags.push({
+      key: 'picks',
+      label: pickLabel ? `Picks ${pickLabel}` : 'Picks TBD',
+      className: 'picks',
+    });
+  }
+
+  return { workLoad, writeOrder, deliveryDay, picksDay, tags };
+}
+
+/**
+ * HTML for scope badges on shift pills (Shift Day + Dashboard).
+ * @param {object} shift
+ * @param {{ className?: string }} [opts] - badge class base, default 'sd-badge'
+ */
+export function shiftScopeBadgesHtml(shift, opts = {}) {
+  const base = opts.className || 'sd-badge';
+  const { tags } = resolveShiftScopeTags(shift);
+  return tags
+    .map((t) => `<span class="${base} ${t.className}">${t.label}</span>`)
+    .join('');
+}
+
 /* ---------- Dates ---------- */
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

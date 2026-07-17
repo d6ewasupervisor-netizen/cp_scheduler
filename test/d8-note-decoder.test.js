@@ -20,6 +20,7 @@ describe('decodeD8Note', () => {
     assert.equal(d.workLoad, true);
     assert.equal(d.picksDay, 'Tue');
     assert.match(d.delivery, /YESTERDAY/i);
+    assert.equal(d.deliveryDay, 'Mon');
   });
 
   it('handles DO NOT WRITE ORDER + spacing variance', () => {

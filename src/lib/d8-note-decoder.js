@@ -50,6 +50,27 @@ function normalizeDayToken(raw) {
 }
 
 /**
+ * Pull a weekday from free-text delivery notes like "YESTERDAY(MONDAY)" or "MONDAY".
+ * @param {string|null|undefined} text
+ * @returns {string|null} Mon..Sun
+ */
+function deliveryDayFromText(text) {
+  if (!text) return null;
+  const raw = String(text).trim();
+  if (!raw) return null;
+  const paren = raw.match(/\(([a-z]+)\)/i);
+  if (paren) {
+    const fromParen = normalizeDayToken(paren[1]);
+    if (fromParen) return fromParen;
+  }
+  for (const part of raw.split(/[^a-zA-Z]+/)) {
+    const day = normalizeDayToken(part);
+    if (day) return day;
+  }
+  return null;
+}
+
+/**
  * @param {string|null|undefined} notes
  * @param {number|string|null|undefined} scheduledStore - field-data / store-field store.number
  * @returns {{
@@ -59,6 +80,7 @@ function normalizeDayToken(raw) {
  *   writeOrder: boolean|null,
  *   workLoad: boolean,
  *   delivery: string|null,
+ *   deliveryDay: string|null,
  *   picksDay: string|null,
  *   raw: string
  * }}
@@ -92,6 +114,7 @@ function decodeD8Note(notes, scheduledStore = null) {
 
   const deliveryMatch = raw.match(DELIVERED);
   const delivery = deliveryMatch ? deliveryMatch[1].trim().replace(/\s+/g, ' ') : null;
+  const deliveryDay = deliveryDayFromText(delivery);
 
   return {
     actualStore: Number.isFinite(actualStore) ? actualStore : null,
@@ -103,6 +126,7 @@ function decodeD8Note(notes, scheduledStore = null) {
     writeOrder,
     workLoad: WORK_LOAD.test(raw),
     delivery,
+    deliveryDay,
     picksDay,
     raw,
   };
@@ -110,5 +134,7 @@ function decodeD8Note(notes, scheduledStore = null) {
 
 module.exports = {
   decodeD8Note,
+  normalizeDayToken,
+  deliveryDayFromText,
   STORE_MARKER,
 };

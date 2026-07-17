@@ -55,6 +55,7 @@ const {
   getDeliveryStatus,
   isPhotoDeliveryEnabled,
 } = require('../lib/photo-delivery');
+const { deliveryDayFromText } = require('../lib/d8-note-decoder');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
@@ -346,6 +347,47 @@ function masterRouteContextForStore(storeNum) {
   };
 }
 
+/**
+ * Fill picks/delivery days for surface pills from note fields + master route.
+ * Order expected on UI: Delivers {day} → Work Load → Write Order → Picks {day}
+ */
+function enrichShiftScopeFields(shift, masterRouteCtx) {
+  const slots = masterRouteCtx?.slots || [];
+  const day = shift.dayOfWeek || null;
+  const slot =
+    (day && slots.find((x) => x.anchorServiceDay === day)) ||
+    slots[0] ||
+    null;
+
+  let picksDay = shift.picksDay || null;
+  let deliveryDay = shift.deliveryDay || null;
+
+  if (!deliveryDay && shift.delivery) {
+    deliveryDay = deliveryDayFromText(shift.delivery);
+  }
+
+  if (slot) {
+    const idx = slot.visitIndex ?? 0;
+    const prev =
+      idx > 0 ? slots.find((x) => (x.visitIndex ?? 0) === idx - 1) || null : null;
+    if (!picksDay && shift.writeOrder && slot.pickDay) picksDay = slot.pickDay;
+    // Work-load delivery: prior visit's delivery day (when the load arrives)
+    if (!deliveryDay && shift.workLoad) {
+      deliveryDay = prev?.deliveryDay || slot.deliveryDay || null;
+    }
+    // Write-order without work-load still needs pick; delivery is for load arrival
+    if (!picksDay && slot.pickDay && (shift.writeOrder || /write\s+order/i.test(slot.action || ''))) {
+      picksDay = slot.pickDay;
+    }
+  }
+
+  return {
+    ...shift,
+    picksDay: picksDay || null,
+    deliveryDay: deliveryDay || null,
+  };
+}
+
 router.get('/shift-day/reps', (_req, res) => {
   res.json(loadD8ShiftReps());
 });
@@ -387,13 +429,14 @@ router.get('/shift-day/schedule', shiftDayScope, (req, res) => {
       ctx.slots.find((x) => x.anchorServiceDay === day) ||
       ctx.slots[0] ||
       null;
-    return {
+    const withDay = {
       ...s,
       dayOfWeek: day,
       store: addr,
       allowedDays: slot?.allowedDays || WORK_DAYS_FALLBACK(),
       masterRoute: ctx,
     };
+    return enrichShiftScopeFields(withDay, ctx);
   });
 
   const stored = getWeekSchedule(weekStart);

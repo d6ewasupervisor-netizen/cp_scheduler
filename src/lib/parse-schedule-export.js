@@ -158,6 +158,7 @@ async function parseScheduleExport(input, opts = {}) {
       workLoad: decoded.workLoad,
       picksDay: decoded.picksDay,
       delivery: decoded.delivery,
+      deliveryDay: decoded.deliveryDay,
       shiftStart: cStart ? cellText(row.getCell(cStart).value) || null : null,
       shiftEnd: cEnd ? cellText(row.getCell(cEnd).value) || null : null,
       rawNote,

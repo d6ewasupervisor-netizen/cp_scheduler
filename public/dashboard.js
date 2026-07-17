@@ -9,6 +9,7 @@ import {
   toast,
   shiftRunStatus,
   shiftRunStatusBadgeHtml,
+  shiftScopeBadgesHtml,
 } from '/shared.js';
 import { initAppShell } from '/ux/app-shell.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
@@ -71,9 +72,8 @@ function badgeHtml(shift, draft) {
     draftStatus: draft?.status || null,
   });
   const bits = [shiftRunStatusBadgeHtml(run, { className: 'dash-badge' })];
-  if (shift.workLoad) bits.push('<span class="dash-badge load">Load</span>');
-  if (shift.writeOrder) bits.push('<span class="dash-badge order">Order</span>');
-  if (shift.picksDay) bits.push(`<span class="dash-badge">Picks ${shift.picksDay}</span>`);
+  // Same surface scope as Shift Day pills: Delivers → Work Load → Write Order → Picks
+  bits.push(shiftScopeBadgesHtml(shift, { className: 'dash-badge' }));
   return bits.length ? `<div class="dash-badges">${bits.join('')}</div>` : '';
 }
 

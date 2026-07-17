@@ -1293,9 +1293,17 @@ body.mode-admin .day-col.eligible .day-head::after {
   color: var(--accent);
 }
 
-.sd-badge.load { background: rgba(78, 161, 232, 0.2); }
-.sd-badge.order { background: rgba(47, 111, 176, 0.35); }
-.sd-badge.picks { background: var(--surface-3); color: var(--muted); }
+.sd-badge.load,
+.dash-badge.load { background: rgba(78, 161, 232, 0.2); color: var(--accent); }
+.sd-badge.order,
+.dash-badge.order { background: rgba(47, 111, 176, 0.35); color: #cfe6ff; }
+.sd-badge.picks,
+.dash-badge.picks { background: var(--surface-3); color: var(--muted); }
+.sd-badge.delivery,
+.dash-badge.delivery {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f0c674;
+}
 
 .match-dot {
   display: inline-flex;

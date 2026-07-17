@@ -12,6 +12,9 @@ import {
   stopSelectBubble,
   shiftRunStatus,
   shiftRunStatusBadgeHtml,
+  shiftScopeBadgesHtml,
+  resolveShiftScopeTags,
+  fullDayName,
 } from '/shared.js';
 import { createVisitFlowController } from '/visit-flow-ui.js';
 import { initAppShell } from '/ux/app-shell.js';
@@ -138,9 +141,8 @@ function badgeHtml(s) {
   const bits = [];
   const run = runStatusForShift(s);
   bits.push(shiftRunStatusBadgeHtml(run, { className: 'sd-badge' }));
-  if (s.workLoad) bits.push('<span class="sd-badge load">LOAD</span>');
-  if (s.writeOrder) bits.push('<span class="sd-badge order">ORDER</span>');
-  if (s.picksDay) bits.push(`<span class="sd-badge picks">PICKS ${s.picksDay}</span>`);
+  // Surface scope: Delivers {day} → Work Load → Write Order → Picks {day}
+  bits.push(shiftScopeBadgesHtml(s, { className: 'sd-badge' }));
   return bits.join('');
 }
 
@@ -203,12 +205,18 @@ function openDetail(id) {
     matchEl.textContent = `${runLine}${s.visitStatus ? ` · PROD ${s.visitStatus}` : ' · Visit match not loaded'}`;
   }
 
+  const scope = resolveShiftScopeTags(s);
   $('sdDetailMeta').innerHTML = [
     ['Run status', run.label],
     ['PROD status', m?.visitStatus || s.visitStatus || '—'],
-    ['Type', [s.workLoad && 'Work load', s.writeOrder && 'Write order'].filter(Boolean).join(' + ') || '—'],
-    ['Delivery', s.delivery || '—'],
-    ['Picks', s.picksDay || '—'],
+    [
+      'Scope',
+      scope.tags.map((t) => t.label).join(' · ') ||
+        [s.workLoad && 'Work Load', s.writeOrder && 'Write Order'].filter(Boolean).join(' + ') ||
+        '—',
+    ],
+    ['Delivers', fullDayName(scope.deliveryDay) || s.delivery || '—'],
+    ['Picks', fullDayName(scope.picksDay) || '—'],
     ['Scheduled (placeholder)', s.scheduledStore ?? '—'],
     ['Shift', `${s.shiftStart || '—'} – ${s.shiftEnd || '—'}`],
   ]
@@ -591,7 +599,7 @@ async function init() {
       prodInProgress
         ? `<li><strong>PROD:</strong> Already in progress — app will complete remaining work and write back when sealed/transmitted</li>`
         : '',
-      `<li><strong>Work:</strong> ${[s.workLoad && 'Work load', s.writeOrder && 'Write order'].filter(Boolean).join(' + ') || 'Service'}</li>`,
+      `<li><strong>Scope:</strong> ${resolveShiftScopeTags(s).tags.map((t) => t.label).join(' · ') || 'Service'}</li>`,
     ]
       .filter(Boolean)
       .join('');
