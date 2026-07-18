@@ -847,6 +847,35 @@ async function executeLiveTransmit({
       if (shiftId) sendBody = { ...sendBody, shift_id: shiftId };
     }
 
+    // Shift PATCH is read-modify-write: SAS wants the full shift object echoed back
+    // with our overrides. A minimal subset 400s (prod completio7n.har shift PATCH
+    // carries ~35 fields). GET the current shift, merge our changes onto it.
+    if (isWrite && isShiftPatchCall(call) && sendBody && typeof sendBody === 'object' && !Array.isArray(sendBody)) {
+      try {
+        const shiftGet = await sasFetch(call.url, {
+          method: 'GET',
+          headers: buildSessionHeaders(session, { visitId: assembled.visitId, write: false }),
+        });
+        if (shiftGet.ok && shiftGet.body && typeof shiftGet.body === 'object') {
+          const full = shiftGet.body;
+          const overrides = { ...sendBody };
+          const existing = Array.isArray(full.travel_records) ? full.travel_records : [];
+          const ours = Array.isArray(overrides.travel_records) ? overrides.travel_records : [];
+          if (ours.length) {
+            // Prepend our CHANGE rows; keep the server's system LOG rows.
+            const logs = existing.filter((t) => String(t && t.record_type).toUpperCase() !== 'CHANGE');
+            overrides.travel_records = [...ours, ...logs];
+          } else {
+            // Time-only edit: keep whatever travel the server already has.
+            delete overrides.travel_records;
+          }
+          sendBody = { ...full, ...overrides };
+        }
+      } catch {
+        /* fall through with the minimal body if the GET fails */
+      }
+    }
+
     const headers = buildSessionHeaders(session, {
       visitId: assembled.visitId,
       write: isWrite,
