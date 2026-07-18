@@ -1177,16 +1177,23 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   pushCall({
     method: 'PUT',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: shiftCompletePingPayload(shiftId),
+    payload: {
+      allowed_overlap: false,
+      allowed_missing_ques: false,
+      allowed_truncation: false,
+      team_lead_feedback: null,
+      end_location: [-1, -1],
+      validate_geo: true,
+    },
     sourceRef:
-      'James FM53 + HAR #435 first-time complete — PUT …/shift-complete/ → "Visit completed successfully." Requires { shift_id }. Distinct from testMode POST …/recomplete/.',
+      'prod completio7n.har — PUT …/shift-complete/ first-time complete: { allowed_overlap, allowed_missing_ques, allowed_truncation, team_lead_feedback, end_location:[-1,-1], validate_geo }. A { shift_id }-only body 406s.',
   });
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: shiftCompletePingPayload(shiftId),
-    sourceRef: 'HAR entry #439 / James FM53 final step-advance with { shift_id }',
+    payload: { team_lead_feedback: null },
+    sourceRef: 'prod completio7n.har — final PATCH …/shift-complete/ { team_lead_feedback: null }.',
   });
 
   // testMode / already-completed re-close payload (prod completion.har recomplete).

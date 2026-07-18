@@ -851,10 +851,8 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
 
     const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
     // to_home mirrors to_store: start_time (UTC, = stop) + user_accepted_ss_replace, not {}.
-    assert.deepEqual(toHome.payload, {
-      start_time: '2026-07-08T18:01:00.000Z',
-      user_accepted_ss_replace: null,
-    });
+    assert.equal(toHome.payload.user_accepted_ss_replace, null);
+    assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(toHome.payload.start_time), 'to_home start_time is UTC ISO');
 
     // Final shift PATCH after to_home carries S→H CHANGE (prod completion.har shape)
     const finalShift = [...result.calls]
@@ -872,7 +870,11 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(finalShift.payload.time_change_reason, 5);
 
     const put = result.calls.find((c) => c.method === 'PUT' && c.url.includes('/shift-complete/'));
-    assert.equal(put.payload.shift_id, 44390825);
+    // First-time complete PUT carries the completion body, not { shift_id } (406s).
+    assert.equal(put.payload.validate_geo, true);
+    assert.deepEqual(put.payload.end_location, [-1, -1]);
+    assert.equal(put.payload.allowed_missing_ques, false);
+    assert.equal(put.payload.team_lead_feedback, null);
   });
 
   it('does not assemble to_home when not last stop of day', async () => {

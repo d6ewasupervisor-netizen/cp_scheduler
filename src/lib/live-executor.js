@@ -828,7 +828,12 @@ async function executeLiveTransmit({
       sendBody &&
       typeof sendBody === 'object' &&
       !Array.isArray(sendBody) &&
-      sendBody.shift_id == null
+      sendBody.shift_id == null &&
+      // Don't inject shift_id into the full first-time-complete bodies (PUT with
+      // validate_geo, final PATCH { team_lead_feedback }) — those must match the HAR
+      // exactly; only the bare step-advance pings want { shift_id }.
+      sendBody.validate_geo === undefined &&
+      !('team_lead_feedback' in sendBody)
     ) {
       // Resolve shift id from assembled start-shift URL or matched visit
       let shiftId = assembled.shiftId || null;
