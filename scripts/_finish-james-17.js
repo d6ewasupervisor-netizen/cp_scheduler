@@ -1,5 +1,4 @@
-// Diagnostic + finish for James 2026-07-17 (visit 27071906). Dumps the full
-// category-reset + shift state so we see exactly what blocks completion.
+// Dump the full category-reset item values for James 2026-07-17 (visit 27071906).
 (async()=>{
   const { defaultSasGet } = require('/app/src/lib/prod-transmitter');
   const { loadSasSession } = require('/app/src/lib/sas-session');
@@ -10,20 +9,13 @@
   const crWrap = await defaultSasGet(token, `/field-app/visits/${V}/category-resets/`);
   const resets = (crWrap && crWrap.category_resets) || crWrap || [];
   const R = (Array.isArray(resets)?resets:[])[0];
-  console.log('RESET LIST id:', R && R.id, 'keys:', R && Object.keys(R).join(','));
-
-  const detail = await defaultSasGet(token, `/field-app/visits/${V}/category-resets/${R.id}/`);
-  console.log('RESET DETAIL keys:', detail && Object.keys(detail).join(','));
-  console.log('  category_completion:', detail && detail.category_completion, '| completion_status:', detail && detail.completion_status);
-  console.log('  spent_time:', JSON.stringify(detail && detail.spent_time), '| spent_time_reason:', JSON.stringify(detail && detail.spent_time_reason));
-  console.log('  team:', JSON.stringify(detail && detail.team).slice(0,300));
-  console.log('  new_assignee/assignee:', JSON.stringify(detail && (detail.new_assignee || detail.assignee)));
-  console.log('  items:', JSON.stringify(detail && (detail.items || detail.reset_items)).slice(0,400));
-  console.log('  before:', !!(detail && detail.before), '| after:', !!(detail && detail.after));
+  const pick = (o,ks)=>Object.fromEntries(ks.map(k=>[k,o&&o[k]]));
+  console.log('RESET completion fields:', JSON.stringify(pick(R,['id','completed','category_completion','state','exception','comment'])));
+  console.log('RESET requirements:', JSON.stringify(pick(R,['is_assignee_required','is_before_image_required','is_after_image_required','is_photo_required','is_exception_required','is_comment_required'])));
+  console.log('RESET team:', JSON.stringify(R && R.team).slice(0,400));
+  console.log('RESET est/act size:', JSON.stringify(pick(R,['est_size_numerator','act_size_numerator','require_footage','repack_count','new_items_stocked'])));
 
   const shift = await defaultSasGet(token, `/v2/field-app/shifts/${SH}/`);
-  console.log('SHIFT employee:', JSON.stringify(shift && shift.employee), '| team:', JSON.stringify(shift && shift.team).slice(0,200));
-
-  const sc = await defaultSasGet(token, `/field-app/visits/${V}/shift-complete/`);
-  console.log('shift-complete employees:', JSON.stringify((sc&&sc.employees||[])));
-})().catch(e=>console.log('ERR', e.message));
+  console.log('SHIFT employee:', JSON.stringify(shift && shift.employee));
+  console.log('SHIFT team:', JSON.stringify(shift && shift.team).slice(0,300));
+})().catch(e=>console.log('ERR', e.message, e.stack&&e.stack.slice(0,200)));
