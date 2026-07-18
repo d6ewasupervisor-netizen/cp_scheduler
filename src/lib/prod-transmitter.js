@@ -90,6 +90,27 @@ function toStoreLocalTime12h(iso, storeNum) {
     .replace(/\s/g, ' ');
 }
 
+/**
+ * Store-local calendar date (YYYY-MM-DD) for actual_start_date/actual_end_date.
+ * MUST match the local clock time — a UTC slice rolls a late-evening PDT stop to
+ * the next day, producing an impossible multi-day shift that SAS 400s.
+ */
+function toStoreLocalDate(iso, storeNum) {
+  if (!iso) return null;
+  const timeZone = resolveStoreTimezone(storeNum);
+  if (!timeZone) return String(iso).slice(0, 10);
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso).slice(0, 10);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const g = (t) => parts.find((p) => p.type === t)?.value;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
+
 /* ---------- Injectable read-only GET (same shape as existing libs) ---------- */
 
 async function defaultSasGet(token, urlPath, params = {}) {
@@ -809,9 +830,9 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   //    travel_records: [] on pure time edit (prod completion supervisor patches).
   //    Full start+stop before category work so duration ≤ total work time.
   const timeOnlyShiftPayload = shiftPatchPayload({
-    actualStartDate: visitStartIso.slice(0, 10),
+    actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
     actualStartTime: localStartTime,
-    actualEndDate: visitStopIso.slice(0, 10),
+    actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
     actualEndTime: localStopTime,
     timeChangeReasonId: shiftReason.id,
     timeChangeComment: attributionComment,
@@ -842,9 +863,9 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         method: 'PATCH',
         url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
         payload: shiftPatchPayload({
-          actualStartDate: visitStartIso.slice(0, 10),
+          actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
           actualStartTime: localStartTime,
-          actualEndDate: visitStopIso.slice(0, 10),
+          actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
           actualEndTime: localStopTime,
           timeChangeReasonId: shiftReason.id,
           timeChangeComment: attributionComment,
@@ -1113,9 +1134,9 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   }
 
   const finalShiftPayload = shiftPatchPayload({
-    actualStartDate: visitStartIso.slice(0, 10),
+    actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
     actualStartTime: localStartTime,
-    actualEndDate: visitStopIso.slice(0, 10),
+    actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
     actualEndTime: localStopTime,
     timeChangeReasonId: shiftReason.id,
     timeChangeComment: attributionComment,
