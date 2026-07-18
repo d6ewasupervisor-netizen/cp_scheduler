@@ -109,7 +109,7 @@ function makeFixtureSasGet(overrides = {}) {
     if (overrides[p]) return overrides[p](params);
 
     if (p === 'field-app/visits/27000510/shift-complete/') {
-      return { current_status: 'in-progress', employees: [{ id: 354456, shift_id: 44390825, actual_start_time: null }] };
+      return { current_status: 'active', employees: [{ id: 354456, shift_id: 44390825, actual_start_time: null }] };
     }
     if (p === 'v2/field-app/shifts/44390825/') {
       return { home_to_store: true, store_to_store: true, store_to_home: true, calculate_mileage: true };

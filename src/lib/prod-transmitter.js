@@ -578,7 +578,13 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   // Still assemble completion writes (times, photos, survey, mileage fix, close).
   // Do NOT abort — skip first-time-only start steps below when already punched.
   const alreadyStartedInProd = Boolean(shiftEmployee.actual_start_time);
+  // Real SAS states (James 27071906): 'active' before start, 'in-progress' after the
+  // visit-start PATCH lands. Re-sending start on an already-started visit 400s, so skip
+  // it whenever the schedule is already started (punched OR status 'in-progress').
+  const visitAlreadyStarted =
+    alreadyStartedInProd || String(shiftComplete?.current_status || '').toLowerCase() === 'in-progress';
   result.alreadyStartedInProd = alreadyStartedInProd;
+  result.visitAlreadyStarted = visitAlreadyStarted;
   if (alreadyStartedInProd) {
     result.prodCohesion = {
       mode: 'complete_prod_started',
@@ -755,9 +761,9 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   // 0. Start schedule — PATCH visit → "Schedule started successfully" (before travel / T&E).
   //    prod completion.har: body carries visit_id + actual_start_time (12h local) +
   //    actual_start_datetime (UTC) + geo/admin flags. An EMPTY body 400s (was the
-  //    2026-07-15/17 partial failure at this seq). Skip when the rep already started
-  //    the visit in PROD (already has actual_start_time).
-  if (!alreadyStartedInProd) {
+  //    2026-07-15/17 partial failure at this seq). Skip when the visit schedule is
+  //    already started (punched OR status 'in-progress' from a prior run).
+  if (!visitAlreadyStarted) {
     pushCall({
       method: 'PATCH',
       url: `${BASE}/api/v1/field-app/visits/${visitId}/`,
