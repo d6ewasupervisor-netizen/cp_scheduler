@@ -336,6 +336,14 @@ function shiftPatchPayload({
     store_to_home: flags.store_to_home ?? true,
     calculate_mileage: flags.calculate_mileage ?? true,
     shift_breaks: [],
+    // Admin/supervisor web edit (from_state:admin). SAS 400s "Pin filed is required"
+    // without pin; the GET-merged shift object doesn't carry these edit-mode fields.
+    // prod completio7n.har shift PATCH: pin 0, is_supervisor_edit_mode true.
+    pin: 0,
+    is_supervisor_edit_mode: true,
+    is_lead_edit_mode: false,
+    edited_by_merchandiser: false,
+    capture_location: false,
   };
   if (Array.isArray(travelRecords) && travelRecords.length) {
     body.travel_records = travelRecords;
