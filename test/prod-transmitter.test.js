@@ -812,6 +812,14 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     const putIdx = methods.findIndex((m) => m.startsWith('PUT '));
 
     assert.ok(startVisitIdx >= 0, 'visit schedule start');
+    // Start PATCH must carry the real prod completion.har body — an empty body 400s in PROD.
+    const startVisitCall = result.calls[startVisitIdx];
+    assert.equal(startVisitCall.payload.visit_id, 27000510);
+    assert.match(startVisitCall.payload.actual_start_time, /^\d{1,2}:\d{2}\s?(AM|PM)$/, 'actual_start_time is 12h local');
+    assert.match(startVisitCall.payload.actual_start_datetime, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, 'actual_start_datetime is UTC');
+    assert.equal(startVisitCall.payload.isMerchandiserStartingVisit, true);
+    assert.equal(startVisitCall.payload.from_state, 'admin');
+    assert.deepEqual(startVisitCall.payload.start_location, [-1, -1]);
     assert.ok(startVisitIdx < toStoreIdx, 'start visit before to_store');
     assert.ok(toStoreIdx < firstShiftIdx, 'to_store before punch');
     assert.ok(firstShiftIdx >= 0 && teamCompleteIdx > firstShiftIdx, 'full punch before category completion+spent_time');

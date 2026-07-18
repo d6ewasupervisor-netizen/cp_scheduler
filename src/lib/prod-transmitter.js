@@ -74,6 +74,22 @@ function toStoreLocalTime(iso, storeNum) {
   return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`;
 }
 
+/**
+ * 12-hour store-local clock string (e.g. "1:17 AM") for the visit-start PATCH
+ * body. prod completion.har's start call sends actual_start_time in this exact
+ * format. Normalizes any narrow/non-breaking space Intl may emit to a plain space.
+ */
+function toStoreLocalTime12h(iso, storeNum) {
+  if (!iso) return null;
+  const timeZone = resolveStoreTimezone(storeNum);
+  if (!timeZone) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true })
+    .format(date)
+    .replace(/\s/g, ' ');
+}
+
 /* ---------- Injectable read-only GET (same shape as existing libs) ---------- */
 
 async function defaultSasGet(token, urlPath, params = {}) {
@@ -709,6 +725,9 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   if (!localStartTime || !localStopTime) {
     return abort(result, `store_timezone_unresolved:${storeForTimezone ?? 'null'}`);
   }
+  // 12-hour local + UTC datetime for the visit-start PATCH body (prod completion.har shape).
+  const localStartTime12h = toStoreLocalTime12h(visitStartIso, storeForTimezone);
+  const startDatetimeUtc = new Date(visitStartIso).toISOString().replace(/\.\d{3}Z$/, 'Z');
   const shiftFlags = {
     home_to_store: shiftPreState?.home_to_store ?? true,
     store_to_store: shiftPreState?.store_to_store ?? true,
@@ -733,16 +752,28 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   const isStoreToHomeLeg = legFrom === 'S' && legTo === 'H';
   const isStoreToStoreLeg = legFrom === 'S' && legTo === 'S';
 
-  // 0. Start schedule — James FM53 HAR: PATCH visit → "Schedule started successfully"
-  //    (before travel / T&E). Empty JSON body with Content-Type application/json.
-  //    Skip when the rep already started the visit in PROD (already has actual_start_time).
+  // 0. Start schedule — PATCH visit → "Schedule started successfully" (before travel / T&E).
+  //    prod completion.har: body carries visit_id + actual_start_time (12h local) +
+  //    actual_start_datetime (UTC) + geo/admin flags. An EMPTY body 400s (was the
+  //    2026-07-15/17 partial failure at this seq). Skip when the rep already started
+  //    the visit in PROD (already has actual_start_time).
   if (!alreadyStartedInProd) {
     pushCall({
       method: 'PATCH',
       url: `${BASE}/api/v1/field-app/visits/${visitId}/`,
-      payload: {},
+      payload: {
+        visit_id: Number(visitId),
+        actual_start_time: localStartTime12h,
+        actual_start_datetime: startDatetimeUtc,
+        start_location: [-1, -1],
+        validate_geo: true,
+        is_web: true,
+        isMerchandiserStartingVisit: true,
+        from_state: 'admin',
+        no_show_admin: true,
+      },
       sourceRef:
-        'James FM53 HAR 2026-07-15 — PATCH /api/v1/field-app/visits/{visitId}/ → "Schedule started successfully". First-time open; body {}.',
+        'prod completion.har — PATCH /api/v1/field-app/visits/{visitId}/ start: visit_id + actual_start_time (12h local) + actual_start_datetime (UTC) + start_location/validate_geo/is_web/isMerchandiserStartingVisit/from_state/no_show_admin. Empty body 400s.',
       reconstructed: true,
     });
   } else {
