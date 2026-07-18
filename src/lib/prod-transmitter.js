@@ -980,6 +980,35 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     reconstructed: true,
   });
 
+  // 7a2. Assign the reset to the shift employee + set spent_time ON the reset.
+  //      is_assignee_required is true and the reset's team must be populated, else the
+  //      final PUT 400s "Category Reset is not completed" even with category_completion
+  //      set (prod completio7n.har new_assignee + spent_time PATCHes).
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+    payload: {
+      id: primaryResetRow.id,
+      new_assignee: { visit_id: String(visitId), employee_id: shiftEmployee.id },
+    },
+    sourceRef:
+      'prod completio7n.har — assign reset to employee { new_assignee:{visit_id, employee_id} }. Reset requires an assignee (is_assignee_required) to count as completed.',
+    reconstructed: true,
+  });
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+    payload: {
+      id: primaryResetRow.id,
+      shift_id: Number(shiftId),
+      spent_time: spentLabel,
+      spent_time_reason: spentReasonObj,
+    },
+    sourceRef:
+      'prod completio7n.har — spent_time set on the reset { id, shift_id, spent_time, spent_time_reason }.',
+    reconstructed: true,
+  });
+
   // 7b. Category Reset completion — prod completio7n.har uses category_completion:true
   //     (NOT completion_status, which SAS silently ignores → "Category Reset is not
   //     completed" on the final PUT). id + comment + exception:null.

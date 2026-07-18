@@ -347,8 +347,8 @@ describe('transmitVisit — reason-string resolution (exact match against live e
     const sealed = makeSealedRecord({ beforePhotos: [tmpPhoto('before.jpg')], afterPhotos: [tmpPhoto('after.jpg')] });
     const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
     assert.equal(result.status, 'ok');
-    const assignCall = result.calls.find((c) => c.payload?.team);
-    assert.equal(assignCall.payload.team[0].spent_time_reason, 3);
+    const validateCall = result.calls.find((c) => (c.url || '').includes('/validate-spent-time-reason/'));
+    assert.equal(validateCall.payload.team_data[0].spent_time_reason.id, 3);
     assert.equal(writeReasons.categorySpentTimeReason.selected.text, 'Other \u2013 supervisor was contacted');
   });
 
@@ -771,10 +771,14 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.ok(validate.payload.team_data?.[0]?.work_time);
 
     const completeIdx = result.calls.findIndex(
-      (c) => c.payload?.completion_status === true && c.url.includes('/category-resets/') && !c.url.includes('validate')
+      (c) => c.payload?.category_completion === true && c.url.includes('/category-resets/') && !c.url.includes('validate')
     );
     const validateIdx = result.calls.indexOf(validate);
     assert.ok(validateIdx < completeIdx, 'validate before completion');
+    // reset must be assigned to the employee before completion (is_assignee_required)
+    const assignIdx = result.calls.findIndex((c) => c.payload?.new_assignee && c.url.includes('/category-resets/'));
+    assert.ok(assignIdx >= 0, 'new_assignee call present');
+    assert.equal(result.calls[assignIdx].payload.new_assignee.employee_id, 354456);
 
     assert.ok(result.recompletePayload?.['category-reset']?.[0]?.id);
     assert.equal(result.recompletePayload.complete_shift_final.allowed_truncation, false);
@@ -809,7 +813,7 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     const toStoreIdx = methods.findIndex((m) => m.includes('/to_store/'));
     const firstShiftIdx = methods.findIndex((m) => m.startsWith('PATCH /api/v2/field-app/shifts/'));
     const teamCompleteIdx = result.calls.findIndex(
-      (c) => c.payload?.completion_status === true && c.payload?.team?.[0]?.spent_time_reason != null
+      (c) => c.payload?.category_completion === true && (c.url || '').includes('/category-resets/')
     );
     const surveyDoneIdx = methods.findIndex((m) => m.includes('/surveys/surveys/') && m.endsWith('/complete/'));
     const toHomeIdx = methods.findIndex((m) => m.includes('/to_home/'));
@@ -843,11 +847,10 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     );
     assert.deepEqual(earlyShift.payload.travel_records, []);
 
-    const teamCall = result.calls.find((c) => c.payload?.team?.[0]?.spent_time_reason != null);
-    assert.ok(teamCall, 'spent_time_reason on category team');
-    assert.equal(teamCall.payload.team[0].spent_time, '0h 24m');
-    assert.equal(teamCall.payload.team[0].spent_time_reason, 3);
-    assert.equal(teamCall.payload.completion_status, true);
+    const teamCall = result.calls.find((c) => c.payload?.team_data?.[0]?.spent_time_reason != null);
+    assert.ok(teamCall, 'spent_time_reason on category team_data (validate-spent-time-reason)');
+    assert.equal(teamCall.payload.team_data[0].spent_time, '0h 24m');
+    assert.equal(teamCall.payload.team_data[0].spent_time_reason.id, 3);
 
     const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
     // to_home mirrors to_store: start_time (UTC, = stop) + user_accepted_ss_replace, not {}.
