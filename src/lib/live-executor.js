@@ -954,7 +954,11 @@ async function executeLiveTransmit({
       // 2) shift T&E PATCH returning "Pin filed is required" — automator only does times while
       //    in-progress (schedule/admin punch). Pin is NOT typed in API body; completed visits
       //    refuse field-app shift PATCH. Continue with photos/survey/recomplete (no pin).
-      const softTravel = testMode && isTravelCall(call) && response.status >= 500;
+      // to_home 5xx is non-fatal in any mode: the working complete-shift HAR never
+      // posts to_home; the S→H mileage rides on the subsequent shift PATCH travel
+      // CHANGE. to_store 5xx stays testMode-only (it must succeed on a live start).
+      const softTravel =
+        isTravelCall(call) && response.status >= 500 && (testMode || isTravelToHomeCall(call));
       const softPin =
         testMode && isShiftPatchCall(call) && isPinRequiredError(response.body || response.text);
       // First-time complete (PUT shift-complete) on an already-completed visit asks for start_time+reason
