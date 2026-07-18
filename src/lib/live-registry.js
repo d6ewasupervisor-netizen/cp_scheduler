@@ -9,7 +9,18 @@
 const fs = require('fs');
 const path = require('path');
 
-const REGISTRY_PATH = path.join(__dirname, '../../live/transmitted-registry.json');
+// On Railway the only durable path is the volume (/app/data/visit-drafts) — keep
+// transmit bookkeeping there so a partial survives deploys and can be resumed.
+// Local dev keeps the repo-relative live/ path.
+function resolveRegistryPath() {
+  if (process.env.TRANSMIT_REGISTRY_PATH) return process.env.TRANSMIT_REGISTRY_PATH;
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME) {
+    return path.join(__dirname, '../../data/visit-drafts/transmitted-registry.json');
+  }
+  return path.join(__dirname, '../../live/transmitted-registry.json');
+}
+
+const REGISTRY_PATH = resolveRegistryPath();
 
 function ensureDir() {
   fs.mkdirSync(path.dirname(REGISTRY_PATH), { recursive: true });
