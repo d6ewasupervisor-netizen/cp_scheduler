@@ -850,7 +850,11 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(teamCall.payload.completion_status, true);
 
     const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
-    assert.deepEqual(toHome.payload, {});
+    // to_home mirrors to_store: start_time (UTC, = stop) + user_accepted_ss_replace, not {}.
+    assert.deepEqual(toHome.payload, {
+      start_time: '2026-07-08T18:01:00.000Z',
+      user_accepted_ss_replace: null,
+    });
 
     // Final shift PATCH after to_home carries S→H CHANGE (prod completion.har shape)
     const finalShift = [...result.calls]

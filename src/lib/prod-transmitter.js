@@ -1106,9 +1106,12 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     pushCall({
       method: 'POST',
       url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_home/`,
-      payload: {},
+      payload: {
+        start_time: new Date(visitStopIso).toISOString(),
+        user_accepted_ss_replace: null,
+      },
       sourceRef:
-        'James FM53 HAR — POST /api/v2/field-app/travel/{shiftId}/to_home/ body {}. System may invent ~32mi S-H; corrected next via travel CHANGE. Skipped when S→H travel already on shift.',
+        'POST /api/v2/field-app/travel/{shiftId}/to_home/ body { start_time (UTC, = departure/stop), user_accepted_ss_replace: null } — mirrors to_store; empty {} 500s. System may invent ~32mi S-H; corrected next via travel CHANGE.',
       reconstructed: true,
     });
     result.toHomeAssembled = true;
