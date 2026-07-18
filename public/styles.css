@@ -2077,6 +2077,75 @@ body.visit-workspace-open {
   font-weight: 600;
 }
 
+/* Milestone 1: outcome & notes, per-stage notes, store attribution + carry-forward */
+.visit-export-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin: 0.6rem 0 0.3rem;
+}
+.visit-export-row .field {
+  margin: 0;
+}
+.vf-wrap {
+  flex-wrap: wrap;
+}
+.vf-help {
+  font-weight: 400;
+  opacity: 0.72;
+  font-size: 0.82em;
+}
+.vf-stage-note {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed rgba(128, 128, 128, 0.35);
+}
+#shift-log-custom[data-required='1'] textarea {
+  border-color: rgba(232, 128, 78, 0.75);
+}
+.vf-store-redirect {
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid rgba(78, 161, 232, 0.32);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.vf-carryforward {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(232, 196, 78, 0.12);
+  border: 1px solid rgba(232, 196, 78, 0.5);
+}
+.vf-carryforward-head {
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.8;
+  margin-bottom: 0.45rem;
+}
+.vf-carryforward-note {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+}
+.vf-carryforward-note + .vf-carryforward-note {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.vf-carryforward-text {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.vf-carryforward-note button {
+  flex: 0 0 auto;
+}
+
 .vf-amp-callout {
   margin: 0 0 1rem;
   padding: 0.9rem 1rem;

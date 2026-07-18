@@ -34,6 +34,7 @@ const STEP = {
   SURVEY: 'survey',
   AFTER_PHOTOS: 'after_photos',
   TIME: 'time',
+  SHIFT_LOG: 'shift_log',
   REVIEW: 'review',
 };
 
@@ -47,13 +48,14 @@ const STEP = {
  *  5. survey (always)
  *  6. after photos (always)
  *  7. time (always)
- *  8. review (always)
+ *  8. outcome & notes (always) — mandatory shift-outcome log
+ *  9. review (always)
  */
 function buildStepSequence({ workLoad, writeOrder }) {
   const steps = [STEP.BEFORE_PHOTOS];
   if (workLoad) steps.push(STEP.LOAD_CHECK);
   if (writeOrder) steps.push(STEP.WRITE_ORDER_CHECKLIST);
-  steps.push(STEP.CATEGORY_PHOTOS, STEP.SURVEY, STEP.AFTER_PHOTOS, STEP.TIME, STEP.REVIEW);
+  steps.push(STEP.CATEGORY_PHOTOS, STEP.SURVEY, STEP.AFTER_PHOTOS, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
   return steps;
 }
 
@@ -185,6 +187,7 @@ const SECTION_LABELS = {
   [STEP.SURVEY]: 'Survey',
   [STEP.AFTER_PHOTOS]: 'After Photos',
   [STEP.TIME]: 'Time',
+  [STEP.SHIFT_LOG]: 'Outcome & Notes',
   [STEP.REVIEW]: 'Review & Finish',
 };
 
@@ -307,6 +310,21 @@ function listUnmetRequirements(draft) {
     });
   }
 
+  const outcomes = draft.shiftLog?.outcomes || [];
+  if (!outcomes.length) {
+    unmet.push({
+      section: STEP.SHIFT_LOG,
+      anchor: 'shift-log',
+      message: 'Record at least one outcome for this shift (what you did and/or any variances)',
+    });
+  } else if (outcomes.some((o) => o.optionId === 'other') && !(draft.shiftLog?.custom || '').trim()) {
+    unmet.push({
+      section: STEP.SHIFT_LOG,
+      anchor: 'shift-log-custom',
+      message: 'Describe the "Other" outcome you selected',
+    });
+  }
+
   return unmet;
 }
 
@@ -371,6 +389,12 @@ function sectionHasAnyProgress(draft, id) {
       return Object.values(draft.categoryPhotos || {}).some((a) => (a || []).length > 0);
     case STEP.SURVEY:
       return Object.keys(draft.survey || {}).length > 0;
+    case STEP.SHIFT_LOG:
+      return (
+        (draft.shiftLog?.outcomes || []).length > 0 ||
+        !!(draft.shiftLog?.custom || '').trim() ||
+        !!draft.nextVisitNote
+      );
     case STEP.AFTER_PHOTOS:
       return (draft.afterPhotos || []).length > 0;
     case STEP.TIME:

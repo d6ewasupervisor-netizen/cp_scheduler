@@ -1,6 +1,6 @@
 {
   "name": "cp_scheduler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Central Pet Master Route weekly scheduler (planning-only, D1/D8)",
   "main": "src/server.js",
   "scripts": {

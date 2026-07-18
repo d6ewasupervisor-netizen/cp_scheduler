@@ -699,7 +699,11 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(startPayload.actual_end_time, '11:01:00'); // full stop on first punch
     assert.equal(lastPayload.actual_end_time, '11:01:00'); // reaffirm
     assert.equal(startPayload.time_change_reason, writeReasons.shiftTimeChangeReason.selected.id);
-    assert.equal(startPayload.time_change_comment, 'Entered from Stage 3 sealed record');
+    // time_change_comment now carries store attribution so the real store is recallable from PROD.
+    assert.equal(
+      startPayload.time_change_comment,
+      'Entered from Stage 3 sealed record | Actual store 215 (scheduled placeholder 391)'
+    );
 
     // Time-only first patch uses empty travel_records; home→store also gets a CHANGE patch
     assert.deepEqual(startPayload.travel_records, []);
@@ -821,7 +825,10 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(earlyShift.payload.actual_start_time, '15:40:00');
     assert.equal(earlyShift.payload.actual_end_time, '16:04:00');
     assert.equal(earlyShift.payload.time_change_reason, 5);
-    assert.equal(earlyShift.payload.time_change_comment, 'Entered from Stage 3 sealed record');
+    assert.equal(
+      earlyShift.payload.time_change_comment,
+      'Entered from Stage 3 sealed record | Actual store 53 (scheduled placeholder 391)'
+    );
     assert.deepEqual(earlyShift.payload.travel_records, []);
 
     const teamCall = result.calls.find((c) => c.payload?.team?.[0]?.spent_time_reason != null);

@@ -111,6 +111,16 @@
           <h2>Guided visit drafts &amp; records (read-only)</h2>
           <p class="week-status">Stage 3 local visit records — every rep, all districts. Sealed = ready for Stage 4 transmit. Stage 5 photo delivery status is admin-only (Resend gated off until PHOTO_DELIVERY_ENABLED=1).</p>
           <button type="button" id="btnRefreshVisitDrafts" class="subtle">Refresh</button>
+          <div class="visit-export-row">
+            <label class="field">From
+              <input type="date" id="shiftLogStart">
+            </label>
+            <label class="field">To
+              <input type="date" id="shiftLogEnd">
+            </label>
+            <button type="button" id="btnExportShiftCsv" class="primary">Export CSV</button>
+          </div>
+          <p class="week-status">CSV lists every logged shift in the range — real (actual) store vs scheduled placeholder, times, processes, outcomes/variances, and notes.</p>
           <div id="visitDraftsList"></div>
         </section>
 

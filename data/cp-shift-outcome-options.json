@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "description": "Central Pet shift Outcome & Notes options. Consumed by the Stage 3 guided visit flow (SHIFT_LOG step) and served via GET /api/central-pet/shift-day/visit-flow/outcome-options. Reps must select at least one option to seal a visit. 'kind' groups options: 'outcome' = normal/positive work done, 'variance' = an exception/issue worth documenting. Supervisor-editable; add/remove options here without code changes.",
+    "gateRule": "listUnmetRequirements (src/lib/visit-flow.js) blocks seal until shiftLog.outcomes has >= 1 entry. If any selected optionId is 'other', shiftLog.custom must be non-empty."
+  },
+  "options": [
+    { "id": "worked_load_wrote_order", "label": "Worked load and wrote order", "kind": "outcome" },
+    { "id": "wrote_order_backstock", "label": "Wrote order and worked backstock", "kind": "outcome" },
+    { "id": "cleaned_up_section", "label": "Cleaned up the section", "kind": "outcome" },
+    { "id": "serviced_ends_wings", "label": "Serviced all endcaps / wings", "kind": "outcome" },
+    { "id": "merchandised_clip_strips", "label": "Merchandised clip strips", "kind": "outcome" },
+    { "id": "service_only_no_order", "label": "Service day only — no new order", "kind": "outcome" },
+    { "id": "display_build", "label": "Had to build a display", "kind": "variance" },
+    { "id": "waited_for_takedown", "label": "Waited for the order to be pulled / taken down", "kind": "variance" },
+    { "id": "huge_load", "label": "Load was unusually large", "kind": "variance" },
+    { "id": "store_disaster", "label": "Section was a disaster on arrival", "kind": "variance" },
+    { "id": "receiver_unavailable", "label": "Grocery receiver unavailable", "kind": "variance" },
+    { "id": "load_not_found", "label": "Could not locate the load", "kind": "variance" },
+    { "id": "other", "label": "Other (describe below)", "kind": "variance" }
+  ]
+}

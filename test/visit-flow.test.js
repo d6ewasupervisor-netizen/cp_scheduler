@@ -14,6 +14,7 @@ describe('buildStepSequence (branch logic)', () => {
       'survey',
       'after_photos',
       'time',
+      'shift_log',
       'review',
     ]);
   });
@@ -27,6 +28,7 @@ describe('buildStepSequence (branch logic)', () => {
       'survey',
       'after_photos',
       'time',
+      'shift_log',
       'review',
     ]);
   });
@@ -45,6 +47,7 @@ describe('buildStepSequence (branch logic)', () => {
       'survey',
       'after_photos',
       'time',
+      'shift_log',
       'review',
     ]);
   });
@@ -57,6 +60,7 @@ describe('buildStepSequence (branch logic)', () => {
       'survey',
       'after_photos',
       'time',
+      'shift_log',
       'review',
     ]);
   });
@@ -209,6 +213,7 @@ describe('free-nav section status + seal requirements (only gate)', () => {
       checklist: {},
       categoryPhotos: {},
       survey: {},
+      shiftLog: { outcomes: [], custom: '' },
       visitStart: { actual: '2026-07-08T13:00:00Z', source: 'start_tap' },
       visitStop: { actual: null },
       mileage: { leg: null },
@@ -242,9 +247,43 @@ describe('free-nav section status + seal requirements (only gate)', () => {
       },
       visitStop: { actual: '2026-07-08T18:00:00Z' },
       mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
+      shiftLog: { outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }], custom: '' },
     });
     assert.equal(visitFlow.canSeal(d), true);
     assert.ok(!visitFlow.listUnmetRequirements(d).some((u) => u.section === 'load_check'));
+  });
+
+  it('mandatory Outcome & Notes: seal blocked until at least one outcome is logged', () => {
+    const complete = {
+      workLoad: false,
+      writeOrder: false,
+      steps: visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }),
+      currentStep: 'shift_log',
+      beforePhotos: [{ path: 'b' }],
+      afterPhotos: [{ path: 'a' }],
+      loadCheck: null,
+      checklist: {},
+      categoryPhotos: Object.fromEntries(visitFlow.CATEGORY_PHOTO_TARGETS.map((c) => [c.id, [{ path: c.id }]])),
+      survey: { q1: 'yes', q2: 'Yes', q3: 'Fully stocked', q5: 'yes', q7: 'Yes', q9: 'yes', q11: 'ok', q12: 'yes' },
+      visitStart: { actual: '2026-07-08T13:00:00Z', source: 'start_tap' },
+      visitStop: { actual: '2026-07-08T18:00:00Z' },
+      mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
+      isLastStopOfDay: false,
+      shiftLog: { outcomes: [], custom: '' },
+    };
+    // Everything else done, but no outcome logged → still blocked, on the shift_log section.
+    assert.equal(visitFlow.canSeal(complete), false);
+    assert.ok(
+      visitFlow.listUnmetRequirements(complete).some((u) => u.section === 'shift_log' && u.anchor === 'shift-log')
+    );
+    // Log one normal outcome → seals.
+    complete.shiftLog.outcomes = [{ optionId: 'cleaned_up_section', kind: 'outcome', label: 'Cleaned up the section' }];
+    assert.equal(visitFlow.canSeal(complete), true);
+    // Picking "Other" requires a custom description.
+    complete.shiftLog.outcomes = [{ optionId: 'other', kind: 'variance', label: 'Other' }];
+    assert.equal(visitFlow.canSeal(complete), false);
+    complete.shiftLog.custom = 'Freezer aisle flooded, worked around it';
+    assert.equal(visitFlow.canSeal(complete), true);
   });
 
   it('sidebar statuses never gate — incomplete sections report chips only', () => {

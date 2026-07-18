@@ -51,6 +51,9 @@ function fillSealRequirements(repKey, date, actualStore, { workLoad = false, wri
   store.setMileage(repKey, date, actualStore, {
     leg: { from: 'home', to: String(actualStore), miles: 1.5, source: 'home-to-store', warning: null },
   });
+  store.setShiftLog(repKey, date, actualStore, {
+    outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }],
+  });
 }
 
 before(cleanup);
@@ -80,6 +83,7 @@ describe('startVisit / resume', () => {
       'survey',
       'after_photos',
       'time',
+      'shift_log',
       'review',
     ]);
     assert.equal(draft.currentStep, 'before_photos');
@@ -319,6 +323,9 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
       store.recordCategoryPhoto(REP_A, date, S, cat.id, { photoPath: `fake/${cat.id}.jpg` });
     }
     store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-ooo.jpg' });
+    store.setShiftLog(REP_A, date, S, {
+      outcomes: [{ optionId: 'cleaned_up_section', kind: 'outcome', label: 'Cleaned up the section' }],
+    });
 
     const d = store.getDraft(REP_A, date, S);
     assert.equal(d.survey.q1, 'yes'); // auto-filled from before photo

@@ -6,6 +6,7 @@ const { initDb } = require('./db');
 const { requireAuth, requireAdmin } = require('./auth-middleware');
 const authRoutes = require('./routes/auth');
 const schedulerRoutes = require('./routes/scheduler');
+const shiftEventLog = require('./lib/shift-event-log');
 const {
   isPhotoDeliveryEnabled,
   photoSenderFrom,
@@ -13,6 +14,11 @@ const {
 } = require('./lib/photo-delivery');
 
 initDb();
+// Idempotent — creates shift_events + store_notes when a DB is configured,
+// no-ops (JSON fallback) otherwise. Best-effort: never blocks boot.
+shiftEventLog.ensureTables().catch((err) =>
+  console.error('[boot] ensureTables failed:', err.message)
+);
 
 const app = express();
 const PORT = process.env.PORT || 3847;

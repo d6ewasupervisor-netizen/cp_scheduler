@@ -14,6 +14,9 @@ import {
   markPhotoDone,
   markPhotoFailed,
   listPendingPhotos,
+  putDraftPatch,
+  listDraftPatches,
+  deleteDraftPatch,
 } from '/ux/offline-store.js';
 
 const API = '/api/central-pet';
@@ -41,6 +44,7 @@ const STEP_HINTS = {
   survey: 'Answer the service survey. Some questions appear based on earlier answers.',
   after_photos: 'Photograph the finished Pet Supplies aisle (two 4ft sections per shot).',
   time: 'Set actual start/stop times and compute your mileage leg.',
+  shift_log: 'Log what happened on this shift — pick everything that applies, add any variances, and leave a note for the next visit.',
   review: 'Fix any unmet items, then seal the visit.',
 };
 
@@ -52,6 +56,7 @@ const STEP_LABELS = {
   survey: 'Survey',
   after_photos: 'After Photos',
   time: 'Time',
+  shift_log: 'Outcome & Notes',
   review: 'Review & Finish',
 };
 
@@ -80,6 +85,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     scopeChecklist: null,
     survey: null,
     categoryTargets: null,
+    outcomeOptions: null,
+    storeNotes: [],
     pendingAnchor: null,
     /** @type {null | { key: string, input: HTMLInputElement | null }} */
     burst: null,
@@ -168,6 +175,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (!vf.scopeChecklist) vf.scopeChecklist = await apiCall('/shift-day/visit-flow/scope-checklist');
     if (!vf.survey) vf.survey = await apiCall('/shift-day/visit-flow/survey');
     if (!vf.categoryTargets) vf.categoryTargets = await apiCall('/shift-day/visit-flow/category-targets');
+    if (!vf.outcomeOptions) vf.outcomeOptions = await apiCall('/shift-day/visit-flow/outcome-options');
   }
 
   function setSaveState(s, label) {
@@ -211,6 +219,70 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     } catch (err) {
       toast(`Autosave failed: ${err.message}`, 'bad', 4500);
       throw err;
+    }
+  }
+
+  /**
+   * Offline-durable text mutation (shift-log / stage note / next-visit note).
+   * On network failure the patch is persisted to IndexedDB and replayed on
+   * reconnect — the rep keeps working and never loses input. `body` MUST carry
+   * repKey/date/actualStore so the patch can be keyed and flushed later.
+   */
+  async function saveTextMutation(path, body, { after } = {}) {
+    setSaveState('saving');
+    try {
+      vf.draft = await apiCall(path, { method: 'POST', body: JSON.stringify(body) });
+      updatePhotoQueueSaveState();
+      onDraftChanged?.(vf.draft);
+      after?.();
+      return vf.draft;
+    } catch (err) {
+      try {
+        await putDraftPatch({
+          repKey: body.repKey,
+          date: body.date,
+          actualStore: body.actualStore,
+          path,
+          body,
+        });
+        toast('Saved locally — will sync when back online', 'warn', 3500);
+        setSaveState('saved', 'Saved locally');
+      } catch {
+        toast(`Autosave failed: ${err.message}`, 'bad', 4500);
+      }
+      return null;
+    }
+  }
+
+  /** Replay any queued text patches for this visit, oldest first, on reconnect. */
+  async function flushPendingPatches() {
+    if (!vf.draft) return;
+    let patches;
+    try {
+      patches = await listDraftPatches({
+        repKey: getRepKey(),
+        date: vf.draft.date,
+        actualStore: vf.draft.actualStore,
+      });
+    } catch {
+      return;
+    }
+    if (!patches?.length) return;
+    patches.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    let applied = 0;
+    for (const p of patches) {
+      try {
+        vf.draft = await apiCall(p.path, { method: 'POST', body: JSON.stringify(p.body) });
+        await deleteDraftPatch(p.id);
+        applied += 1;
+      } catch {
+        break; // stop on first failure; leave the rest queued
+      }
+    }
+    if (applied) {
+      onDraftChanged?.(vf.draft);
+      renderAll();
+      toast(`Synced ${applied} saved note(s)`, 'ok', 3000);
     }
   }
 
@@ -1031,6 +1103,180 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     }
   }
 
+  /* ---------- Mandatory Outcome & Notes step ---------- */
+
+  function renderShiftLog() {
+    const body = $('vfBody');
+    const d = vf.draft;
+    const opts = vf.outcomeOptions?.options || [];
+    const selected = new Set((d.shiftLog?.outcomes || []).map((o) => o.optionId));
+
+    body.innerHTML = `<p class="vf-step-guide" id="shift-log">${STEP_HINTS.shift_log}</p>`;
+
+    const currentOutcomes = () =>
+      opts.filter((o) => selected.has(o.id)).map((o) => ({ optionId: o.id, kind: o.kind, label: o.label }));
+
+    let customEl;
+    const saveOutcomes = () =>
+      saveTextMutation(
+        '/shift-day/visit/shift-log',
+        {
+          repKey: getRepKey(),
+          date: d.date,
+          actualStore: d.actualStore,
+          outcomes: currentOutcomes(),
+          custom: customEl ? customEl.value : d.shiftLog?.custom || '',
+        },
+        { after: () => { renderSidebar(); updateGuidedNav(); } }
+      );
+
+    const groups = [
+      { kind: 'outcome', title: 'What you did' },
+      { kind: 'variance', title: 'Variances / issues (if any)' },
+    ];
+    for (const g of groups) {
+      const groupOpts = opts.filter((o) => o.kind === g.kind);
+      if (!groupOpts.length) continue;
+      const head = document.createElement('div');
+      head.className = 'vf-survey-label';
+      head.textContent = g.title;
+      body.appendChild(head);
+      const row = document.createElement('div');
+      row.className = 'vf-btn-row vf-wrap';
+      for (const o of groupOpts) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = o.label;
+        if (selected.has(o.id)) btn.className = 'primary';
+        btn.addEventListener('click', () => {
+          if (selected.has(o.id)) selected.delete(o.id);
+          else selected.add(o.id);
+          btn.className = selected.has(o.id) ? 'primary' : '';
+          if (customWrap) customWrap.dataset.required = selected.has('other') ? '1' : '';
+          saveOutcomes();
+        });
+        row.appendChild(btn);
+      }
+      body.appendChild(row);
+    }
+
+    const customWrap = document.createElement('label');
+    customWrap.className = 'field';
+    customWrap.id = 'shift-log-custom';
+    customWrap.dataset.required = selected.has('other') ? '1' : '';
+    customWrap.innerHTML =
+      'Anything else about this shift? <span class="vf-help">(required if you picked “Other”)</span>';
+    customEl = document.createElement('textarea');
+    customEl.rows = 2;
+    customEl.value = d.shiftLog?.custom || '';
+    customEl.addEventListener('blur', saveOutcomes);
+    customWrap.appendChild(customEl);
+    body.appendChild(customWrap);
+
+    const nvWrap = document.createElement('label');
+    nvWrap.className = 'field';
+    nvWrap.innerHTML =
+      'Note for the next visit to this store <span class="vf-help">— passed to whoever services this store next, including you</span>';
+    const nvEl = document.createElement('textarea');
+    nvEl.rows = 2;
+    nvEl.placeholder = 'e.g. Extra pads on top stock · stashed water dishes behind leashes & collars · order more X next time';
+    nvEl.value = d.nextVisitNote || '';
+    nvEl.addEventListener('blur', () =>
+      saveTextMutation('/shift-day/visit/next-visit-note', {
+        repKey: getRepKey(),
+        date: d.date,
+        actualStore: d.actualStore,
+        text: nvEl.value,
+      })
+    );
+    nvWrap.appendChild(nvEl);
+    body.appendChild(nvWrap);
+  }
+
+  /* ---------- Universal per-stage note (optional, never gates) ---------- */
+
+  function renderStageNote(step) {
+    const body = $('vfBody');
+    const existing = vf.draft.stageNotes?.[step];
+    const wrap = document.createElement('label');
+    wrap.className = 'field vf-stage-note';
+    wrap.innerHTML =
+      'Note / issue for this step <span class="vf-help">(optional — documented on the shift for later recall)</span>';
+    const ta = document.createElement('textarea');
+    ta.rows = 2;
+    ta.placeholder = 'Anything worth documenting at this step…';
+    ta.value = existing?.text || '';
+    ta.addEventListener('blur', () =>
+      saveTextMutation(
+        '/shift-day/visit/note',
+        {
+          repKey: getRepKey(),
+          date: vf.draft.date,
+          actualStore: vf.draft.actualStore,
+          step,
+          text: ta.value,
+        },
+        { after: renderSidebar }
+      )
+    );
+    wrap.appendChild(ta);
+    body.appendChild(wrap);
+  }
+
+  /* ---------- Store-context + carry-forward notes banner (top of body) ---------- */
+
+  function renderStoreContext() {
+    const body = $('vfBody');
+    const d = vf.draft;
+    const frag = document.createDocumentFragment();
+
+    const redirected = d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore);
+    if (redirected) {
+      const b = document.createElement('div');
+      b.className = 'vf-store-redirect';
+      b.innerHTML = `Running as store <strong>${d.actualStore}</strong> — scheduled under <strong>${d.scheduledStore}</strong>`;
+      frag.appendChild(b);
+    }
+
+    if (vf.storeNotes?.length) {
+      const box = document.createElement('div');
+      box.className = 'vf-carryforward';
+      const head = document.createElement('div');
+      head.className = 'vf-carryforward-head';
+      head.textContent = 'Notes from a previous visit to this store';
+      box.appendChild(head);
+      for (const n of vf.storeNotes) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'vf-carryforward-note';
+        const txt = document.createElement('span');
+        txt.className = 'vf-carryforward-text';
+        txt.textContent = n.note;
+        rowEl.appendChild(txt);
+        const done = document.createElement('button');
+        done.type = 'button';
+        done.className = 'subtle';
+        done.textContent = 'Done';
+        done.addEventListener('click', async () => {
+          try {
+            await apiCall(`/shift-day/store-notes/${n.id}/resolve`, {
+              method: 'POST',
+              body: JSON.stringify({}),
+            });
+            vf.storeNotes = vf.storeNotes.filter((x) => String(x.id) !== String(n.id));
+            renderSectionBody();
+          } catch (e) {
+            toast(`Could not resolve: ${e.message}`, 'bad');
+          }
+        });
+        rowEl.appendChild(done);
+        box.appendChild(rowEl);
+      }
+      frag.appendChild(box);
+    }
+
+    if (frag.childNodes.length) body.insertBefore(frag, body.firstChild);
+  }
+
   function renderSectionBody() {
     const d = vf.draft;
     $('vfStoreTitle').textContent = `Store ${d.actualStore} — Visit`;
@@ -1043,7 +1289,16 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     else if (d.currentStep === 'survey') renderSurvey();
     else if (d.currentStep === 'after_photos') renderBeforeAfter('after');
     else if (d.currentStep === 'time') renderTime();
+    else if (d.currentStep === 'shift_log') renderShiftLog();
     else if (d.currentStep === 'review') renderReview();
+
+    // Universal per-stage note on every working step (not on Review or the
+    // Outcome & Notes step, which have their own richer note fields).
+    if (d.currentStep !== 'review' && d.currentStep !== 'shift_log') {
+      renderStageNote(d.currentStep);
+    }
+    // Store attribution + carry-forward notes pinned to the top of the body.
+    renderStoreContext();
 
     if (vf.pendingAnchor) {
       const anchor = vf.pendingAnchor;
@@ -1307,8 +1562,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     setVisitShellOpen(true);
     closeSidebarDrawer();
     window.scrollTo(0, 0);
+    // Carry-forward notes left by the last servicer of this store (best-effort).
+    vf.storeNotes = [];
+    try {
+      const sn = await apiCall(`/shift-day/store-notes?store=${vf.draft.actualStore}`);
+      vf.storeNotes = sn.notes || [];
+    } catch {
+      /* offline / no DB — banner just stays empty */
+    }
     renderAll();
     await restoreOfflinePhotos();
+    await flushPendingPatches();
     // Assist mode chrome when admin previews another rep
     const assist = document.getElementById('vfAssistBanner');
     if (assist) {
@@ -1360,7 +1624,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => {
       updateOnlineBadge();
-      if (vf.draft) restoreOfflinePhotos();
+      if (vf.draft) {
+        restoreOfflinePhotos();
+        flushPendingPatches();
+      }
     });
     window.addEventListener('offline', () => updateOnlineBadge());
   }

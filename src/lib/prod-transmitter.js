@@ -450,6 +450,40 @@ function abort(result, reason) {
  * @param {string} [opts.opts.timeChangeReasonText] default: data/sas-write-reasons.json selection
  * @param {Function} [opts.opts.isAlreadyTransmitted] (visitId) => boolean, local bookkeeping guard
  */
+/**
+ * Compose the human-visible T&E comment written to the PROD shift record so the
+ * REAL store a shift ran for — and any rep-logged outcome/variance — is durable
+ * and recallable later. SAS schedules everything under a placeholder store
+ * (usually 391); this makes "which real store was this 391 shift?" answerable
+ * from PROD itself. Truncated to a conservative length for the field.
+ *
+ * @returns {string} e.g. "base | Actual store 215 (scheduled placeholder 391) | Did: Worked load and wrote order | Variances: Huge load"
+ */
+function buildAttributionComment({ baseComment, actualStore, scheduledStore, shiftLog } = {}, maxLen = 255) {
+  const parts = [];
+  const base = (baseComment == null ? '' : String(baseComment)).trim();
+  if (base) parts.push(base);
+
+  if (actualStore != null) {
+    const redirected = scheduledStore != null && Number(scheduledStore) !== Number(actualStore);
+    parts.push(
+      redirected
+        ? `Actual store ${actualStore} (scheduled placeholder ${scheduledStore})`
+        : `Store ${actualStore}`
+    );
+  }
+
+  const outcomes = (shiftLog?.outcomes || []).filter((o) => o && (o.label || o.optionId));
+  const did = outcomes.filter((o) => o.kind !== 'variance').map((o) => o.label || o.optionId);
+  const variances = outcomes.filter((o) => o.kind === 'variance').map((o) => o.label || o.optionId);
+  if (did.length) parts.push(`Did: ${did.join(', ')}`);
+  if (variances.length) parts.push(`Variances: ${variances.join(', ')}`);
+
+  let out = parts.join(' | ');
+  if (out.length > maxLen) out = out.slice(0, maxLen - 1).trimEnd() + '…';
+  return out;
+}
+
 async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   const {
     sasGet = defaultSasGet,
@@ -483,6 +517,16 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   if (!visitId || !shiftId) return abort(result, 'missing_visit_or_shift_id');
   if (isAlreadyTransmitted(visitId)) return abort(result, 'already_transmitted');
   if (!timeChangeComment) return abort(result, 'missing_time_change_comment');
+
+  // Store-attribution + outcome/variance summary, appended to the durable,
+  // human-visible T&E comment on every shift PATCH (and the category-reset row).
+  const attributionComment = buildAttributionComment({
+    baseComment: timeChangeComment,
+    actualStore: result.actualStore,
+    scheduledStore: result.scheduledStore,
+    shiftLog: sealedRecord.shiftLog,
+  });
+  result.attributionComment = attributionComment;
 
   const leg = sealedRecord.mileage?.leg;
   if (!leg || (leg.miles == null && leg.source !== 'same-store')) return abort(result, 'mileage_leg_not_resolved');
@@ -729,7 +773,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     actualEndDate: visitStopIso.slice(0, 10),
     actualEndTime: localStopTime,
     timeChangeReasonId: shiftReason.id,
-    timeChangeComment,
+    timeChangeComment: attributionComment,
     flags: shiftFlags,
     includeEmptyTravelRecords: true,
   });
@@ -762,7 +806,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
           actualEndDate: visitStopIso.slice(0, 10),
           actualEndTime: localStopTime,
           timeChangeReasonId: shiftReason.id,
-          timeChangeComment,
+          timeChangeComment: attributionComment,
           flags: shiftFlags,
           travelRecords: [inboundChange],
         }),
@@ -872,7 +916,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
     payload: {
       completion_status: true,
-      comment: '',
+      comment: attributionComment,
       exception_id: null,
       team: [
         {
@@ -1033,7 +1077,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     actualEndDate: visitStopIso.slice(0, 10),
     actualEndTime: localStopTime,
     timeChangeReasonId: shiftReason.id,
-    timeChangeComment,
+    timeChangeComment: attributionComment,
     flags: shiftFlags,
     travelRecords: finalTravelRecords.length ? finalTravelRecords : null,
     includeEmptyTravelRecords: finalTravelRecords.length === 0,
@@ -1118,6 +1162,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
 
 module.exports = {
   transmitVisit,
+  buildAttributionComment,
   defaultSasGet,
   pickVisitRepResponder,
   shiftPatchPayload,

@@ -479,6 +479,41 @@ function photoDeliveryLabel(pd) {
   return { tag, text: `photos: ${pd.status || '—'}${s ? ` (${bits})` : ''}` };
 }
 
+async function exportShiftCsv() {
+  const start = $('shiftLogStart')?.value || '';
+  const end = $('shiftLogEnd')?.value || '';
+  if (start && end && start > end) {
+    toast('From date must be on or before To date', 'warn');
+    return;
+  }
+  const params = new URLSearchParams();
+  if (start) params.set('start', start);
+  if (end) params.set('end', end);
+  const qs = params.toString();
+  // Authenticated blob download — cpAuthFetch carries the Bearer token, which a
+  // plain window.location navigation would not (the route is admin-gated).
+  try {
+    const res = await window.cpAuthFetch(
+      `/api/central-pet/shift-day/report/export.csv${qs ? `?${qs}` : ''}`
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || res.statusText);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cp-shift-log-${start || 'all'}_to_${end || 'all'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    toast(`Export failed: ${err.message}`, 'bad', 5000);
+  }
+}
+
 async function loadVisitDrafts() {
   const host = $('visitDraftsList');
   if (!host) return;
@@ -1169,6 +1204,7 @@ function showInitError(err) {
     });
 
     $('btnRefreshVisitDrafts')?.addEventListener('click', loadVisitDrafts);
+    $('btnExportShiftCsv')?.addEventListener('click', exportShiftCsv);
 
     $('btnRefreshDryRuns')?.addEventListener('click', loadDryRuns);
     loadDryRuns();

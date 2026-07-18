@@ -121,6 +121,9 @@ function startVisit({
     checklist: {},
     categoryPhotos: {},
     survey: {},
+    shiftLog: { outcomes: [], custom: '' },
+    stageNotes: {},
+    nextVisitNote: null,
     isLastStopOfDay: false,
     mileage: { leg: null, repNote: null },
     createdAt: now,
@@ -282,6 +285,51 @@ function setMileage(repKey, date, actualStore, { leg, repNote } = {}) {
 }
 
 /**
+ * Mandatory Outcome & Notes step. `outcomes` is [{ optionId, kind, label }];
+ * at least one is required to seal (see visit-flow.listUnmetRequirements).
+ * `custom` is optional free text describing this shift.
+ */
+function setShiftLog(repKey, date, actualStore, { outcomes, custom } = {}) {
+  return mutate(repKey, date, actualStore, (draft) => {
+    if (!draft.shiftLog) draft.shiftLog = { outcomes: [], custom: '' };
+    if (outcomes !== undefined) {
+      draft.shiftLog.outcomes = Array.isArray(outcomes)
+        ? outcomes
+            .filter((o) => o && o.optionId)
+            .map((o) => ({ optionId: String(o.optionId), kind: o.kind || 'variance', label: o.label || '' }))
+        : [];
+    }
+    if (custom !== undefined) draft.shiftLog.custom = custom == null ? '' : String(custom);
+  });
+}
+
+/** Universal per-stage note (in-the-moment, shift-scoped). Optional — never gates. */
+function setStageNote(repKey, date, actualStore, { step, text } = {}) {
+  if (!step) throw new Error('step required for stage note');
+  return mutate(repKey, date, actualStore, (draft) => {
+    if (!draft.stageNotes) draft.stageNotes = {};
+    const clean = text == null ? '' : String(text);
+    if (!clean.trim()) {
+      delete draft.stageNotes[step];
+    } else {
+      draft.stageNotes[step] = { text: clean, updatedAt: new Date().toISOString() };
+    }
+  });
+}
+
+/**
+ * Carry-forward note authored this visit for the next servicer of this store.
+ * The durable, store-scoped copy is written to store_notes by the route; this
+ * only stamps the draft with what the rep wrote here (provenance / CSV).
+ */
+function setNextVisitNote(repKey, date, actualStore, { text } = {}) {
+  return mutate(repKey, date, actualStore, (draft) => {
+    const clean = text == null ? '' : String(text);
+    draft.nextVisitNote = clean.trim() ? clean : null;
+  });
+}
+
+/**
  * Free navigation: any section in this visit's step list is always reachable.
  * No forward-locking / "complete this first" gates.
  */
@@ -330,6 +378,7 @@ function summarize(draft) {
     survey: 'Survey',
     after_photos: 'After Photos',
     time: 'Time',
+    shift_log: 'Outcome & Notes',
     review: 'Review & Finish',
   };
   return {
@@ -349,6 +398,9 @@ function summarize(draft) {
     categoryPhotoCount,
     checklistChecked,
     surveyAnswerCount: Object.keys(draft.survey || {}).length,
+    shiftLogOutcomeCount: (draft.shiftLog?.outcomes || []).length,
+    stageNoteCount: Object.keys(draft.stageNotes || {}).length,
+    hasNextVisitNote: !!draft.nextVisitNote,
     hasStartTime: !!(draft.visitStart && draft.visitStart.actual),
     hasStopTime: !!(draft.visitStop && draft.visitStop.actual),
     photoDelivery: pd
@@ -468,6 +520,9 @@ module.exports = {
   setSurveyAnswers,
   setTimes,
   setMileage,
+  setShiftLog,
+  setStageNote,
+  setNextVisitNote,
   goToStep,
   finishVisit,
   abandonVisit,

@@ -44,6 +44,9 @@ const {
 } = require('../lib/schedule-writer');
 const visitFlow = require('../lib/visit-flow');
 const visitDraftStore = require('../lib/visit-draft-store');
+const shiftEventLog = require('../lib/shift-event-log');
+const shiftOutcomeOptions = require('../../data/cp-shift-outcome-options.json');
+const { shiftEventsCsv } = require('../lib/shift-csv');
 const { runDryRun } = require('../lib/dryrun-runner');
 const dryrunStore = require('../lib/dryrun-store');
 const { isLiveTransmitEnabled, loadAllowlist, isDraftAllowlisted, draftIdFromParts } = require('../lib/live-allowlist');
@@ -831,6 +834,10 @@ router.get('/shift-day/visit-flow/category-targets', (_req, res) => {
   res.json(visitFlow.CATEGORY_PHOTO_TARGETS);
 });
 
+router.get('/shift-day/visit-flow/outcome-options', (_req, res) => {
+  res.json(shiftOutcomeOptions);
+});
+
 router.post('/shift-day/visit/start', shiftDayScope, (req, res) => {
   const { repKey, weekStart, shiftId, startedAt } = req.body || {};
   if (!repKey || !weekStart || !shiftId) {
@@ -876,6 +883,31 @@ router.get('/shift-day/visit/mine', shiftDayScope, (req, res) => {
 
 router.get('/shift-day/visit/drafts', requireAdmin, (_req, res) => {
   res.json(visitDraftStore.listAllDrafts());
+});
+
+/**
+ * Admin date-range CSV export of the verbose shift log (which real store each
+ * shift ran for, times, processes, outcomes/variances, notes). Reads shift_events
+ * (Postgres), falling back to the JSON store when no DB is configured.
+ * ?start=YYYY-MM-DD&end=YYYY-MM-DD (both optional; omit for everything).
+ */
+router.get('/shift-day/report/export.csv', requireAdmin, async (req, res) => {
+  const { start, end } = req.query || {};
+  const isDate = (v) => v == null || /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (!isDate(start) || !isDate(end)) {
+    return res.status(400).json({ error: 'start/end must be YYYY-MM-DD' });
+  }
+  try {
+    const events = await shiftEventLog.queryShiftEvents({ start, end });
+    const csv = shiftEventsCsv(events);
+    const span = `${start || 'all'}_to_${end || 'all'}`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="cp-shift-log-${span}.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    console.error('[export.csv] failed:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 function draftMutationHandler(fn) {
@@ -974,6 +1006,75 @@ router.post(
 );
 
 router.post(
+  '/shift-day/visit/shift-log',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setShiftLog(repKey, date, actualStore, {
+      outcomes: body.outcomes,
+      custom: body.custom,
+    })
+  )
+);
+
+router.post(
+  '/shift-day/visit/note',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setStageNote(repKey, date, actualStore, { step: body.step, text: body.text })
+  )
+);
+
+/**
+ * Carry-forward note for the NEXT visit to this store. Stamps the draft (for
+ * provenance/CSV) and writes a durable, store-scoped row to store_notes that
+ * surfaces to whoever services this store next.
+ */
+router.post('/shift-day/visit/next-visit-note', shiftDayScope, async (req, res) => {
+  const { repKey, date, actualStore, text } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  try {
+    const draft = visitDraftStore.setNextVisitNote(repKey, date, actualStore, { text });
+    const clean = (text == null ? '' : String(text)).trim();
+    if (clean) {
+      await shiftEventLog.addStoreNote({
+        store: actualStore,
+        note: clean,
+        rep: req.user?.email || repKey,
+        draftId: draft.id,
+      });
+    }
+    res.json(visitDraftStore.enrichDraftForUi(draft));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** Active (unresolved) carry-forward notes for a store — surfaced on visit open. */
+router.get('/shift-day/store-notes', async (req, res) => {
+  const store = req.query.store;
+  if (store == null) return res.status(400).json({ error: 'store required' });
+  try {
+    const notes = await shiftEventLog.listActiveStoreNotes(store);
+    res.json({ store: Number(store), notes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Mark a carry-forward note handled so it stops surfacing. */
+router.post('/shift-day/store-notes/:id/resolve', async (req, res) => {
+  try {
+    const note = await shiftEventLog.resolveStoreNote(req.params.id, req.user?.email || null);
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    res.json({ ok: true, note });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post(
   '/shift-day/visit/time',
   shiftDayScope,
   draftMutationHandler((repKey, date, actualStore, body) =>
@@ -1052,13 +1153,27 @@ router.post('/shift-day/visit/abandon', shiftDayScope, (req, res) => {
   }
 });
 
-router.post(
-  '/shift-day/visit/finish',
-  shiftDayScope,
-  draftMutationHandler((repKey, date, actualStore) =>
-    visitDraftStore.finishVisit(repKey, date, actualStore)
-  )
-);
+router.post('/shift-day/visit/finish', shiftDayScope, (req, res) => {
+  const { repKey, date, actualStore } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  let draft;
+  try {
+    draft = visitDraftStore.finishVisit(repKey, date, actualStore);
+  } catch (err) {
+    if (err.code === 'SEAL_BLOCKED') {
+      return res.status(400).json({ error: err.message, code: err.code, unmet: err.unmet || [] });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  // Verbose audit log write is best-effort — a DB hiccup must never turn a
+  // successful seal into an error for the rep.
+  shiftEventLog
+    .recordShiftEvent(draft, { eventType: 'sealed', repEmail: req.user?.email || null })
+    .catch((err) => console.error('[finish] recordShiftEvent failed:', err.message));
+  res.json(visitDraftStore.enrichDraftForUi(draft));
+});
 
 /* ---------- Stage 4: prod overlay dry run (Planning Desk) ----------
  * runDryRun()/transmitVisit() only ever perform read-only GETs against prod
@@ -1191,6 +1306,21 @@ router.post('/shift-day/live/transmit', requireAdmin, async (req, res) => {
       return res.status(400).json(result);
     }
     if (result.status === 'complete') {
+      // Enrich the audit row with PROD ids now that the shift actually landed.
+      try {
+        const sealed = visitDraftStore.getDraft(assembled.repKey, assembled.date, assembled.actualStore);
+        if (sealed) {
+          shiftEventLog
+            .recordShiftEvent(sealed, {
+              eventType: 'transmitted',
+              visitId: result.visitId ?? assembled.visitId ?? null,
+              shiftId: result.shiftId ?? assembled.shiftId ?? null,
+            })
+            .catch((e) => console.error('[live] recordShiftEvent failed:', e.message));
+        }
+      } catch (e) {
+        console.error('[live] transmit audit enrich failed:', e.message);
+      }
       return res.json(result);
     }
     if (result.abortReason === 'preflight_failed') {
