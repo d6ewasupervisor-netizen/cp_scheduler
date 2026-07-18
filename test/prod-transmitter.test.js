@@ -732,7 +732,11 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(result.status, 'ok');
 
     const travel = result.calls.find((c) => c.url.includes('/travel/') && c.url.includes('/to_store/'));
-    assert.deepEqual(travel.payload, {});
+    // prod completio7n.har: to_store carries start_time (UTC) + user_accepted_ss_replace, not {}.
+    assert.deepEqual(travel.payload, {
+      start_time: '2026-07-08T13:01:00.000Z',
+      user_accepted_ss_replace: null,
+    });
 
     const pings = result.calls.filter(
       (c) => c.method === 'PATCH' && c.url.includes('/shift-complete/') && c.payload && c.payload.shift_id

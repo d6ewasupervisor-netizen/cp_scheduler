@@ -780,16 +780,20 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     result.skippedVisitStart = true;
   }
 
-  // 1. Travel H→S — POST body MUST be {} with Content-Type JSON.
+  // 1. Travel H→S — POST { start_time (UTC, = arrival/visit-start), user_accepted_ss_replace: null }.
+  //    An empty {} body 500s (was the 2026-07-17 seq-10 failure) — prod completio7n.har visit 26940175.
   //    System may invent ~32 mi; corrected later via shift PATCH travel CHANGE when leg is H→S.
   //    Skip when PROD already has travel_records (rep started/traveled in field app first).
   if (!hasExistingTravel) {
     pushCall({
       method: 'POST',
       url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
-      payload: {},
+      payload: {
+        start_time: new Date(visitStartIso).toISOString(),
+        user_accepted_ss_replace: null,
+      },
       sourceRef:
-        'James FM53 + HAR #132 + automator postTravelToStore — body MUST be {} (JSON). Skip at execute if shift already has travel_records. System distance often wrong; matrix CHANGE corrects after.',
+        'prod completio7n.har (visit 26940175) — POST …/to_store/ body { start_time (UTC), user_accepted_ss_replace: null }. Empty {} 500s. Skip at execute if shift already has travel_records.',
     });
   } else {
     result.skippedToStore = true;
