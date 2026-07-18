@@ -980,24 +980,20 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     reconstructed: true,
   });
 
-  // 7b. Category Reset — completion_status + team spent_time/reason id.
+  // 7b. Category Reset completion — prod completio7n.har uses category_completion:true
+  //     (NOT completion_status, which SAS silently ignores → "Category Reset is not
+  //     completed" on the final PUT). id + comment + exception:null.
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
     payload: {
-      completion_status: true,
+      category_completion: true,
+      id: primaryResetRow.id,
       comment: attributionComment,
-      exception_id: null,
-      team: [
-        {
-          id: shiftEmployee.id,
-          spent_time: spentLabel,
-          spent_time_reason: categoryReason.id,
-        },
-      ],
+      exception: null,
     },
     sourceRef:
-      'James FM53 + HAR #186/#414 — completion_status + team[].spent_time (= work time) + spent_time_reason id. Catalog GET /field-app/spent-time-reasons/.',
+      'prod completio7n.har — category-reset completion { category_completion:true, id, comment, exception:null }. completion_status is ignored by SAS.',
     reconstructed: true,
   });
 
