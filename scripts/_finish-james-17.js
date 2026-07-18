@@ -29,7 +29,7 @@
   const R = ((crWrap && crWrap.category_resets) || crWrap || [])[0];
   console.log('reset completed:', R && R.completed, '| team:', JSON.stringify(R && R.team).slice(0,150));
 
-  const put = await defaultSasFetch(scUrl, { method:'PUT', headers, body:{ allowed_overlap:false, allowed_missing_ques:false, allowed_truncation:false, team_lead_feedback:null, end_location:[-1,-1], validate_geo:true } });
+  const put = await defaultSasFetch(scUrl, { method:'PUT', headers, body:{ allowed_overlap:true, allowed_missing_ques:true, allowed_truncation:true, team_lead_feedback:null, end_location:[-1,-1], validate_geo:true } });
   console.log('PUT shift-complete ->', put.status, put.ok?'ok':('FAIL '+JSON.stringify(put.body).slice(0,300)));
   await defaultSasFetch(scUrl, { method:'PATCH', headers, body:{ team_lead_feedback:null } });
 
