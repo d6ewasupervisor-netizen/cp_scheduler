@@ -37,12 +37,12 @@ async function apiCall(path, opts = {}) {
 }
 
 const STEP_HINTS = {
-  before_photos: 'Arrive and photograph the Pet Supplies aisle (two 4ft sections per shot).',
+  before_photos: 'Arrive and photograph the Pet Supplies aisle (two 4ft sections per shot). Keep the camera open and capture all befores in one go.',
   load_check: 'Find the load, photograph it if present, then work it to the shelf.',
   write_order_checklist: 'Open Amp by Movista, write the order from product tags, then check off scope items.',
-  category_photos: 'Photograph each category target (endcaps, clipstrips, wings, etc.).',
+  category_photos: 'Choose category photos from the after photos you already took — no second camera pass.',
   survey: 'Answer the service survey. Some questions appear based on earlier answers.',
-  after_photos: 'Photograph the finished Pet Supplies aisle (two 4ft sections per shot).',
+  after_photos: 'Photograph the finished Pet Supplies aisle (two 4ft sections per shot). Keep the camera open and capture all afters in one go.',
   time: 'Set actual start/stop times and compute your mileage leg.',
   shift_log: 'Log what happened on this shift — pick everything that applies, add any variances, and leave a note for the next visit.',
   review: 'Fix any unmet items, then seal the visit.',
@@ -91,6 +91,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     /** @type {null | { key: string, input: HTMLInputElement | null }} */
     burst: null,
     photoEditMode: false,
+    /** @type {null | { kind: string, stream: MediaStream, count: number, extra: object }} */
+    liveCam: null,
+    /** path -> object URL for authenticated photo previews */
+    previewCache: new Map(),
   };
 
   /** Background photo uploads — capture never waits for network. */
@@ -151,9 +155,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             onDraftChanged?.(vf.draft);
             photoQueue.pruneDone();
           }
-          // Avoid full re-render thrash while burst camera is open
-          if (!vf.burst) renderAll();
+          // Avoid full re-render thrash while burst/live camera is open
+          if (!vf.burst && !vf.liveCam) renderAll();
           else {
+            updateBurstStatus();
+            updateLiveCameraChrome();
             updateFinishButton();
             updateGuidedNav();
           }
@@ -343,7 +349,225 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     }
   }
 
-  function photoCaptureBlock({ label, photos, minRequired = 0, onCapture, onRemove, anchorId, pending = [], extra = {} }) {
+  /* ---------- Live camera (stays open for full before/after bursts) ---------- */
+
+  function stopLiveCamera({ rerender = true } = {}) {
+    const cam = vf.liveCam;
+    if (cam?.stream) {
+      try {
+        cam.stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* ignore */
+      }
+    }
+    vf.liveCam = null;
+    const overlay = document.getElementById('vfLiveCamera');
+    if (overlay) overlay.hidden = true;
+    const video = document.getElementById('vfLiveVideo');
+    if (video) {
+      try {
+        video.srcObject = null;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (rerender) renderAll();
+  }
+
+  function ensureLiveCameraDom() {
+    let overlay = document.getElementById('vfLiveCamera');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'vfLiveCamera';
+    overlay.className = 'vf-live-camera';
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="vf-live-camera-inner">
+        <video id="vfLiveVideo" class="vf-live-video" playsinline autoplay muted></video>
+        <canvas id="vfLiveCanvas" class="vf-live-canvas" hidden></canvas>
+        <div class="vf-live-top">
+          <span id="vfLiveTitle" class="vf-live-title">Camera</span>
+          <span id="vfLiveCount" class="vf-live-count">0 captured</span>
+        </div>
+        <div class="vf-live-thumbs" id="vfLiveThumbs"></div>
+        <div class="vf-live-controls">
+          <button type="button" class="subtle" id="vfLiveClose">Close</button>
+          <button type="button" class="primary vf-live-shutter" id="vfLiveShutter" aria-label="Take photo">●</button>
+          <button type="button" class="primary" id="vfLiveDone">Done</button>
+        </div>
+        <p class="vf-live-hint" id="vfLiveHint">Keep this open — tap the shutter for each photo, then Done.</p>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#vfLiveClose').addEventListener('click', () => {
+      stopLiveCamera({ rerender: true });
+      toast('Camera closed', 'ok', 1800);
+    });
+    overlay.querySelector('#vfLiveDone').addEventListener('click', () => {
+      const n = vf.liveCam?.count || 0;
+      stopLiveCamera({ rerender: true });
+      toast(n ? `Saved ${n} photo(s)` : 'Camera closed', 'ok', 2200);
+    });
+    overlay.querySelector('#vfLiveShutter').addEventListener('click', () => captureLiveFrame());
+    return overlay;
+  }
+
+  function updateLiveCameraChrome() {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const countEl = document.getElementById('vfLiveCount');
+    const titleEl = document.getElementById('vfLiveTitle');
+    const q = photoQueue.snapshot();
+    if (titleEl) {
+      titleEl.textContent =
+        cam.kind === 'before' ? 'Before photos' : cam.kind === 'after' ? 'After photos' : 'Camera';
+    }
+    if (countEl) {
+      countEl.textContent = `${cam.count} captured${q.inFlight ? ` · ${q.inFlight} uploading` : ''}`;
+    }
+  }
+
+  async function captureLiveFrame() {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const video = document.getElementById('vfLiveVideo');
+    const canvas = document.getElementById('vfLiveCanvas');
+    if (!video || !canvas) return;
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    if (!w || !h) {
+      toast('Camera not ready yet — wait a moment', 'warn', 2500);
+      return;
+    }
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+    if (!blob) {
+      toast('Could not capture frame', 'bad', 3000);
+      return;
+    }
+    const file = new File([blob], `live-${cam.kind}-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    try {
+      queuePhoto(file, cam.extra);
+      cam.count += 1;
+      updateLiveCameraChrome();
+      // Local thumb strip
+      const thumbs = document.getElementById('vfLiveThumbs');
+      if (thumbs) {
+        const url = URL.createObjectURL(blob);
+        const el = document.createElement('div');
+        el.className = 'vf-live-thumb';
+        el.style.backgroundImage = `url('${url}')`;
+        thumbs.prepend(el);
+      }
+    } catch (err) {
+      toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
+    }
+  }
+
+  async function openLiveCamera(kind) {
+    if (!vf.draft) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast('Live camera not supported on this device — use the file capture button', 'warn', 4500);
+      return;
+    }
+    stopBurst();
+    stopLiveCamera({ rerender: false });
+    const overlay = ensureLiveCameraDom();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+      const extra = { target: kind };
+      vf.liveCam = { kind, stream, count: 0, extra };
+      const video = document.getElementById('vfLiveVideo');
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch {
+        /* autoplay policies — still usually works after gesture */
+      }
+      const thumbs = document.getElementById('vfLiveThumbs');
+      if (thumbs) thumbs.innerHTML = '';
+      updateLiveCameraChrome();
+      overlay.hidden = false;
+    } catch (err) {
+      vf.liveCam = null;
+      toast(
+        `Could not open camera: ${err.message || err.name || 'permission denied'}. Use the file capture button instead.`,
+        'bad',
+        6000
+      );
+    }
+  }
+
+  /** Authenticated photo preview (Bearer auth can't go on <img src>). */
+  async function ensurePhotoPreview(photo) {
+    if (!photo?.path || !vf.draft) return null;
+    if (vf.previewCache.has(photo.path)) return vf.previewCache.get(photo.path);
+    const file = String(photo.path).split(/[/\\]/).pop();
+    if (!file) return null;
+    const qs = new URLSearchParams({
+      repKey: getRepKey(),
+      date: vf.draft.date,
+      actualStore: String(vf.draft.actualStore),
+      file,
+    });
+    try {
+      const res = await window.cpAuthFetch(`${API}/shift-day/visit/photo-file?${qs}`);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      vf.previewCache.set(photo.path, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  function fillPhotoThumbs(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-photo-path]').forEach((el) => {
+      const p = el.dataset.photoPath;
+      if (!p) return;
+      ensurePhotoPreview({ path: p }).then((url) => {
+        if (!url || !el.isConnected) return;
+        el.style.backgroundImage = `url('${url}')`;
+        el.style.backgroundSize = 'cover';
+        el.style.backgroundPosition = 'center';
+      });
+    });
+  }
+
+  function photoThumbHtml(p, i, { showRemove = false, extraClass = '' } = {}) {
+    const seq = p.seq ?? i + 1;
+    const pathAttr = p.path ? ` data-photo-path="${escapeHtml(p.path)}"` : '';
+    return `<div class="vf-photo-thumb vf-photo-ok ${extraClass}" data-seq="${seq}" title="Saved #${seq}"${pathAttr}>
+      <span class="vf-photo-badge">#${seq}</span>${
+        showRemove
+          ? `<button type="button" class="vf-photo-remove" data-seq="${seq}" aria-label="Remove photo">×</button>`
+          : ''
+      }</div>`;
+  }
+
+  function photoCaptureBlock({
+    label,
+    photos,
+    minRequired = 0,
+    onCapture,
+    onRemove,
+    anchorId,
+    pending = [],
+    extra = {},
+    liveKind = null,
+  }) {
     const wrap = document.createElement('div');
     wrap.className = 'vf-photo-block';
     if (anchorId) wrap.id = anchorId;
@@ -356,17 +580,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (minRequired) countLabel += ` (min ${minRequired})`;
     const bKey = burstKey(extra);
     const bursting = vf.burst?.key === bKey;
+    const liveOpen = vf.liveCam && liveKind && vf.liveCam.kind === liveKind;
 
     const showRemove = vf.photoEditMode && onRemove;
     const serverThumbs = (photos || [])
-      .map(
-        (p, i) =>
-          `<div class="vf-photo-thumb vf-photo-ok" data-seq="${p.seq ?? i + 1}" title="Saved">#${i + 1}${
-            showRemove
-              ? `<button type="button" class="vf-photo-remove" data-seq="${p.seq ?? i + 1}" aria-label="Remove photo">×</button>`
-              : ''
-          }</div>`
-      )
+      .map((p, i) => photoThumbHtml(p, i, { showRemove }))
       .join('');
 
     const pendingThumbs = (pending || [])
@@ -392,6 +610,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       })
       .join('');
 
+    const liveBtn =
+      liveKind != null
+        ? `<button type="button" class="primary vf-live-open-btn">${
+            liveOpen ? 'Camera open…' : 'Open camera (keep open)'
+          }</button>`
+        : '';
+
     wrap.innerHTML = `
       <div class="vf-photo-head">
         <strong>${label}</strong>
@@ -399,8 +624,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       </div>
       <div class="vf-photo-grid">${serverThumbs}${pendingThumbs}</div>
       <div class="vf-photo-actions">
-        <label class="vf-photo-input primary">
-          ${bursting ? 'Next photo' : 'Start capturing'}
+        ${liveBtn}
+        <label class="vf-photo-input ${liveKind ? 'subtle' : 'primary'}">
+          ${liveKind ? (bursting ? 'Add one more (file)' : 'Add from files') : bursting ? 'Next photo' : 'Start capturing'}
           <input type="file" accept="image/*" capture="environment" hidden>
         </label>
         ${
@@ -411,7 +637,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             : ''
         }
       </div>
-      <p class="vf-photo-hint overlay-meta">Shots upload in the background. Keep capturing until you tap <strong>Done capturing</strong>.</p>`;
+      <p class="vf-photo-hint overlay-meta">${
+        liveKind
+          ? 'Open the camera once, take every shot, then tap <strong>Done</strong>. Photos upload in the background.'
+          : 'Shots upload in the background. Keep capturing until you tap <strong>Done capturing</strong>.'
+      }</p>`;
+
+    wrap.querySelector('.vf-live-open-btn')?.addEventListener('click', () => openLiveCamera(liveKind));
 
     const input = wrap.querySelector('input[type=file]');
     input.addEventListener('change', (e) => {
@@ -420,10 +652,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (!file) return;
       try {
         onCapture(file);
-        if (!vf.burst || vf.burst.key !== bKey) startBurst(bKey, input);
-        updateBurstStatus();
-        // Auto re-open for continuous capture
-        reOpenCamera(input);
+        // File-input path: keep optional burst re-open for single-shot sections
+        // (load/checklist) and as a fallback for before/after.
+        if (!liveKind) {
+          if (!vf.burst || vf.burst.key !== bKey) startBurst(bKey, input);
+          updateBurstStatus();
+          reOpenCamera(input);
+        } else {
+          renderAll();
+        }
       } catch (err) {
         toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
       }
@@ -448,22 +685,24 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         photoQueue.retry(btn.dataset.qid);
       });
     });
+    fillPhotoThumbs(wrap);
     return wrap;
   }
 
   /** Queue photo for background upload — returns immediately. */
   function queuePhoto(file, extra) {
     photoQueue.enqueue(file, extra);
-    // Instant UI feedback without waiting for network (skip full re-render in burst)
-    if (vf.burst) {
+    // Instant UI feedback without waiting for network (skip full re-render in burst/live)
+    if (vf.burst || vf.liveCam) {
       updateBurstStatus();
+      updateLiveCameraChrome();
       updatePhotoQueueSaveState(photoQueue.snapshot());
     } else {
       renderAll();
     }
   }
 
-  async function removePhoto(target, seq) {
+  async function removePhoto(target, seq, extra = {}) {
     await autosave(() =>
       apiCall('/shift-day/visit/photo/remove', {
         method: 'POST',
@@ -473,6 +712,23 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           actualStore: vf.draft.actualStore,
           target,
           seq,
+          ...extra,
+        }),
+      })
+    );
+    renderAll();
+  }
+
+  async function assignCategoryFromAfter(categoryId, afterSeq) {
+    await autosave(() =>
+      apiCall('/shift-day/visit/photo/assign-category', {
+        method: 'POST',
+        body: JSON.stringify({
+          repKey: getRepKey(),
+          date: vf.draft.date,
+          actualStore: vf.draft.actualStore,
+          categoryId,
+          afterSeq,
         }),
       })
     );
@@ -489,8 +745,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     p.className = 'overlay-meta';
     p.textContent =
       kind === 'before'
-        ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. (Time-sensitive: capture on arrival.)'
-        : 'Same as before: two 4ft sections per photo, full coverage of the Pet Supplies aisle.';
+        ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. Open the camera once and take every before shot without leaving.'
+        : 'Same aisle coverage as before. Open the camera once and take every after shot — category photos will be chosen from these.';
     body.appendChild(p);
     const extra = { target: kind };
     const guide = document.createElement('p');
@@ -505,6 +761,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         anchorId: kind === 'before' ? 'before-photos' : 'after-photos',
         pending: photoQueue.pendingFor(extra),
         extra,
+        liveKind: kind,
         onCapture: (file) => queuePhoto(file, extra),
         onRemove: (seq) => removePhoto(kind, seq),
       })
@@ -679,24 +936,98 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     guide.className = 'vf-step-guide';
     guide.textContent = STEP_HINTS.category_photos;
     body.appendChild(guide);
+
+    const afters = vf.draft.afterPhotos || [];
+    if (!afters.length) {
+      const empty = document.createElement('div');
+      empty.className = 'vf-category-empty';
+      empty.innerHTML = `
+        <p class="overlay-meta">No after photos yet. Take your after photos first, then come back here and pick which ones go to each category.</p>
+        <button type="button" class="primary" id="vfGoAfterPhotos">Go to After Photos</button>`;
+      body.appendChild(empty);
+      empty.querySelector('#vfGoAfterPhotos')?.addEventListener('click', () => goToSection('after_photos'));
+      return;
+    }
+
+    const lib = document.createElement('div');
+    lib.className = 'vf-after-library';
+    lib.innerHTML = `
+      <div class="vf-photo-head">
+        <strong>After photo library</strong>
+        <span class="vf-photo-count">${afters.length} photo(s) — tap one under each category to assign</span>
+      </div>
+      <div class="vf-photo-grid vf-after-library-grid">${afters
+        .map((p, i) => photoThumbHtml(p, i, { extraClass: 'vf-after-lib-thumb' }))
+        .join('')}</div>
+      <p class="vf-photo-hint overlay-meta">Category photos are chosen from these afters. You do not need to re-photograph each target.</p>`;
+    body.appendChild(lib);
+    fillPhotoThumbs(lib);
+
     for (const cat of vf.categoryTargets) {
+      const assigned = vf.draft.categoryPhotos[cat.id] || [];
+      const assignedPaths = new Set(assigned.map((p) => p.path).filter(Boolean));
+
+      const section = document.createElement('div');
+      section.className = 'vf-category-pick';
+      section.id = `category-block-${cat.id}`;
+
       const h = document.createElement('h3');
       h.className = 'vf-section-head';
       h.id = `category-${cat.id}`;
-      h.textContent = cat.label;
-      body.appendChild(h);
-      const catExtra = { target: 'category', categoryId: cat.id };
-      body.appendChild(
-        photoCaptureBlock({
-          label: cat.label,
-          photos: vf.draft.categoryPhotos[cat.id] || [],
-          minRequired: 1,
-          anchorId: `category-block-${cat.id}`,
-          pending: photoQueue.pendingFor(catExtra),
-          extra: catExtra,
-          onCapture: (file) => queuePhoto(file, catExtra),
+      h.textContent = `${cat.label}${assigned.length ? ` · ${assigned.length} assigned` : ' · needs 1+'}`;
+      section.appendChild(h);
+
+      const assignedGrid = document.createElement('div');
+      assignedGrid.className = 'vf-photo-grid';
+      if (assigned.length) {
+        assignedGrid.innerHTML = assigned
+          .map((p, i) => photoThumbHtml(p, i, { showRemove: true, extraClass: 'vf-cat-assigned' }))
+          .join('');
+        assignedGrid.querySelectorAll('.vf-photo-remove').forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            removePhoto('category', Number(btn.dataset.seq), { categoryId: cat.id });
+          });
+        });
+      } else {
+        assignedGrid.innerHTML = `<div class="vf-cat-placeholder">No photo assigned yet — tap an after photo below</div>`;
+      }
+      section.appendChild(assignedGrid);
+
+      const pickLabel = document.createElement('div');
+      pickLabel.className = 'vf-cat-pick-label overlay-meta';
+      pickLabel.textContent = `Pick from afters for ${cat.label}:`;
+      section.appendChild(pickLabel);
+
+      const pickGrid = document.createElement('div');
+      pickGrid.className = 'vf-photo-grid vf-cat-picker-grid';
+      pickGrid.innerHTML = afters
+        .map((p, i) => {
+          const seq = p.seq ?? i + 1;
+          const selected = assignedPaths.has(p.path);
+          const pathAttr = p.path ? ` data-photo-path="${escapeHtml(p.path)}"` : '';
+          return `<button type="button" class="vf-photo-thumb vf-cat-pick-thumb ${
+            selected ? 'is-selected' : ''
+          }" data-after-seq="${seq}" title="${selected ? 'Already assigned' : 'Assign to ' + cat.label}"${pathAttr}>
+            <span class="vf-photo-badge">${selected ? '✓' : '#' + seq}</span>
+          </button>`;
         })
-      );
+        .join('');
+      pickGrid.querySelectorAll('.vf-cat-pick-thumb').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (btn.classList.contains('is-selected')) {
+            toast('Already assigned to this category', 'info', 2000);
+            return;
+          }
+          assignCategoryFromAfter(cat.id, Number(btn.dataset.afterSeq)).catch((err) =>
+            toast(err.message || 'Assign failed', 'bad', 4000)
+          );
+        });
+      });
+      section.appendChild(pickGrid);
+      fillPhotoThumbs(section);
+      body.appendChild(section);
     }
   }
 
@@ -1486,6 +1817,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   function close() {
     stopBurst();
+    stopLiveCamera({ rerender: false });
     setVisitShellOpen(false);
     closeSidebarDrawer();
     vf.shift = null;
@@ -1522,6 +1854,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   async function open(shift) {
     vf.shift = shift;
     stopBurst();
+    stopLiveCamera({ rerender: false });
     vf.photoEditMode = false;
     await withBusy(async () => {
       await ensureStaticData();
@@ -1592,6 +1925,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       toast('Sealed visits cannot be discarded', 'bad', 4000);
       return null;
     }
+    stopLiveCamera({ rerender: false });
     const q = photoQueue.snapshot();
     if (q.inFlight > 0) {
       toast('Wait for photo uploads to finish (or fail) before discarding', 'warn', 4500);

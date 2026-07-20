@@ -5,28 +5,28 @@ const assert = require('node:assert/strict');
 const visitFlow = require('../src/lib/visit-flow');
 
 describe('buildStepSequence (branch logic)', () => {
-  it('load-only: before → load_check → category → survey → after → time → review', () => {
+  it('load-only: before → load_check → after → category → survey → time → review', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: true, writeOrder: false });
     assert.deepEqual(steps, [
       'before_photos',
       'load_check',
+      'after_photos',
       'category_photos',
       'survey',
-      'after_photos',
       'time',
       'shift_log',
       'review',
     ]);
   });
 
-  it('order-only: before → write_order_checklist → category → survey → after → time → review', () => {
+  it('order-only: before → write_order_checklist → after → category → survey → time → review', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: true });
     assert.deepEqual(steps, [
       'before_photos',
       'write_order_checklist',
+      'after_photos',
       'category_photos',
       'survey',
-      'after_photos',
       'time',
       'shift_log',
       'review',
@@ -43,22 +43,22 @@ describe('buildStepSequence (branch logic)', () => {
       'before_photos',
       'load_check',
       'write_order_checklist',
+      'after_photos',
       'category_photos',
       'survey',
-      'after_photos',
       'time',
       'shift_log',
       'review',
     ]);
   });
 
-  it('neither load nor order: skips both conditional steps', () => {
+  it('neither load nor order: skips both conditional steps; after before category', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
     assert.deepEqual(steps, [
       'before_photos',
+      'after_photos',
       'category_photos',
       'survey',
-      'after_photos',
       'time',
       'shift_log',
       'review',
@@ -67,8 +67,8 @@ describe('buildStepSequence (branch logic)', () => {
 
   it('nextStep/prevStep walk the sequence and return null at the ends', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
-    assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'category_photos');
-    assert.equal(visitFlow.prevStep(steps, 'category_photos'), 'before_photos');
+    assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'after_photos');
+    assert.equal(visitFlow.prevStep(steps, 'category_photos'), 'after_photos');
     assert.equal(visitFlow.prevStep(steps, 'before_photos'), null);
     assert.equal(visitFlow.nextStep(steps, 'review'), null);
   });

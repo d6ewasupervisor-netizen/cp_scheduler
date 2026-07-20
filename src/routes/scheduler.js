@@ -325,7 +325,10 @@ function shiftDayScope(req, _res, next) {
   if (req.user?.layer === 'rep') {
     const mine = shiftRepByEmail(req.user.email);
     if (mine) {
-      if (req.query) req.query.rep = mine.repKey;
+      if (req.query) {
+        req.query.rep = mine.repKey;
+        req.query.repKey = mine.repKey;
+      }
       if (req.body) req.body.repKey = mine.repKey;
       if (req.params && 'repKey' in req.params) req.params.repKey = mine.repKey;
     }
@@ -977,9 +980,63 @@ router.post(
     if (body.target === 'after') {
       return visitDraftStore.removeAfterPhoto(repKey, date, actualStore, { seq: body.seq });
     }
+    if (body.target === 'category') {
+      if (!body.categoryId) throw new Error('categoryId required for category photo remove');
+      return visitDraftStore.removeCategoryPhoto(repKey, date, actualStore, body.categoryId, {
+        seq: body.seq,
+      });
+    }
     throw new Error(`Unknown photo remove target: ${body.target}`);
   })
 );
+
+/**
+ * Assign an after photo to a category target (category picks come from afters).
+ * POST body: { repKey, date, actualStore, categoryId, afterSeq }
+ */
+router.post(
+  '/shift-day/visit/photo/assign-category',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) => {
+    if (!body.categoryId) throw new Error('categoryId required');
+    if (body.afterSeq == null) throw new Error('afterSeq required');
+    return visitDraftStore.assignCategoryFromAfter(repKey, date, actualStore, body.categoryId, {
+      afterSeq: body.afterSeq,
+    });
+  })
+);
+
+/**
+ * Serve a draft photo file for in-app previews (auth required via middleware).
+ * Query: repKey, date, actualStore, file (basename of photo file)
+ */
+router.get('/shift-day/visit/photo-file', shiftDayScope, (req, res) => {
+  const repKey = req.query.repKey || req.query.rep;
+  const date = req.query.date;
+  const actualStore = req.query.actualStore != null ? req.query.actualStore : req.query.store;
+  const file = req.query.file || req.query.path;
+  if (!repKey || !date || actualStore == null || !file) {
+    return res.status(400).json({ error: 'repKey, date, actualStore, file required' });
+  }
+  try {
+    const resolved = visitDraftStore.resolvePhotoFile(repKey, date, actualStore, file);
+    if (!resolved) return res.status(404).json({ error: 'Photo not found' });
+    const ext = require('path').extname(resolved.filename).toLowerCase();
+    const type =
+      ext === '.png'
+        ? 'image/png'
+        : ext === '.webp'
+          ? 'image/webp'
+          : ext === '.gif'
+            ? 'image/gif'
+            : 'image/jpeg';
+    res.setHeader('Content-Type', type);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    return res.sendFile(resolved.absPath);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
 
 router.post(
   '/shift-day/visit/load-check',

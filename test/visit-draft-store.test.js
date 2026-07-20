@@ -79,9 +79,9 @@ describe('startVisit / resume', () => {
       'before_photos',
       'load_check',
       'write_order_checklist',
+      'after_photos',
       'category_photos',
       'survey',
-      'after_photos',
       'time',
       'shift_log',
       'review',
@@ -262,6 +262,27 @@ describe('photo tagging uses the DECODED store even when scheduled differs', () 
     assert.notEqual(photo.store, 391);
     assert.equal(photo.category, 'endcaps');
     assert.equal(photo.date, date);
+  });
+});
+
+describe('category photos assigned from after library', () => {
+  it('assignCategoryFromAfter reuses the after path and removeAfter drops the assignment', () => {
+    const date = '2026-07-25';
+    const S = 658;
+    store.startVisit({ repKey: REP_A, date, actualStore: S, writeOrder: false, workLoad: false });
+    store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-1.jpg' });
+    store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-2.jpg' });
+    let d = store.assignCategoryFromAfter(REP_A, date, S, 'endcaps', { afterSeq: 2 });
+    assert.equal(d.categoryPhotos.endcaps.length, 1);
+    assert.equal(d.categoryPhotos.endcaps[0].path, 'fake/after-2.jpg');
+    assert.equal(d.categoryPhotos.endcaps[0].fromAfterSeq, 2);
+    // Idempotent re-assign
+    d = store.assignCategoryFromAfter(REP_A, date, S, 'endcaps', { afterSeq: 2 });
+    assert.equal(d.categoryPhotos.endcaps.length, 1);
+    // Removing the after clears the category assignment
+    d = store.removeAfterPhoto(REP_A, date, S, { seq: 2 });
+    assert.equal(d.afterPhotos.length, 1);
+    assert.equal((d.categoryPhotos.endcaps || []).length, 0);
   });
 });
 

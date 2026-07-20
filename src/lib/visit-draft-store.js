@@ -202,14 +202,26 @@ function removeBeforePhoto(repKey, date, actualStore, { seq } = {}) {
 function removeAfterPhoto(repKey, date, actualStore, { seq } = {}) {
   return mutate(repKey, date, actualStore, (draft) => {
     if (!draft.afterPhotos.length) return;
+    let removed = null;
     if (seq != null) {
-      draft.afterPhotos = draft.afterPhotos.filter((p) => Number(p.seq) !== Number(seq));
+      const idx = draft.afterPhotos.findIndex((p) => Number(p.seq) === Number(seq));
+      if (idx >= 0) removed = draft.afterPhotos.splice(idx, 1)[0];
     } else {
-      draft.afterPhotos.pop();
+      removed = draft.afterPhotos.pop();
     }
     draft.afterPhotos.forEach((p, i) => {
       p.seq = i + 1;
     });
+    // Category picks are drawn from afters — drop assignments that used the removed file.
+    if (removed?.path) {
+      for (const catId of Object.keys(draft.categoryPhotos || {})) {
+        const arr = draft.categoryPhotos[catId] || [];
+        draft.categoryPhotos[catId] = arr.filter((p) => p.path !== removed.path);
+        draft.categoryPhotos[catId].forEach((p, i) => {
+          p.seq = i + 1;
+        });
+      }
+    }
     applySurveyAutoFill(draft);
   });
 }
@@ -221,6 +233,68 @@ function recordCategoryPhoto(repKey, date, actualStore, categoryId, { photoPath 
     const tag = tagPhoto({ store: draft.actualStore, date: draft.date, category: categoryId, seq });
     draft.categoryPhotos[categoryId].push({ path: photoPath, ...tag, capturedAt: new Date().toISOString() });
   });
+}
+
+/**
+ * Assign an existing after photo to a category target (no new capture).
+ * Reuses the same file path so category picks are a selection over afters.
+ */
+function assignCategoryFromAfter(repKey, date, actualStore, categoryId, { afterSeq }) {
+  if (!categoryId) throw new Error('categoryId required');
+  if (afterSeq == null) throw new Error('afterSeq required');
+  return mutate(repKey, date, actualStore, (draft) => {
+    const after = (draft.afterPhotos || []).find((p) => Number(p.seq) === Number(afterSeq));
+    if (!after?.path) throw new Error(`After photo #${afterSeq} not found`);
+    if (!draft.categoryPhotos[categoryId]) draft.categoryPhotos[categoryId] = [];
+    const already = draft.categoryPhotos[categoryId].some(
+      (p) => p.path === after.path || Number(p.fromAfterSeq) === Number(after.seq)
+    );
+    if (already) return;
+    const seq = draft.categoryPhotos[categoryId].length + 1;
+    const tag = tagPhoto({ store: draft.actualStore, date: draft.date, category: categoryId, seq });
+    draft.categoryPhotos[categoryId].push({
+      path: after.path,
+      ...tag,
+      fromAfterSeq: after.seq,
+      capturedAt: after.capturedAt || new Date().toISOString(),
+    });
+  });
+}
+
+/** Remove a category assignment by seq (does not delete the after photo file). */
+function removeCategoryPhoto(repKey, date, actualStore, categoryId, { seq } = {}) {
+  if (!categoryId) throw new Error('categoryId required');
+  return mutate(repKey, date, actualStore, (draft) => {
+    const arr = draft.categoryPhotos?.[categoryId] || [];
+    if (!arr.length) return;
+    if (seq != null) {
+      draft.categoryPhotos[categoryId] = arr.filter((p) => Number(p.seq) !== Number(seq));
+    } else {
+      draft.categoryPhotos[categoryId] = arr.slice(0, -1);
+    }
+    draft.categoryPhotos[categoryId].forEach((p, i) => {
+      p.seq = i + 1;
+    });
+  });
+}
+
+/**
+ * Resolve a draft photo file under the visit photo dir (path-traversal safe).
+ * @returns {{ absPath: string, filename: string } | null}
+ */
+function resolvePhotoFile(repKey, date, actualStore, fileOrRelativePath) {
+  if (!fileOrRelativePath) return null;
+  const draft = readDraftFile(repKey, date, actualStore);
+  if (!draft) return null;
+  const base = path.basename(String(fileOrRelativePath).replace(/\\/g, '/'));
+  if (!base || base === '.' || base === '..') return null;
+  const dir = path.resolve(photoDirPath(repKey, date, actualStore));
+  const abs = path.resolve(dir, base);
+  const rel = path.relative(dir, abs);
+  // Must stay inside this visit's photo directory
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return null;
+  return { absPath: abs, filename: base };
 }
 
 function recordChecklistPhoto(repKey, date, actualStore, itemId, { photoPath }) {
@@ -513,6 +587,9 @@ module.exports = {
   removeBeforePhoto,
   removeAfterPhoto,
   recordCategoryPhoto,
+  assignCategoryFromAfter,
+  removeCategoryPhoto,
+  resolvePhotoFile,
   recordChecklistPhoto,
   setLoadCheck,
   setChecklistItem,

@@ -41,12 +41,12 @@ const STEP = {
 /**
  * Build the ordered step sequence for a visit given its decoded flags.
  * Step order per spec:
- *  1. before photos (always)
+ *  1. before photos (always) — burst capture on arrival
  *  2. load check (only if workLoad)
  *  3. write-order checklist (only if writeOrder) — load first when both
- *  4. category photos (always)
- *  5. survey (always)
- *  6. after photos (always)
+ *  4. after photos (always) — burst capture when finished
+ *  5. category photos (always) — pick from after photos (no second camera pass)
+ *  6. survey (always)
  *  7. time (always)
  *  8. outcome & notes (always) — mandatory shift-outcome log
  *  9. review (always)
@@ -55,7 +55,7 @@ function buildStepSequence({ workLoad, writeOrder }) {
   const steps = [STEP.BEFORE_PHOTOS];
   if (workLoad) steps.push(STEP.LOAD_CHECK);
   if (writeOrder) steps.push(STEP.WRITE_ORDER_CHECKLIST);
-  steps.push(STEP.CATEGORY_PHOTOS, STEP.SURVEY, STEP.AFTER_PHOTOS, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
+  steps.push(STEP.AFTER_PHOTOS, STEP.CATEGORY_PHOTOS, STEP.SURVEY, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
   return steps;
 }
 

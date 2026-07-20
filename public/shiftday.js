@@ -477,6 +477,58 @@ async function resyncFromProd() {
   }
 }
 
+/**
+ * General schedule refresh: force SAS PROD auth refresh, then pull the week
+ * and reload match/draft status so the board is current.
+ */
+async function refreshConnectionAndSchedule() {
+  const btn = $('btnSdRefresh');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+  }
+  try {
+    beginBusy('Refreshing PROD connection…', { force: true });
+    try {
+      const authRes = await window.cpAuthFetch('/api/central-pet/shift-day/sas-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true }),
+      });
+      const authData = await authRes.json().catch(() => ({}));
+      if (!authRes.ok) {
+        toast(
+          `Auth refresh warning: ${authData.error || authRes.statusText}. Still pulling schedule…`,
+          'warn',
+          5000
+        );
+      } else if (window.cpSasBeacon?.refresh) {
+        // Keep sticky beacon in sync with the force-refresh we just did
+        try {
+          await window.cpSasBeacon.poll?.();
+        } catch {
+          /* optional */
+        }
+        toast(authData.ok !== false ? 'SAS PROD auth refreshed' : 'Auth refreshed', 'ok', 2200);
+      } else {
+        toast(authData.ok !== false ? 'SAS PROD auth refreshed' : 'Auth refreshed', 'ok', 2500);
+      }
+    } catch (err) {
+      toast(`Auth refresh failed: ${err.message || err}. Still pulling schedule…`, 'warn', 5000);
+    }
+    await loadWeek({ resync: true, silent: false, force: true });
+    toast('Schedule refreshed from PROD', 'ok', 3000);
+  } catch (err) {
+    toast(err.message || 'Refresh failed', 'bad', 6000);
+  } finally {
+    endBusy();
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  }
+}
+
 async function init() {
   try {
     beginBusy('Loading Shift Day…', { force: true });
@@ -541,6 +593,7 @@ async function init() {
       await loadWeek({ resync: 'auto', silent: true });
     }
   };
+  $('btnSdRefresh')?.addEventListener('click', () => refreshConnectionAndSchedule());
   $('btnSdResyncProd')?.addEventListener('click', () => resyncFromProd());
   $('sdOverlayClose').onclick = closeDetail;
   $('sdOverlay').addEventListener('click', (e) => {

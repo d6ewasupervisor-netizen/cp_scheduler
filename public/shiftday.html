@@ -70,8 +70,9 @@
         <strong>real store</strong> you work (and the address). Use that store — not 391 — for your day.
       </p>
       <div class="btn-stack sd-resync-row" style="margin:.4rem 0 .75rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center">
-        <button type="button" id="btnSdResyncProd" class="primary">Resync from PROD</button>
-        <span class="week-status" id="sdResyncHint" style="margin:0">Pulls the latest visits from SAS so real stores and match status stay current.</span>
+        <button type="button" id="btnSdRefresh" class="primary" title="Refresh SAS PROD connection and pull latest schedule">Refresh</button>
+        <button type="button" id="btnSdResyncProd" class="subtle">Resync schedule only</button>
+        <span class="week-status" id="sdResyncHint" style="margin:0">Refresh reconnects to PROD and reloads this week so store moves and visit status stay current.</span>
       </div>
 
       <div class="calendar" id="sdCalendar" aria-label="Week calendar"></div>
