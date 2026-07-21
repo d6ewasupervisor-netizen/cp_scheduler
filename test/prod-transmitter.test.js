@@ -851,21 +851,29 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.ok(startVisitIdx < surveyDoneIdx, 'start visit before survey');
     assert.ok(surveyDoneIdx < teamCompleteIdx, 'survey before category_completion');
     assert.ok(teamCompleteIdx < toStoreIdx, 'category_completion before to_store');
-    assert.ok(toStoreIdx < firstShiftIdx, 'to_store before punch');
-    assert.ok(surveyDoneIdx < toHomeIdx, 'to_home after survey');
-    assert.ok(toHomeIdx < putIdx, 'to_home before PUT complete');
+    assert.ok(toStoreIdx < toHomeIdx, 'to_store before to_home');
+    assert.ok(toHomeIdx < firstShiftIdx, 'to_home before punch+mileage PATCH');
+    assert.ok(firstShiftIdx < putIdx, 'punch before PUT complete');
 
-    const earlyShift = result.calls.find(
+    const punchShift = result.calls.find(
       (c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/')
     );
-    assert.equal(earlyShift.payload.actual_start_time, '15:40:00');
-    assert.equal(earlyShift.payload.actual_end_time, '16:04:00');
-    assert.equal(earlyShift.payload.time_change_reason, 5);
+    assert.equal(punchShift.payload.actual_start_time, '15:40:00');
+    assert.equal(punchShift.payload.actual_end_time, '16:04:00');
+    assert.equal(punchShift.payload.time_change_reason, 5);
     assert.equal(
-      earlyShift.payload.time_change_comment,
+      punchShift.payload.time_change_comment,
       'Entered from Stage 3 sealed record | Actual store 53 (scheduled placeholder 391)'
     );
-    assert.deepEqual(earlyShift.payload.travel_records, []);
+    // S→H CHANGE rides on the same punch PATCH (HAR 00-54-51 combines legs)
+    assert.ok(punchShift.payload.travel_records?.length >= 1);
+    const sh = punchShift.payload.travel_records[0];
+    assert.equal(sh.record_type, 'CHANGE');
+    assert.equal(sh.start_location_type, 'S');
+    assert.equal(sh.end_location_type, 'H');
+    assert.equal(sh.distance, '3.40');
+    assert.equal(sh.change_reason, 5);
+    assert.equal(sh.id, null);
 
     const spentCall = result.calls.find(
       (c) => c.payload?.spent_time && c.payload?.spent_time_reason && (c.url || '').includes('/category-resets/')
@@ -875,32 +883,59 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(spentCall.payload.spent_time_reason.id, 3);
 
     const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
-    // to_home mirrors to_store: start_time (UTC, = stop) + user_accepted_ss_replace, not {}.
-    assert.equal(toHome.payload.user_accepted_ss_replace, null);
-    assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(toHome.payload.start_time), 'to_home start_time is UTC ISO');
-
-    // Final shift PATCH after to_home carries S→H CHANGE (prod completion.har shape)
-    const finalShift = [...result.calls]
-      .reverse()
-      .find((c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/'));
-    assert.ok(finalShift.payload.travel_records?.length >= 1);
-    const sh = finalShift.payload.travel_records[0];
-    assert.equal(sh.record_type, 'CHANGE');
-    assert.equal(sh.start_location_type, 'S');
-    assert.equal(sh.end_location_type, 'H');
-    assert.equal(sh.distance, '3.40');
-    assert.equal(sh.change_reason, 5);
-    assert.equal(sh.change_comment, 'Entered from Stage 3 sealed record');
-    assert.equal(sh.shift_id, 44390825);
-    assert.equal(sh.id, null);
-    assert.equal(finalShift.payload.time_change_reason, 5);
+    // HAR 00-54-51: to_home body is { end_time }, not start_time.
+    assert.equal(toHome.payload.end_time, '2026-07-15T23:04:00.000Z');
+    assert.equal(toHome.payload.start_time, undefined);
+    assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(toHome.payload.end_time));
 
     const put = result.calls.find((c) => c.method === 'PUT' && c.url.includes('/shift-complete/'));
-    // First-time complete PUT carries the completion body, not { shift_id } (406s).
     assert.equal(put.payload.validate_geo, true);
     assert.deepEqual(put.payload.end_location, [-1, -1]);
     assert.equal(put.payload.allowed_missing_ques, false);
-    assert.equal(put.payload.team_lead_feedback, null);
+    assert.equal(put.payload.team_lead_feedback, 'this is for store 53');
+  });
+
+  it('last-stop with inbound S→S + outbound S→H seals both CHANGE rows on one punch', async () => {
+    const sealed = makeSealedRecord({
+      visitStart: { actual: '2026-07-20T18:56:00Z' },
+      visitStop: { actual: '2026-07-20T20:26:00Z' },
+      isLastStopOfDay: true,
+      beforePhotos: [tmpPhoto('before.jpg')],
+      afterPhotos: [tmpPhoto('after.jpg')],
+      actualStore: 19,
+      mileage: {
+        leg: { from: '19', to: 'home', miles: 7.8, source: 'store-to-home', warning: null },
+        legs: [
+          { from: '111', to: '19', miles: 20, source: 'store-to-store', warning: null },
+          { from: '19', to: 'home', miles: 7.8, source: 'store-to-home', warning: null },
+        ],
+      },
+    });
+    const matched = makeMatchedVisit();
+    matched.prodVisit.actualStore = 19;
+    const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: matched, opts: baseOpts() });
+    assert.equal(result.status, 'ok');
+    assert.equal(result.toHomeAssembled, true);
+    assert.deepEqual(result.mileageCorrection.directions, ['S-S', 'S-H']);
+
+    const toHome = result.calls.find((c) => (c.url || '').includes('/to_home/'));
+    assert.equal(toHome.payload.end_time, '2026-07-20T20:26:00.000Z');
+
+    const shiftPatches = result.calls.filter(
+      (c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/')
+    );
+    assert.equal(shiftPatches.length, 1);
+    const records = shiftPatches[0].payload.travel_records || [];
+    assert.equal(records.length, 2);
+    assert.equal(records[0].start_location_type, 'S');
+    assert.equal(records[0].end_location_type, 'S');
+    assert.equal(records[0].distance, '20.00');
+    assert.equal(records[1].start_location_type, 'S');
+    assert.equal(records[1].end_location_type, 'H');
+    assert.equal(records[1].distance, '7.80');
+
+    const put = result.calls.find((c) => c.method === 'PUT' && c.url.includes('/shift-complete/'));
+    assert.equal(put.payload.team_lead_feedback, 'this is for store 19');
   });
 
   it('does not assemble to_home when not last stop of day', async () => {

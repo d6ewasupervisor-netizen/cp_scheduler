@@ -1,0 +1,181 @@
+[
+  {
+    "method": "POST",
+    "status": 200,
+    "path": "/api/v2/field-app/travel/44611541/to_store/",
+    "body": {
+      "start_time": "2026-07-20T17:03:00.000Z",
+      "user_accepted_ss_replace": null
+    }
+  },
+  {
+    "method": "POST",
+    "status": 200,
+    "path": "/api/v2/field-app/travel/44611541/to_store/",
+    "body": {
+      "start_time": "2026-07-20T18:56:00.000Z",
+      "user_accepted_ss_replace": null
+    }
+  },
+  {
+    "method": "POST",
+    "status": 200,
+    "path": "/api/v2/field-app/travel/44611541/to_home/",
+    "body": {
+      "end_time": "2026-07-20T20:26:00.000Z"
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v2/field-app/shifts/44611541/",
+    "body": {
+      "id": 44611541,
+      "shift_breaks": [],
+      "travel_records": [
+        {
+          "id": null,
+          "shift_id": 44611541,
+          "start_time": "2026-07-20T18:20:00.000Z",
+          "end_time": "2026-07-20T18:56:00.000Z",
+          "distance": "20.00",
+          "duration": "0.6000",
+          "start_location_type": "S",
+          "end_location_type": "S",
+          "is_system_generated": false,
+          "is_truncated": false,
+          "user_accepted_overlap": null,
+          "record_type": "CHANGE",
+          "change_reason": 5,
+          "change_comment": "k"
+        },
+        {
+          "id": null,
+          "shift_id": 44611541,
+          "start_time": "2026-07-20T20:26:00.000Z",
+          "end_time": "2026-07-20T20:51:00.000Z",
+          "distance": "7.80",
+          "duration": "0.4167",
+          "start_location_type": "S",
+          "end_location_type": "H",
+          "is_system_generated": false,
+          "is_truncated": false,
+          "user_accepted_overlap": null,
+          "record_type": "CHANGE",
+          "change_reason": 5,
+          "change_comment": "k"
+        },
+        {
+          "id": null,
+          "shift_id": 44611541,
+          "start_location_type": "S",
+          "end_location_type": "S",
+          "start_time": "2026-07-20T18:56:00Z",
+          "end_time": "2026-07-20T18:56:00Z",
+          "duration": "0.0000",
+          "distance": "0.00",
+          "replaced": false,
+          "travel_policy": {
+            "travel_type": "S-S",
+            "drive_time_threshold": 0
+          },
+          "record_type": "LOG",
+          "is_system_generated": true,
+          "is_truncated": false
+        },
+        {
+          "id": null,
+          "shift_id": 44611541,
+          "start_location_type": "S",
+          "end_location_type": "H",
+          "start_time": "2026-07-20T20:26:00Z",
+          "end_time": "2026-07-20T21:05:00Z",
+          "duration": "0.6500",
+          "distance": "31.10",
+          "replaced": null,
+          "travel_policy": {
+            "travel_type": "S-H",
+            "drive_time_threshold": 0.5
+          },
+          "record_type": "LOG",
+          "is_system_generated": true,
+          "is_truncated": false
+        }
+      ],
+      "actual_start_date": "2026-07-20",
+      "actual_start_time": "11:56:00",
+      "actual_end_date": "2026-07-20",
+      "actual_end_time": "13:26:00",
+      "executed_datetime": "2026-07-20T18:56:00.000Z",
+      "no_show": true,
+      "total_work_time": null,
+      "store_timezone": "America/Los_Angeles",
+      "timezone": "PDT",
+      "timezone_offset": "420",
+      "visit": 27092124,
+      "employee": 354456,
+      "time_change_reason": 5,
+      "time_change_comment": "k",
+      "capture_location": false,
+      "home_to_store": true,
+      "store_to_store": true,
+      "store_to_home": true,
+      "calculate_mileage": true,
+      "travel_time_maximum": 24,
+      "travel_distance_maximum": 1000,
+      "attestation_policy_link": "http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets",
+      "can_show_estimation_footnote": false,
+      "pin": 0,
+      "is_lead_edit_mode": false,
+      "is_supervisor_edit_mode": true,
+      "start_location": {
+        "type": "Point",
+        "coordinates": [
+          -1,
+          -1
+        ]
+      },
+      "end_location": {
+        "type": "Point",
+        "coordinates": [
+          -1,
+          -1
+        ]
+      },
+      "edited_by_merchandiser": false,
+      "validate_geo": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092124/shift-complete/",
+    "body": {
+      "team_lead_feedback": null
+    }
+  },
+  {
+    "method": "PUT",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092124/shift-complete/",
+    "body": {
+      "allowed_overlap": false,
+      "allowed_missing_ques": false,
+      "allowed_truncation": false,
+      "team_lead_feedback": "this is for store 19",
+      "end_location": [
+        -1,
+        -1
+      ],
+      "validate_geo": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092124/shift-complete/",
+    "body": {
+      "team_lead_feedback": "this is for store 19"
+    }
+  }
+]

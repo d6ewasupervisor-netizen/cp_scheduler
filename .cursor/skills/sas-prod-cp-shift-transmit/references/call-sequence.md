@@ -78,43 +78,60 @@ Empty `{}` → **400**. Skip if already `in-progress`.
 ## 4. Travel to store — `POST /api/v2/field-app/travel/{shiftId}/to_store/`
 
 ```json
-{ "start_time": "2026-07-20T13:03:00.000Z", "user_accepted_ss_replace": null }
+{ "start_time": "2026-07-20T18:56:00.000Z", "user_accepted_ss_replace": null }
 ```
 
-Empty `{}` → **500**. Skip if shift already has travel_records.
+Empty `{}` → **500**. Skip if an inbound-to-store (`end_location_type=S`) row already exists.
 
-## 5. Punch + mileage — `PATCH /api/v2/field-app/shifts/{shiftId}/`
+## 5. Travel home — `POST /api/v2/field-app/travel/{shiftId}/to_home/`
+
+```json
+{ "end_time": "2026-07-20T20:26:00.000Z" }
+```
+
+**`end_time` = UTC stop** (kompass-netcap HAR 2026-07-21_00-54-51). Do **not** send
+`{ start_time, user_accepted_ss_replace }` — that shape is for `to_store` only.
+System invents ~31 mi S→H LOG; the next shift PATCH corrects with a CHANGE row.
+
+## 6. Punch + mileage — `PATCH /api/v2/field-app/shifts/{shiftId}/`
 
 **Read-modify-write**: GET the shift, merge overrides. One PATCH carries times +
-travel CHANGE (`id:null`) + system LOG echo. Key overrides:
+**all** travel CHANGE rows (`id:null`) + system LOG echo. Last-stop after a prior
+store sends **S→S and S→H together**:
 
 ```json
 {
   "actual_start_date": "2026-07-20",
-  "actual_start_time": "09:25:00",
+  "actual_start_time": "11:56:00",
   "actual_end_date": "2026-07-20",
-  "actual_end_time": "11:18:00",
+  "actual_end_time": "13:26:00",
   "time_change_reason": 5,
   "time_change_comment": "…",
   "pin": 0,
   "is_supervisor_edit_mode": true,
-  "is_lead_edit_mode": false,
-  "edited_by_merchandiser": false,
-  "capture_location": false,
-  "home_to_store": true, "store_to_store": true, "store_to_home": true, "calculate_mileage": true,
   "travel_records": [
     {
       "id": null,
-      "shift_id": 44611509,
-      "start_time": "2026-07-20T12:53:00.000Z",
-      "end_time": "2026-07-20T13:03:00.000Z",
-      "distance": "4.80",
-      "duration": "0.1667",
-      "start_location_type": "H",
+      "shift_id": 44611541,
+      "start_time": "2026-07-20T18:20:00.000Z",
+      "end_time": "2026-07-20T18:56:00.000Z",
+      "distance": "20.00",
+      "duration": "0.6000",
+      "start_location_type": "S",
       "end_location_type": "S",
-      "is_system_generated": false,
-      "is_truncated": false,
-      "user_accepted_overlap": null,
+      "record_type": "CHANGE",
+      "change_reason": 5,
+      "change_comment": "…"
+    },
+    {
+      "id": null,
+      "shift_id": 44611541,
+      "start_time": "2026-07-20T20:26:00.000Z",
+      "end_time": "2026-07-20T20:51:00.000Z",
+      "distance": "7.80",
+      "duration": "0.4167",
+      "start_location_type": "S",
+      "end_location_type": "H",
       "record_type": "CHANGE",
       "change_reason": 5,
       "change_comment": "…"
@@ -125,37 +142,31 @@ travel CHANGE (`id:null`) + system LOG echo. Key overrides:
 
 Without `pin` → **400 "Pin filed is required"**. Dates must be **store-local**.
 
-Last-stop / S→H: optional `POST …/to_home/` then a second shift PATCH with S→H CHANGE.
-`to_home` 5xx is soft-skipped in the executor.
+Stage 3 seals last-stop mileage as `mileage.legs = [inbound S→S|H→S, outbound S→H]`
+so both CHANGE rows are available at transmit time.
 
-## 6. Assignee + spent_time (after punch)
+## 7. Assignee + spent_time (after punch)
 
 ```json
 // PATCH …/shift-complete/
 { "team_lead_feedback": null }
 
 // PATCH …/category-resets/{resetId}/
-{ "id": 41653639, "new_assignee": { "visit_id": "27092092", "employee_id": 354456 } }
+{ "id": 41653639, "new_assignee": { "visit_id": "27092124", "employee_id": 354456 } }
 
-{ "id": 41653639, "shift_id": 44611509, "spent_time": "1h 53m",
-  "spent_time_reason": { "id": 3, "text": "Other – supervisor was contacted", /* + restangular fields */ } }
+{ "id": 41653639, "shift_id": 44611541, "spent_time": "1h 30m",
+  "spent_time_reason": { "id": 3, "text": "Other – supervisor was contacted" } }
 ```
 
-`spent_time_reason: null` when share > 5% → business failure asking for a reason.
-The working HAR does **not** call `validate-spent-time-reason`.
-
-All three of **assignee + spent_time + category_completion** are required before
-`completed:true` (see [completion-flow.md](completion-flow.md)).
-
-## 7. Complete the visit
+## 8. Complete the visit
 
 ```json
 // PUT …/shift-complete/
 { "allowed_overlap": false, "allowed_missing_ques": false, "allowed_truncation": false,
-  "team_lead_feedback": null, "end_location": [-1, -1], "validate_geo": true }
+  "team_lead_feedback": "this is for store 19", "end_location": [-1, -1], "validate_geo": true }
 
 // PATCH …/shift-complete/
-{ "team_lead_feedback": null }
+{ "team_lead_feedback": "this is for store 19" }
 ```
 
 - `{shift_id}` alone → **406**.

@@ -716,9 +716,13 @@ async function executeLiveTransmit({
             );
             skipReason = 'S→H travel already on shift — skip to_home';
           } else if (isTravelToStoreCall(call)) {
-            // Any existing travel usually means to_store already ran (or multi-stop day).
-            shouldSkipTravel = true;
-            skipReason = 'travel already on shift — skip to_store';
+            // Skip only when an inbound-to-store row already exists (end S).
+            // Do NOT skip merely because some other travel exists — last-stop
+            // S→S after a prior H→S on another visit still needs to_store here.
+            shouldSkipTravel = records.some(
+              (tr) => String(tr?.end_location_type || '').toUpperCase() === 'S'
+            );
+            skipReason = 'inbound-to-store travel already on shift — skip to_store';
           }
         }
         if (shouldSkipTravel) {

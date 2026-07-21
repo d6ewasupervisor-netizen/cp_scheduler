@@ -1264,26 +1264,20 @@ router.post('/shift-day/visit/mileage', shiftDayScope, (req, res) => {
   const draft = visitDraftStore.getDraft(repKey, date, actualStore);
   if (!draft) return res.status(404).json({ error: 'Draft not found' });
   try {
-    let leg;
-    if (draft.isLastStopOfDay) {
-      leg = visitFlow.computeMileageLeg({
-        workdayGivenId: shiftRep.workdayGivenId,
-        actualStore,
-        isLastStopOfDay: true,
-      });
-    } else {
-      const previousCompletedStore = visitDraftStore.previousCompletedStoreForDay(repKey, date, {
-        excludeActualStore: actualStore,
-        beforeIso: draft.visitStart?.actual || null,
-      });
-      leg = visitFlow.computeMileageLeg({
-        workdayGivenId: shiftRep.workdayGivenId,
-        actualStore,
-        previousCompletedStore,
-      });
-    }
+    const previousCompletedStore = visitDraftStore.previousCompletedStoreForDay(repKey, date, {
+      excludeActualStore: actualStore,
+      beforeIso: draft.visitStart?.actual || null,
+    });
+    // Last-stop after a prior store seals BOTH inbound S→S and outbound S→H
+    // (kompass-netcap HAR 2026-07-21 visit 27092124).
+    const legs = visitFlow.computeMileageLegs({
+      workdayGivenId: shiftRep.workdayGivenId,
+      actualStore,
+      previousCompletedStore,
+      isLastStopOfDay: !!draft.isLastStopOfDay,
+    });
     const updated = visitDraftStore.setMileage(repKey, date, actualStore, {
-      leg,
+      legs,
       ...(repNote !== undefined ? { repNote } : {}),
     });
     res.json(visitDraftStore.enrichDraftForUi(updated));

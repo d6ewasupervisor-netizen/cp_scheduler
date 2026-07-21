@@ -319,7 +319,7 @@ function listUnmetRequirements(draft) {
     unmet.push({
       section: STEP.TIME,
       anchor: 'time-mileage',
-      message: 'Compute the mileage leg for this visit',
+      message: 'Calculate Mileage for this visit',
     });
   }
 
@@ -457,11 +457,17 @@ function tagPhoto({ store, date, category, seq }) {
 /* ---------- Mileage leg (single leg for this visit, using DECODED store) ---------- */
 
 /**
- * Compute the mileage leg for this visit.
+ * Compute the mileage leg(s) for this visit.
  *
  * - No previous store today + not last stop → home → thisStore (home matrix)
  * - Previous completed store today, not last stop → prevStore → thisStore (store matrix)
- * - Marked last stop of day → thisStore → home (home matrix, mirrored)
+ * - Marked last stop of day, no previous → thisStore → home (home matrix, mirrored)
+ * - Marked last stop AFTER a previous store → BOTH inbound S→S and outbound S→H
+ *   (kompass-netcap HAR 2026-07-21 visit 27092124 puts both CHANGE rows on one shift)
+ *
+ * `computeMileageLeg` returns the primary (display) leg — outbound home when last
+ * stop, otherwise the single inbound leg. Use `computeMileageLegs` when sealing /
+ * transmitting so last-stop visits keep the inbound S→S miles.
  *
  * @param {Object} opts
  * @param {string} opts.workdayGivenId - rep EID key into the home matrix
@@ -471,7 +477,22 @@ function tagPhoto({ store, date, category, seq }) {
  * @param {boolean} [opts.isLastStopOfDay]
  * @returns {{from:string, to:string, miles:number|null, source:string, warning:string|null}}
  */
-function computeMileageLeg({
+function computeMileageLeg(opts) {
+  const legs = computeMileageLegs(opts);
+  // Primary = last leg (outbound home on last-stop, else the only inbound).
+  return legs[legs.length - 1] || {
+    from: null,
+    to: null,
+    miles: null,
+    source: 'unresolved',
+    warning: 'Mileage could not be resolved',
+  };
+}
+
+/**
+ * @returns {Array<{from:string, to:string, miles:number|null, source:string, warning:string|null}>}
+ */
+function computeMileageLegs({
   workdayGivenId,
   actualStore,
   previousCompletedStore = null,
@@ -479,26 +500,80 @@ function computeMileageLeg({
 }) {
   const rep = homeMatrix.reps[String(workdayGivenId)];
   if (!rep) {
-    return {
-      from: null,
-      to: null,
-      miles: null,
-      source: 'unresolved',
-      warning: `EID ${workdayGivenId} not in home-to-store matrix — rebuild matrix or enter mileage manually`,
-    };
+    return [
+      {
+        from: null,
+        to: null,
+        miles: null,
+        source: 'unresolved',
+        warning:
+          'Your Home To Store mileage is not set up yet — ask your supervisor, or note the miles below',
+      },
+    ];
   }
 
+  const legs = [];
+
+  // Inbound to this store (skipped only when last-stop is also the first/only stop —
+  // then there is no prior store and we go straight home… still need H→S? No: last
+  // stop alone means they somehow only have home return; first-and-last would be
+  // H→S inbound + S→H outbound. HAR last-stop-with-prior had S→S + S→H.
+  // First-and-last (no previous): H→S + S→H.
   if (isLastStopOfDay) {
-    const miles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
+    if (previousCompletedStore != null && Number(previousCompletedStore) !== Number(actualStore)) {
+      const key = `${previousCompletedStore}-${actualStore}`;
+      const miles = Object.prototype.hasOwnProperty.call(storeMatrix.matrix, key)
+        ? storeMatrix.matrix[key]
+        : null;
+      legs.push({
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles,
+        source: 'store-to-store',
+        warning:
+          miles == null
+            ? `No Store To Store mileage on file for Store ${previousCompletedStore} → Store ${actualStore} — note the miles below`
+            : null,
+      });
+    } else if (previousCompletedStore == null) {
+      const miles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
+        ? rep.miles[String(actualStore)]
+        : null;
+      legs.push({
+        from: 'home',
+        to: String(actualStore),
+        miles,
+        source: 'home-to-store',
+        warning:
+          miles == null
+            ? `No Home To Store mileage on file for Store ${actualStore} — note the miles below`
+            : null,
+      });
+    } else {
+      // same-store previous → 0-mile inbound, still return home
+      legs.push({
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles: 0,
+        source: 'same-store',
+        warning: null,
+      });
+    }
+
+    const homeMiles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
       ? rep.miles[String(actualStore)]
       : null;
-    return {
+    legs.push({
       from: String(actualStore),
       to: 'home',
-      miles,
+      miles: homeMiles,
       source: 'store-to-home',
-      warning: miles == null ? `No home leg on file for store ${actualStore}` : null,
-    };
+      warning:
+        homeMiles == null
+          ? `No Store To Home mileage on file for Store ${actualStore} — note the miles below`
+          : null,
+    });
+    return legs;
   }
 
   if (previousCompletedStore != null && Number(previousCompletedStore) !== Number(actualStore)) {
@@ -506,29 +581,47 @@ function computeMileageLeg({
     const miles = Object.prototype.hasOwnProperty.call(storeMatrix.matrix, key)
       ? storeMatrix.matrix[key]
       : null;
-    return {
-      from: String(previousCompletedStore),
-      to: String(actualStore),
-      miles,
-      source: 'store-to-store',
-      warning: miles == null ? `No store pair ${key} in matrix — enter mileage manually` : null,
-    };
+    return [
+      {
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles,
+        source: 'store-to-store',
+        warning:
+          miles == null
+            ? `No Store To Store mileage on file for Store ${previousCompletedStore} → Store ${actualStore} — note the miles below`
+            : null,
+      },
+    ];
   }
 
   if (previousCompletedStore != null && Number(previousCompletedStore) === Number(actualStore)) {
-    return { from: String(previousCompletedStore), to: String(actualStore), miles: 0, source: 'same-store', warning: null };
+    return [
+      {
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles: 0,
+        source: 'same-store',
+        warning: null,
+      },
+    ];
   }
 
   const miles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
     ? rep.miles[String(actualStore)]
     : null;
-  return {
-    from: 'home',
-    to: String(actualStore),
-    miles,
-    source: 'home-to-store',
-    warning: miles == null ? `No home leg on file for store ${actualStore}` : null,
-  };
+  return [
+    {
+      from: 'home',
+      to: String(actualStore),
+      miles,
+      source: 'home-to-store',
+      warning:
+        miles == null
+          ? `No Home To Store mileage on file for Store ${actualStore} — note the miles below`
+          : null,
+    },
+  ];
 }
 
 module.exports = {
@@ -554,6 +647,7 @@ module.exports = {
   enrichDraftForUi,
   tagPhoto,
   computeMileageLeg,
+  computeMileageLegs,
   scopeChecklist,
   serviceSurvey,
 };

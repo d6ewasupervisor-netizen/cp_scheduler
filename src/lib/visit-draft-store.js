@@ -149,7 +149,7 @@ function startVisit({
     stageNotes: {},
     nextVisitNote: null,
     isLastStopOfDay: false,
-    mileage: { leg: null, repNote: null },
+    mileage: { leg: null, legs: [], repNote: null },
     createdAt: now,
     updatedAt: now,
     sealedAt: null,
@@ -389,9 +389,17 @@ function setTimes(repKey, date, actualStore, { startActual, startNote, stopActua
   });
 }
 
-function setMileage(repKey, date, actualStore, { leg, repNote } = {}) {
+function setMileage(repKey, date, actualStore, { leg, legs, repNote } = {}) {
   return mutate(repKey, date, actualStore, (draft) => {
-    if (leg !== undefined) draft.mileage.leg = leg;
+    if (legs !== undefined) {
+      const list = Array.isArray(legs) ? legs.filter(Boolean) : [];
+      draft.mileage.legs = list;
+      // Primary display leg = last (outbound home on last-stop, else the only inbound).
+      draft.mileage.leg = list.length ? list[list.length - 1] : null;
+    } else if (leg !== undefined) {
+      draft.mileage.leg = leg;
+      draft.mileage.legs = leg ? [leg] : [];
+    }
     if (repNote !== undefined) draft.mileage.repNote = repNote;
   });
 }

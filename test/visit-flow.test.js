@@ -393,7 +393,7 @@ describe('computeMileageLeg', () => {
     assert.equal(typeof leg.miles, 'number');
   });
 
-  it('store → home when marked last stop of day (ignores previousCompletedStore)', () => {
+  it('store → home is primary when marked last stop; legs also keep inbound S→S', () => {
     const leg = visitFlow.computeMileageLeg({
       workdayGivenId: BRIAN,
       actualStore: 215,
@@ -404,6 +404,29 @@ describe('computeMileageLeg', () => {
     assert.equal(leg.to, 'home');
     assert.equal(leg.miles, 3.6);
     assert.equal(leg.source, 'store-to-home');
+
+    const legs = visitFlow.computeMileageLegs({
+      workdayGivenId: BRIAN,
+      actualStore: 215,
+      previousCompletedStore: 19,
+      isLastStopOfDay: true,
+    });
+    assert.equal(legs.length, 2);
+    assert.equal(legs[0].source, 'store-to-store');
+    assert.equal(legs[0].from, '19');
+    assert.equal(legs[0].to, '215');
+    assert.equal(legs[1].source, 'store-to-home');
+  });
+
+  it('first-and-last stop seals H→S + S→H', () => {
+    const legs = visitFlow.computeMileageLegs({
+      workdayGivenId: BRIAN,
+      actualStore: 215,
+      isLastStopOfDay: true,
+    });
+    assert.equal(legs.length, 2);
+    assert.equal(legs[0].source, 'home-to-store');
+    assert.equal(legs[1].source, 'store-to-home');
   });
 
   it('same-store consecutive visit is a 0-mile leg', () => {
@@ -420,6 +443,6 @@ describe('computeMileageLeg', () => {
     const leg = visitFlow.computeMileageLeg({ workdayGivenId: '000000000', actualStore: 19 });
     assert.equal(leg.miles, null);
     assert.equal(leg.source, 'unresolved');
-    assert.match(leg.warning, /not in home-to-store matrix/i);
+    assert.match(leg.warning, /Home To Store mileage is not set up/i);
   });
 });

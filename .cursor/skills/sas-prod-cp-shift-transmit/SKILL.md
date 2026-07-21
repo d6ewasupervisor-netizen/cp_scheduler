@@ -44,6 +44,7 @@ Every payload shape traces to a captured browser session. Prefer the
 | HAR | Path | Covers |
 |-----|------|--------|
 | **Primary (full bodies)** | `C:\Users\tgaut\Downloads\kompass-netcap_2026-07-21_00-35-01.har` | end-to-end complete of visit **27092092** (store 111) — survey, category reset, travel, punch+mileage, assignee/spent_time, PUT |
+| **S→S + S→H mileage** | `C:\Users\tgaut\Downloads\kompass-netcap_2026-07-21_00-54-51.har` | visit **27092124** (store 19) — `to_home {end_time}`, one shift PATCH with **both** S→S and S→H CHANGE rows, `team_lead_feedback` store attribution |
 | Start call | `C:\Users\tgaut\Downloads\prod completion.har` | the visit-**start** PATCH body |
 | Earlier complete | `C:\Users\tgaut\Downloads\prod completio7n.har` | prior completion sequence (visit 26940175); still useful for edge cases |
 
@@ -76,12 +77,12 @@ Order from kompass-netcap HAR 2026-07-21 (visit 27092092):
 4. **Category-reset photos** — `PATCH /category-resets/{id}/` `{before|after:{image}, compress_image:true}` per photo.
 5. **category_completion** — `PATCH {category_completion:true, id, comment:"", exception:null}` (**before** T&E; `category_completion`, NOT `completion_status`).
 6. **to_store travel** — `POST /v2/field-app/travel/{shiftId}/to_store/` `{start_time, user_accepted_ss_replace:null}` (empty `{}` → 500).
-7. **Punch + mileage** — one `PATCH /v2/field-app/shifts/{shiftId}/` — **read-modify-write** + `pin:0` + `is_supervisor_edit_mode:true` + **store-local dates** + travel `CHANGE` row (`id:null`).
-8. **to_home** (last-stop / S→H only) — then optional second shift PATCH with S→H CHANGE. Soft-skip 5xx.
+7. **to_home** (last-stop / S→H) — `POST …/to_home/` **`{ end_time: <UTC stop> }`** (not `start_time`). Soft-skip 5xx.
+8. **Punch + mileage** — one `PATCH /v2/field-app/shifts/{shiftId}/` — **read-modify-write** + `pin:0` + `is_supervisor_edit_mode:true` + **store-local dates** + all travel `CHANGE` rows (`id:null`) — **S→S and S→H together** when both sealed.
 9. **Mid ping** — `PATCH shift-complete {team_lead_feedback:null}` (not `{shift_id}`).
 10. **Assign reset** — `PATCH {new_assignee:{visit_id, employee_id}}` (**required**).
 11. **spent_time** — `PATCH {id, shift_id, spent_time, spent_time_reason}` (full reason object; null reason → 5% warning).
-12. **Complete visit** — **`PUT shift-complete`** full body → `PATCH {team_lead_feedback:null}`.
+12. **Complete visit** — **`PUT shift-complete`** with `team_lead_feedback: "this is for store {N}"` → `PATCH` repeats that feedback.
 
 ## Error → fix (memorize this table)
 

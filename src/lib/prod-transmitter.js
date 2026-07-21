@@ -364,9 +364,17 @@ function shiftCompletePingPayload(shiftId) {
   return { shift_id: Number(shiftId) };
 }
 
-/** Mid/final shift-complete ping from kompass-netcap HAR 2026-07-21 (visit 27092092). */
-function teamLeadFeedbackPing() {
-  return { team_lead_feedback: null };
+/** Mid/final shift-complete ping. HAR 00-54-51 puts store attribution on the final PUT/PATCH. */
+function teamLeadFeedbackPing(feedback = null) {
+  return { team_lead_feedback: feedback == null ? null : String(feedback) };
+}
+
+/** Sealed mileage may be a single `leg` or a `legs` array (last-stop = inbound + home). */
+function resolveSealedMileageLegs(sealedRecord) {
+  const m = sealedRecord?.mileage || {};
+  if (Array.isArray(m.legs) && m.legs.length) return m.legs.filter(Boolean);
+  if (m.leg) return [m.leg];
+  return [];
 }
 
 /**
@@ -585,8 +593,16 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   });
   result.attributionComment = attributionComment;
 
-  const leg = sealedRecord.mileage?.leg;
-  if (!leg || (leg.miles == null && leg.source !== 'same-store')) return abort(result, 'mileage_leg_not_resolved');
+  const mileageLegs = resolveSealedMileageLegs(sealedRecord);
+  const leg = mileageLegs[mileageLegs.length - 1] || null;
+  const hasResolvableMileage = mileageLegs.some((l) => l && (l.miles != null || l.source === 'same-store'));
+  if (!hasResolvableMileage) return abort(result, 'mileage_leg_not_resolved');
+  result.mileageLegs = mileageLegs.map((l) => ({
+    from: l.from,
+    to: l.to,
+    miles: l.miles,
+    source: l.source,
+  }));
 
   const visitStartIso = sealedRecord.visitStart?.actual;
   const visitStopIso = sealedRecord.visitStop?.actual;
@@ -799,12 +815,6 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     needsSpentTimeReason: needsSpentTimeReason(visitStartIso, visitStopIso),
   };
 
-  const legFrom = locationCode(leg.from);
-  const legTo = locationCode(leg.to);
-  const isHomeToStoreLeg = legFrom === 'H' && legTo === 'S';
-  const isStoreToHomeLeg = legFrom === 'S' && legTo === 'H';
-  const isStoreToStoreLeg = legFrom === 'S' && legTo === 'S';
-
   const spentLabel = categorySpentTimeLabel(visitStartIso, visitStopIso);
   const spentReasonObj = spentTimeReasonRef(categoryReason);
 
@@ -967,9 +977,27 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       'kompass-netcap HAR 2026-07-21 — { category_completion:true, id, comment:"", exception:null } before T&E. Use category_completion not completion_status.',
   });
 
-  /* ---- Travel + punch + mileage ---- */
+  /* ---- Travel + punch + mileage (kompass-netcap HAR 2026-07-21_00-54-51) ----
+   * Order: to_store → to_home({end_time}) → ONE shift PATCH with all CHANGE rows
+   * (S→S inbound + S→H outbound when both sealed). */
 
-  if (!hasExistingTravel) {
+  const hasOutboundHomeLeg = mileageLegs.some(
+    (l) => locationCode(l.from) === 'S' && locationCode(l.to) === 'H'
+  );
+  const isLastStop = sealedRecord.isLastStopOfDay === true || hasOutboundHomeLeg;
+
+  const hasInboundTravelAlready = existingTravelRecords.some(
+    (tr) => String(tr?.end_location_type || '').toUpperCase() === 'S'
+  );
+  const hasStoreToHomeTravel = existingTravelRecords.some(
+    (tr) =>
+      String(tr?.start_location_type || '').toUpperCase() === 'S' &&
+      String(tr?.end_location_type || '').toUpperCase() === 'H'
+  );
+
+  // Arrive at store — always post to_store unless an inbound-to-store row already exists.
+  // System invents H-S or S-S LOG; sealed CHANGE rows correct miles on the punch PATCH.
+  if (!hasInboundTravelAlready) {
     pushCall({
       method: 'POST',
       url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
@@ -978,31 +1006,60 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         user_accepted_ss_replace: null,
       },
       sourceRef:
-        'kompass-netcap HAR 2026-07-21 — POST …/to_store/ { start_time (UTC), user_accepted_ss_replace:null }. Empty {} 500s.',
+        'kompass-netcap HAR 2026-07-21 — POST …/to_store/ { start_time (UTC arrival), user_accepted_ss_replace:null }. Creates system H-S or S-S LOG; CHANGE corrects miles next.',
     });
   } else {
     result.skippedToStore = true;
   }
 
-  // Build inbound travel CHANGE (H→S / S→S) for the single punch PATCH.
-  const inboundTravelRecords = [];
-  if ((isHomeToStoreLeg || isStoreToStoreLeg) && leg.miles != null) {
-    const inboundChange = buildTravelChangeRecord(leg, {
+  const needsToHome =
+    shiftFlags.store_to_home !== false && isLastStop && !hasStoreToHomeTravel;
+  if (needsToHome) {
+    pushCall({
+      method: 'POST',
+      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_home/`,
+      payload: {
+        // kompass-netcap HAR 2026-07-21_00-54-51: body is { end_time }, NOT start_time.
+        end_time: new Date(visitStopIso).toISOString(),
+      },
+      sourceRef:
+        'kompass-netcap HAR 2026-07-21_00-54-51 — POST …/to_home/ { end_time: <UTC stop> }. Creates system S-H LOG (~31mi); CHANGE corrects matrix miles on the shift PATCH.',
+    });
+    result.toHomeAssembled = true;
+  } else {
+    result.toHomeAssembled = false;
+    if (hasStoreToHomeTravel) result.skippedToHome = true;
+  }
+
+  // All sealed legs → CHANGE rows on a single punch PATCH (S→S + S→H together).
+  const travelChanges = [];
+  for (const mileLeg of mileageLegs) {
+    const change = buildTravelChangeRecord(mileLeg, {
       shiftId,
       visitStartIso,
       visitStopIso,
       changeReasonId: shiftReason.id,
       changeComment: timeChangeComment,
     });
-    if (inboundChange && isCompleteTravelChangeRecord(inboundChange)) {
-      inboundTravelRecords.push(inboundChange);
-      result.mileageCorrection = {
-        direction: `${legFrom}-${legTo}`,
-        distance: inboundChange.distance,
-        phase: 'with_punch',
-        duration: inboundChange.duration,
-      };
+    if (change && isCompleteTravelChangeRecord(change)) {
+      travelChanges.push(change);
     }
+  }
+  if (travelChanges.length) {
+    result.mileageCorrection = {
+      directions: travelChanges.map((t) => `${t.start_location_type}-${t.end_location_type}`),
+      records: travelChanges.map((t) => ({
+        direction: `${t.start_location_type}-${t.end_location_type}`,
+        distance: t.distance,
+        duration: t.duration,
+      })),
+      // Back-compat for James tests that read .direction / .distance on the outbound leg
+      direction: travelChanges[travelChanges.length - 1]
+        ? `${travelChanges[travelChanges.length - 1].start_location_type}-${travelChanges[travelChanges.length - 1].end_location_type}`
+        : null,
+      distance: travelChanges[travelChanges.length - 1]?.distance || null,
+      phase: 'with_punch',
+    };
   }
 
   const punchPayload = shiftPatchPayload({
@@ -1013,92 +1070,31 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     timeChangeReasonId: shiftReason.id,
     timeChangeComment: attributionComment,
     flags: shiftFlags,
-    travelRecords: inboundTravelRecords.length ? inboundTravelRecords : null,
-    includeEmptyTravelRecords: inboundTravelRecords.length === 0,
+    travelRecords: travelChanges.length ? travelChanges : null,
+    includeEmptyTravelRecords: travelChanges.length === 0,
   });
-  const punchShiftSeq = pushCall({
+  pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
     payload: punchPayload,
     sourceRef:
-      inboundTravelRecords.length
-        ? 'kompass-netcap HAR 2026-07-21 — one shift PATCH: store-local times + travel CHANGE (id:null) + pin/supervisor flags. Executor RMW echoes system LOG rows.'
-        : 'kompass-netcap HAR 2026-07-21 — shift PATCH times + time_change_reason; travel_records [] (outbound mileage may follow after to_home).',
+      travelChanges.length > 1
+        ? 'kompass-netcap HAR 2026-07-21_00-54-51 — one shift PATCH with S→S + S→H CHANGE rows (id:null) + store-local times. Executor RMW echoes system LOG rows.'
+        : travelChanges.length === 1
+          ? 'kompass-netcap HAR — one shift PATCH: store-local times + travel CHANGE (id:null). Executor RMW echoes system LOG rows.'
+          : 'Shift PATCH times + time_change_reason; travel_records [].',
   });
 
-  // Store→home when last stop OR sealed leg is S→H.
-  const isLastStop = sealedRecord.isLastStopOfDay === true;
-  const hasStoreToHomeTravel = existingTravelRecords.some(
-    (tr) =>
-      String(tr?.start_location_type || '').toUpperCase() === 'S' &&
-      String(tr?.end_location_type || '').toUpperCase() === 'H'
-  );
-  const needsToHome =
-    shiftFlags.store_to_home !== false &&
-    (isLastStop || isStoreToHomeLeg) &&
-    !hasStoreToHomeTravel;
-  if (needsToHome) {
-    pushCall({
-      method: 'POST',
-      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_home/`,
-      payload: {
-        start_time: new Date(visitStopIso).toISOString(),
-        user_accepted_ss_replace: null,
-      },
-      sourceRef:
-        'POST …/to_home/ { start_time (UTC = stop), user_accepted_ss_replace:null }. Soft-skipped on 5xx in executor.',
-      reconstructed: true,
-    });
-    result.toHomeAssembled = true;
-  } else {
-    result.toHomeAssembled = false;
-    if (hasStoreToHomeTravel) result.skippedToHome = true;
-  }
-
-  // Outbound S→H mileage CHANGE (when leg is store→home).
-  if (isStoreToHomeLeg && leg.miles != null) {
-    const outboundChange = buildTravelChangeRecord(leg, {
-      shiftId,
-      visitStartIso,
-      visitStopIso,
-      changeReasonId: shiftReason.id,
-      changeComment: timeChangeComment,
-    });
-    if (outboundChange && isCompleteTravelChangeRecord(outboundChange)) {
-      pushCall({
-        method: 'PATCH',
-        url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-        payload: shiftPatchPayload({
-          actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
-          actualStartTime: localStartTime,
-          actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
-          actualEndTime: localStopTime,
-          timeChangeReasonId: shiftReason.id,
-          timeChangeComment: attributionComment,
-          flags: shiftFlags,
-          travelRecords: [outboundChange],
-        }),
-        dependsOn: [punchShiftSeq],
-        sourceRef:
-          'S→H travel CHANGE after to_home — distance/duration/change_reason; executor RMW keeps system LOG rows.',
-      });
-      result.mileageCorrection = {
-        ...(result.mileageCorrection || {}),
-        direction: 'S-H',
-        distance: outboundChange.distance,
-        phase: needsToHome ? 'after_to_home' : 'final',
-        duration: outboundChange.duration,
-      };
-    }
-  }
+  const teamLeadFeedback =
+    result.actualStore != null ? `this is for store ${result.actualStore}` : null;
 
   /* ---- Assignee + spent_time (after punch — required for completed:true) ---- */
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: teamLeadFeedbackPing(),
-    sourceRef: 'kompass-netcap HAR 2026-07-21 — mid PATCH shift-complete { team_lead_feedback:null } after punch.',
+    payload: teamLeadFeedbackPing(null),
+    sourceRef: 'kompass-netcap HAR — mid PATCH shift-complete { team_lead_feedback:null } after punch.',
   });
 
   pushCall({
@@ -1109,7 +1105,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       new_assignee: { visit_id: String(visitId), employee_id: shiftEmployee.id },
     },
     sourceRef:
-      'kompass-netcap HAR 2026-07-21 — { new_assignee:{visit_id, employee_id} }. Required (is_assignee_required) before PUT.',
+      'kompass-netcap HAR — { new_assignee:{visit_id, employee_id} }. Required (is_assignee_required) before PUT.',
   });
 
   pushCall({
@@ -1122,7 +1118,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       spent_time_reason: spentReasonObj,
     },
     sourceRef:
-      'kompass-netcap HAR 2026-07-21 — spent_time with reason object (null reason returns 5% warning). No separate validate-spent-time-reason call in this capture.',
+      'kompass-netcap HAR — spent_time with reason object (null reason returns 5% warning).',
   });
 
   /* ---- Final complete ---- */
@@ -1134,19 +1130,20 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       allowed_overlap: false,
       allowed_missing_ques: false,
       allowed_truncation: false,
-      team_lead_feedback: null,
+      team_lead_feedback: teamLeadFeedback,
       end_location: [-1, -1],
       validate_geo: true,
     },
     sourceRef:
-      'kompass-netcap HAR 2026-07-21 — PUT shift-complete full body. { shift_id } alone 406s.',
+      'kompass-netcap HAR 2026-07-21_00-54-51 — PUT shift-complete with team_lead_feedback store attribution (e.g. "this is for store 19").',
   });
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: teamLeadFeedbackPing(),
-    sourceRef: 'kompass-netcap HAR 2026-07-21 — final PATCH shift-complete { team_lead_feedback:null }.',
+    payload: teamLeadFeedbackPing(teamLeadFeedback),
+    sourceRef:
+      'kompass-netcap HAR 2026-07-21_00-54-51 — final PATCH shift-complete repeats team_lead_feedback.',
   });
 
   result.recompletePayload = {
@@ -1172,7 +1169,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       },
     ],
     complete_shift_final: {
-      team_lead_feedback: null,
+      team_lead_feedback: teamLeadFeedback,
       allowed_truncation: false,
       allowed_overlap: false,
       allowed_missing_ques: false,
@@ -1213,6 +1210,7 @@ module.exports = {
   isImageRequiredForAnswer,
   resolveStoreTimezone,
   toStoreLocalTime,
+  resolveSealedMileageLegs,
   SURVEY_PHOTO_SOURCE,
   SURVEY_NAME,
   BASE,
