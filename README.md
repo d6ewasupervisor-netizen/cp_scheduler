@@ -32,12 +32,20 @@ Open http://127.0.0.1:3847
 ### Field visit path (rep)
 
 1. **Schedule / Shift Day** → open store card → **Start visit**  
-2. **Before photos** (burst capture until **Done capturing**)  
+2. **Before photos** (burst on arrival — aisle coverage)  
 3. **Load** (if work-load) → **Order checklist** (write order in Amp by Movista, then check off)  
-4. **Category photos** → **Survey** → **After photos**  
-5. **Time** (start/stop + mileage) → **Review & seal**  
+4. **After photos** (one burst — aisle + end caps, clip strips, wings, litter liners, Butcher Block; app auto-sorts into survey slots)  
+5. **Survey** → **Time** → **Outcome** → **Review & seal**  
 
 Photos upload in the background and are backed up in IndexedDB until the server confirms. Leaving mid-visit prompts with an optional “don’t ask again.” Admins see a **Live field activity** panel on the dashboard (polls in-progress drafts).
+
+### Photo AI sorting (Gemini)
+
+- Signup / API key: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)  
+- Set `GEMINI_API_KEY` on Railway (optional `GEMINI_MODEL`, default `gemini-3.1-flash-lite`)  
+- Verify without printing the secret: `npm run test-gemini-key` / `npm run test-gemini-key:railway`  
+- Admin training session: [/photo-training.html](https://cpscheduler-production.up.railway.app/photo-training.html) — upload labeled examples per fixture  
+- Details: [`docs/photo-ai-training.md`](docs/photo-ai-training.md)
 
 **Production (Railway):** https://cpscheduler-production.up.railway.app
 

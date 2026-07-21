@@ -57,7 +57,31 @@ function writeDraftFile(draft) {
 }
 
 function getDraft(repKey, date, actualStore) {
-  return readDraftFile(repKey, date, actualStore);
+  const draft = readDraftFile(repKey, date, actualStore);
+  if (!draft) return null;
+  return migrateDraftSteps(draft);
+}
+
+/**
+ * Drop the old Category Photos step from in-progress drafts. Sorting is
+ * backend AI + after-photo coaching now — category_photos is not a UI step.
+ */
+function migrateDraftSteps(draft) {
+  if (!draft?.steps?.includes(STEP.CATEGORY_PHOTOS)) return draft;
+  const next = {
+    ...draft,
+    steps: draft.steps.filter((s) => s !== STEP.CATEGORY_PHOTOS),
+  };
+  if (next.currentStep === STEP.CATEGORY_PHOTOS) next.currentStep = STEP.AFTER_PHOTOS;
+  // Persist migration so sidebar stays clean
+  if (draft.status !== 'ready_for_prod') {
+    try {
+      writeDraftFile(next);
+    } catch {
+      /* read path should still return migrated view */
+    }
+  }
+  return next;
 }
 
 function assertMutable(draft) {
@@ -92,7 +116,7 @@ function startVisit({
   if (actualStore == null) throw new Error('actualStore (decoded) required');
 
   const existing = readDraftFile(repKey, date, actualStore);
-  if (existing) return existing;
+  if (existing) return migrateDraftSteps(existing);
 
   const steps = buildStepSequence({ workLoad: !!workLoad, writeOrder: !!writeOrder });
   const now = new Date().toISOString();
@@ -275,6 +299,20 @@ function removeCategoryPhoto(repKey, date, actualStore, categoryId, { seq } = {}
     draft.categoryPhotos[categoryId].forEach((p, i) => {
       p.seq = i + 1;
     });
+  });
+}
+
+/** Clear every photo in a category bucket (AI re-sort). */
+function clearCategoryPhotos(repKey, date, actualStore, categoryId) {
+  if (!categoryId) throw new Error('categoryId required');
+  return mutate(repKey, date, actualStore, (draft) => {
+    draft.categoryPhotos[categoryId] = [];
+  });
+}
+
+function setPhotoClassification(repKey, date, actualStore, meta) {
+  return mutate(repKey, date, actualStore, (draft) => {
+    draft.photoClassification = meta || null;
   });
 }
 
@@ -589,6 +627,8 @@ module.exports = {
   recordCategoryPhoto,
   assignCategoryFromAfter,
   removeCategoryPhoto,
+  clearCategoryPhotos,
+  setPhotoClassification,
   resolvePhotoFile,
   recordChecklistPhoto,
   setLoadCheck,

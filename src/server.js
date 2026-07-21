@@ -27,6 +27,17 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => {
+  let photoAi = { classifyEnabled: false, model: null };
+  try {
+    const photoClassifier = require('./lib/photo-classifier');
+    photoAi = {
+      classifyEnabled: photoClassifier.isClassifyEnabled(),
+      model: photoClassifier.geminiModel(),
+      signup: 'https://aistudio.google.com/apikey',
+    };
+  } catch {
+    /* optional module */
+  }
   res.json({
     ok: true,
     service: 'cp_scheduler',
@@ -37,6 +48,7 @@ app.get('/health', (_req, res) => {
       // Sends only fire on transmit completion or admin re-send — never on boot.
       trigger: 'event-driven (transmit complete | admin resend)',
     },
+    photoAi,
   });
 });
 
@@ -52,6 +64,10 @@ app.get('/rep.html', (_req, res) => {
 
 app.get('/shiftday.html', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/shiftday.html'));
+});
+
+app.get('/photo-training.html', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../public/photo-training.html'));
 });
 
 app.get('*', (_req, res) => {

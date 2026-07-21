@@ -24,12 +24,26 @@ const CATEGORY_PHOTO_TARGETS = [
   { id: 'cp-serviced-section', label: 'Each CP-serviced section' },
 ];
 
+/**
+ * Coach copy shown during AFTER burst capture. Reps photograph these fixtures
+ * in one pass; Gemini sorts them into category/survey slots on the backend.
+ */
+const AFTER_PHOTO_COACH = [
+  { id: 'endcaps', label: 'End caps', tip: 'Shoot each end cap you serviced — full fixture, not just a close-up of one SKU.' },
+  { id: 'clipstrips', label: 'Clip strips', tip: 'Hang / strip close enough to read the product, with the strip still visible.' },
+  { id: 'wing-panels', label: 'Wing panels', tip: 'Frame the wing beside the end cap so the panel shape is obvious.' },
+  { id: 'cat-litter-pan-liners', label: 'Cat litter pan liners', tip: 'Show the liner bags/packs on the shelf or clip (packaging readable).' },
+  { id: 'butcher-block-rack', label: 'Butcher Block rack', tip: 'Full rack view — wood/metal butcher-block fixture with treats.' },
+  { id: 'cp-serviced-section', label: 'CP-serviced sections', tip: 'Two 4ft sections per shot of the finished Pet Care aisle you worked.' },
+];
+
 /* ---------- Step sequence ---------- */
 
 const STEP = {
   BEFORE_PHOTOS: 'before_photos',
   LOAD_CHECK: 'load_check',
   WRITE_ORDER_CHECKLIST: 'write_order_checklist',
+  /** @deprecated Removed from UI — kept for migrating old drafts only */
   CATEGORY_PHOTOS: 'category_photos',
   SURVEY: 'survey',
   AFTER_PHOTOS: 'after_photos',
@@ -40,22 +54,21 @@ const STEP = {
 
 /**
  * Build the ordered step sequence for a visit given its decoded flags.
- * Step order per spec:
- *  1. before photos (always) — burst capture on arrival
+ * Step order:
+ *  1. before photos (always) — burst on arrival
  *  2. load check (only if workLoad)
- *  3. write-order checklist (only if writeOrder) — load first when both
- *  4. after photos (always) — burst capture when finished
- *  5. category photos (always) — pick from after photos (no second camera pass)
- *  6. survey (always)
- *  7. time (always)
- *  8. outcome & notes (always) — mandatory shift-outcome log
- *  9. review (always)
+ *  3. write-order checklist (only if writeOrder)
+ *  4. after photos (always) — burst when finished; AI sorts into categories
+ *  5. survey (always)
+ *  6. time (always)
+ *  7. outcome & notes (always)
+ *  8. review (always)
  */
 function buildStepSequence({ workLoad, writeOrder }) {
   const steps = [STEP.BEFORE_PHOTOS];
   if (workLoad) steps.push(STEP.LOAD_CHECK);
   if (writeOrder) steps.push(STEP.WRITE_ORDER_CHECKLIST);
-  steps.push(STEP.AFTER_PHOTOS, STEP.CATEGORY_PHOTOS, STEP.SURVEY, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
+  steps.push(STEP.AFTER_PHOTOS, STEP.SURVEY, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
   return steps;
 }
 
@@ -183,7 +196,7 @@ const SECTION_LABELS = {
   [STEP.BEFORE_PHOTOS]: 'Before Photos',
   [STEP.LOAD_CHECK]: 'Load',
   [STEP.WRITE_ORDER_CHECKLIST]: 'Order Checklist',
-  [STEP.CATEGORY_PHOTOS]: 'Category Photos',
+  [STEP.CATEGORY_PHOTOS]: 'Category Photos', // legacy drafts only
   [STEP.SURVEY]: 'Survey',
   [STEP.AFTER_PHOTOS]: 'After Photos',
   [STEP.TIME]: 'Time',
@@ -258,9 +271,9 @@ function listUnmetRequirements(draft) {
   for (const cat of CATEGORY_PHOTO_TARGETS) {
     if (!(draft.categoryPhotos?.[cat.id] || []).length) {
       unmet.push({
-        section: STEP.CATEGORY_PHOTOS,
-        anchor: `category-${cat.id}`,
-        message: `At least 1 photo for ${cat.label}`,
+        section: STEP.AFTER_PHOTOS,
+        anchor: 'after-photos',
+        message: `Need a clear after shot of ${cat.label} (take it in After Photos — the app sorts it automatically)`,
       });
     }
   }
@@ -521,6 +534,7 @@ function computeMileageLeg({
 module.exports = {
   STEP,
   CATEGORY_PHOTO_TARGETS,
+  AFTER_PHOTO_COACH,
   LOAD_FOUND,
   SECTION_STATUS,
   SECTION_LABELS,

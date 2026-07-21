@@ -1,6 +1,8 @@
 node_modules/
 data/schedule-drafts.json
 data/visit-drafts/
+data/photo-training/**
+!data/photo-training/manifest.json
 live/
 dryrun/
 .env

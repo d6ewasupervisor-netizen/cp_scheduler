@@ -5,13 +5,12 @@ const assert = require('node:assert/strict');
 const visitFlow = require('../src/lib/visit-flow');
 
 describe('buildStepSequence (branch logic)', () => {
-  it('load-only: before → load_check → after → category → survey → time → review', () => {
+  it('load-only: before → load_check → after → survey → time → review (no category step)', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: true, writeOrder: false });
     assert.deepEqual(steps, [
       'before_photos',
       'load_check',
       'after_photos',
-      'category_photos',
       'survey',
       'time',
       'shift_log',
@@ -19,13 +18,12 @@ describe('buildStepSequence (branch logic)', () => {
     ]);
   });
 
-  it('order-only: before → write_order_checklist → after → category → survey → time → review', () => {
+  it('order-only: before → write_order_checklist → after → survey → time → review', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: true });
     assert.deepEqual(steps, [
       'before_photos',
       'write_order_checklist',
       'after_photos',
-      'category_photos',
       'survey',
       'time',
       'shift_log',
@@ -44,20 +42,19 @@ describe('buildStepSequence (branch logic)', () => {
       'load_check',
       'write_order_checklist',
       'after_photos',
-      'category_photos',
       'survey',
       'time',
       'shift_log',
       'review',
     ]);
+    assert.ok(!steps.includes('category_photos'));
   });
 
-  it('neither load nor order: skips both conditional steps; after before category', () => {
+  it('neither load nor order: skips both conditional steps; after then survey', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
     assert.deepEqual(steps, [
       'before_photos',
       'after_photos',
-      'category_photos',
       'survey',
       'time',
       'shift_log',
@@ -68,9 +65,16 @@ describe('buildStepSequence (branch logic)', () => {
   it('nextStep/prevStep walk the sequence and return null at the ends', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
     assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'after_photos');
-    assert.equal(visitFlow.prevStep(steps, 'category_photos'), 'after_photos');
+    assert.equal(visitFlow.prevStep(steps, 'survey'), 'after_photos');
     assert.equal(visitFlow.prevStep(steps, 'before_photos'), null);
     assert.equal(visitFlow.nextStep(steps, 'review'), null);
+  });
+
+  it('AFTER_PHOTO_COACH covers every category target', () => {
+    const ids = new Set(visitFlow.AFTER_PHOTO_COACH.map((c) => c.id));
+    for (const cat of visitFlow.CATEGORY_PHOTO_TARGETS) {
+      assert.ok(ids.has(cat.id), `missing coach for ${cat.id}`);
+    }
   });
 });
 

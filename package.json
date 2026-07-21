@@ -7,7 +7,10 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test test/*.test.js",
-    "parse-master-route": "node scripts/parse-master-route.js"
+    "parse-master-route": "node scripts/parse-master-route.js",
+    "set-gemini-key": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/set-gemini-key.ps1",
+    "test-gemini-key": "node scripts/test-gemini-key.js",
+    "test-gemini-key:railway": "node scripts/test-gemini-key.js --railway"
   },
   "engines": {
     "node": ">=20"

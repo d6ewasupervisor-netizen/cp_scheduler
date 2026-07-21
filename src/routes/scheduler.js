@@ -44,6 +44,8 @@ const {
 } = require('../lib/schedule-writer');
 const visitFlow = require('../lib/visit-flow');
 const visitDraftStore = require('../lib/visit-draft-store');
+const photoClassifier = require('../lib/photo-classifier');
+const photoTrainingStore = require('../lib/photo-training-store');
 const shiftEventLog = require('../lib/shift-event-log');
 const shiftOutcomeOptions = require('../../data/cp-shift-outcome-options.json');
 const { shiftEventsCsv } = require('../lib/shift-csv');
@@ -837,8 +839,115 @@ router.get('/shift-day/visit-flow/category-targets', (_req, res) => {
   res.json(visitFlow.CATEGORY_PHOTO_TARGETS);
 });
 
+router.get('/shift-day/visit-flow/after-coach', (_req, res) => {
+  res.json({
+    coach: visitFlow.AFTER_PHOTO_COACH,
+    classifyEnabled: photoClassifier.isClassifyEnabled(),
+    model: photoClassifier.geminiModel(),
+    signup: 'https://aistudio.google.com/apikey',
+  });
+});
+
 router.get('/shift-day/visit-flow/outcome-options', (_req, res) => {
   res.json(shiftOutcomeOptions);
+});
+
+/* ---------- Photo AI training + classify (Gemini) ---------- */
+
+router.get('/shift-day/photo-ai/status', requireAdmin, (_req, res) => {
+  res.json({
+    classifyEnabled: photoClassifier.isClassifyEnabled(),
+    model: photoClassifier.geminiModel(),
+    signup: 'https://aistudio.google.com/apikey',
+    training: photoTrainingStore.trainingReadiness(),
+    envHint: photoClassifier.isClassifyEnabled()
+      ? 'GEMINI_API_KEY is set — after photos will auto-sort.'
+      : 'Set GEMINI_API_KEY (from https://aistudio.google.com/apikey) to enable sorting.',
+  });
+});
+
+router.get('/shift-day/photo-ai/training', requireAdmin, (req, res) => {
+  try {
+    const categoryId = req.query.categoryId || undefined;
+    res.json({
+      ...photoTrainingStore.listExamples({ categoryId }),
+      readiness: photoTrainingStore.trainingReadiness(),
+      classifyEnabled: photoClassifier.isClassifyEnabled(),
+      model: photoClassifier.geminiModel(),
+      signup: 'https://aistudio.google.com/apikey',
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post(
+  '/shift-day/photo-ai/training',
+  requireAdmin,
+  upload.single('file'),
+  (req, res) => {
+    try {
+      const categoryId = req.body?.categoryId;
+      if (!categoryId) return res.status(400).json({ error: 'categoryId required' });
+      if (!req.file?.buffer) return res.status(400).json({ error: 'file required' });
+      const result = photoTrainingStore.addExample({
+        categoryId,
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        notes: req.body?.notes || '',
+        mimeType: req.file.mimetype || 'image/jpeg',
+      });
+      res.json({
+        ok: true,
+        ...result,
+        readiness: photoTrainingStore.trainingReadiness(),
+      });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  }
+);
+
+router.delete('/shift-day/photo-ai/training/:exampleId', requireAdmin, (req, res) => {
+  try {
+    const result = photoTrainingStore.removeExample(req.params.exampleId);
+    res.json({ ok: true, ...result, readiness: photoTrainingStore.trainingReadiness() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/shift-day/photo-ai/training/:exampleId/file', requireAdmin, (req, res) => {
+  const resolved = photoTrainingStore.resolveExampleFile(req.params.exampleId);
+  if (!resolved) return res.status(404).json({ error: 'Example not found' });
+  res.sendFile(resolved.absPath);
+});
+
+/**
+ * Sort after photos into category buckets (Gemini). Safe to call multiple times.
+ * Reps can trigger after Done capturing; finish also auto-runs when key is set.
+ */
+router.post('/shift-day/visit/photos/classify', shiftDayScope, async (req, res) => {
+  const { repKey, date, actualStore } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  try {
+    const result = await photoClassifier.classifyAndApplyVisit(
+      visitDraftStore,
+      repKey,
+      date,
+      actualStore
+    );
+    res.json(result);
+  } catch (err) {
+    const status = err.code === 'SEALED' ? 409 : err.code === 'NO_DRAFT' ? 404 : err.code === 'GEMINI_ERROR' ? 502 : 400;
+    res.status(status).json({
+      error: err.message,
+      code: err.code || null,
+      signup: 'https://aistudio.google.com/apikey',
+    });
+  }
 });
 
 router.post('/shift-day/visit/start', shiftDayScope, (req, res) => {
@@ -1210,11 +1319,22 @@ router.post('/shift-day/visit/abandon', shiftDayScope, (req, res) => {
   }
 });
 
-router.post('/shift-day/visit/finish', shiftDayScope, (req, res) => {
+router.post('/shift-day/visit/finish', shiftDayScope, async (req, res) => {
   const { repKey, date, actualStore } = req.body || {};
   if (!repKey || !date || actualStore == null) {
     return res.status(400).json({ error: 'repKey, date, actualStore required' });
   }
+
+  // Auto-sort after → category buckets before seal (silent to the rep).
+  if (photoClassifier.isClassifyEnabled()) {
+    try {
+      await photoClassifier.classifyAndApplyVisit(visitDraftStore, repKey, date, actualStore);
+    } catch (err) {
+      console.error('[finish] photo classify failed:', err.message);
+      // Continue — seal gates still enforce category coverage
+    }
+  }
+
   let draft;
   try {
     draft = visitDraftStore.finishVisit(repKey, date, actualStore);

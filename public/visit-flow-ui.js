@@ -40,9 +40,10 @@ const STEP_HINTS = {
   before_photos: 'Arrive and photograph the Pet Supplies aisle (two 4ft sections per shot). Keep the camera open and capture all befores in one go.',
   load_check: 'Find the load, photograph it if present, then work it to the shelf.',
   write_order_checklist: 'Open Amp by Movista, write the order from product tags, then check off scope items.',
-  category_photos: 'Choose category photos from the after photos you already took — no second camera pass.',
+  category_photos: 'Category sorting is automatic — take clear after photos of each fixture instead.',
   survey: 'Answer the service survey. Some questions appear based on earlier answers.',
-  after_photos: 'Photograph the finished Pet Supplies aisle (two 4ft sections per shot). Keep the camera open and capture all afters in one go.',
+  after_photos:
+    'Finished work? Photograph everything in one burst: aisle sections, end caps, clip strips, wing panels, litter liners, and Butcher Block. The app sorts them for the survey — you just shoot.',
   time: 'Set actual start/stop times and compute your mileage leg.',
   shift_log: 'Log what happened on this shift — pick everything that applies, add any variances, and leave a note for the next visit.',
   review: 'Fix any unmet items, then seal the visit.',
@@ -85,6 +86,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     scopeChecklist: null,
     survey: null,
     categoryTargets: null,
+    afterCoach: null,
     outcomeOptions: null,
     storeNotes: [],
     pendingAnchor: null,
@@ -181,6 +183,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (!vf.scopeChecklist) vf.scopeChecklist = await apiCall('/shift-day/visit-flow/scope-checklist');
     if (!vf.survey) vf.survey = await apiCall('/shift-day/visit-flow/survey');
     if (!vf.categoryTargets) vf.categoryTargets = await apiCall('/shift-day/visit-flow/category-targets');
+    if (!vf.afterCoach) {
+      try {
+        vf.afterCoach = await apiCall('/shift-day/visit-flow/after-coach');
+      } catch {
+        vf.afterCoach = { coach: vf.categoryTargets || [], classifyEnabled: false };
+      }
+    }
     if (!vf.outcomeOptions) vf.outcomeOptions = await apiCall('/shift-day/visit-flow/outcome-options');
   }
 
@@ -317,10 +326,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         <button type="button" class="primary" id="vfBurstDone">Done capturing</button>`;
       const main = document.querySelector('.vf-main') || workspaceEl();
       if (main) main.appendChild(bar);
-      bar.querySelector('#vfBurstDone').addEventListener('click', () => {
+      bar.querySelector('#vfBurstDone').addEventListener('click', async () => {
+        const wasAfter = vf.burst?.key?.includes('after') || vf.draft?.currentStep === 'after_photos';
         stopBurst();
         renderAll();
         toast('Photo capture finished', 'ok', 2000);
+        if (wasAfter) await classifyAfterPhotosQuiet();
       });
     }
     bar.hidden = false;
@@ -403,10 +414,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       stopLiveCamera({ rerender: true });
       toast('Camera closed', 'ok', 1800);
     });
-    overlay.querySelector('#vfLiveDone').addEventListener('click', () => {
+    overlay.querySelector('#vfLiveDone').addEventListener('click', async () => {
       const n = vf.liveCam?.count || 0;
+      const wasAfter = vf.liveCam?.kind === 'after';
       stopLiveCamera({ rerender: true });
       toast(n ? `Saved ${n} photo(s)` : 'Camera closed', 'ok', 2200);
+      if (wasAfter) await classifyAfterPhotosQuiet();
     });
     overlay.querySelector('#vfLiveShutter').addEventListener('click', () => captureLiveFrame());
     return overlay;
@@ -735,6 +748,40 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     renderAll();
   }
 
+  /** Backend Gemini sort — silent for the rep unless it fails hard. */
+  async function classifyAfterPhotosQuiet() {
+    if (!vf.draft?.afterPhotos?.length) return;
+    // Wait briefly for in-flight after uploads so the classifier sees them
+    for (let i = 0; i < 40; i++) {
+      const q = photoQueue.snapshot();
+      if (q.inFlight === 0) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    try {
+      const result = await apiCall('/shift-day/visit/photos/classify', {
+        method: 'POST',
+        body: JSON.stringify({
+          repKey: getRepKey(),
+          date: vf.draft.date,
+          actualStore: vf.draft.actualStore,
+        }),
+      });
+      if (result.draft) {
+        vf.draft = result.draft;
+        onDraftChanged?.(vf.draft);
+        renderSidebar();
+        updateFinishButton();
+      }
+      if (result.classification?.skipped) return;
+      if (result.classification?.ok) {
+        toast('After photos sorted for the survey', 'ok', 2200);
+      }
+    } catch (err) {
+      // Non-blocking — seal-time classify + unmet list still apply
+      console.warn('[classify]', err.message);
+    }
+  }
+
   /* ---------- Section renderers ---------- */
 
   function renderBeforeAfter(kind) {
@@ -746,13 +793,46 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     p.textContent =
       kind === 'before'
         ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. Open the camera once and take every before shot without leaving.'
-        : 'Same aisle coverage as before. Open the camera once and take every after shot — category photos will be chosen from these.';
+        : 'One after burst covers everything. Shoot the finished aisle plus each fixture below — the app places photos into the survey for you.';
     body.appendChild(p);
     const extra = { target: kind };
     const guide = document.createElement('p');
     guide.className = 'vf-step-guide';
     guide.textContent = STEP_HINTS[kind === 'before' ? 'before_photos' : 'after_photos'];
     body.appendChild(guide);
+
+    if (kind === 'after') {
+      const coach = vf.afterCoach?.coach || vf.categoryTargets || [];
+      const list = document.createElement('div');
+      list.className = 'vf-after-coach';
+      list.id = 'after-photos-coach';
+      list.innerHTML = `
+        <div class="vf-photo-head">
+          <strong>Hit these in your after burst</strong>
+          <span class="vf-photo-count">No separate category step — just shoot clearly</span>
+        </div>
+        <ul class="vf-coach-list">
+          ${coach
+            .map(
+              (c) =>
+                `<li><strong>${escapeHtml(c.label)}</strong>${
+                  c.tip ? ` — <span class="overlay-meta">${escapeHtml(c.tip)}</span>` : ''
+                }</li>`
+            )
+            .join('')}
+        </ul>`;
+      body.appendChild(list);
+
+      const sorted = vf.draft.photoClassification?.bestMatchByCategory;
+      if (sorted && Object.keys(sorted).length) {
+        const status = document.createElement('p');
+        status.className = 'overlay-meta vf-classify-status';
+        const filled = Object.entries(sorted).filter(([, seq]) => seq != null).length;
+        status.textContent = `Auto-sorted ${filled} of ${(vf.categoryTargets || []).length} fixture types from your afters.`;
+        body.appendChild(status);
+      }
+    }
+
     body.appendChild(
       photoCaptureBlock({
         label: kind === 'before' ? 'Before photos' : 'After photos',
@@ -930,105 +1010,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function renderCategoryPhotos() {
-    const body = $('vfBody');
-    body.innerHTML = '';
-    const guide = document.createElement('p');
-    guide.className = 'vf-step-guide';
-    guide.textContent = STEP_HINTS.category_photos;
-    body.appendChild(guide);
-
-    const afters = vf.draft.afterPhotos || [];
-    if (!afters.length) {
-      const empty = document.createElement('div');
-      empty.className = 'vf-category-empty';
-      empty.innerHTML = `
-        <p class="overlay-meta">No after photos yet. Take your after photos first, then come back here and pick which ones go to each category.</p>
-        <button type="button" class="primary" id="vfGoAfterPhotos">Go to After Photos</button>`;
-      body.appendChild(empty);
-      empty.querySelector('#vfGoAfterPhotos')?.addEventListener('click', () => goToSection('after_photos'));
-      return;
-    }
-
-    const lib = document.createElement('div');
-    lib.className = 'vf-after-library';
-    lib.innerHTML = `
-      <div class="vf-photo-head">
-        <strong>After photo library</strong>
-        <span class="vf-photo-count">${afters.length} photo(s) — tap one under each category to assign</span>
-      </div>
-      <div class="vf-photo-grid vf-after-library-grid">${afters
-        .map((p, i) => photoThumbHtml(p, i, { extraClass: 'vf-after-lib-thumb' }))
-        .join('')}</div>
-      <p class="vf-photo-hint overlay-meta">Category photos are chosen from these afters. You do not need to re-photograph each target.</p>`;
-    body.appendChild(lib);
-    fillPhotoThumbs(lib);
-
-    for (const cat of vf.categoryTargets) {
-      const assigned = vf.draft.categoryPhotos[cat.id] || [];
-      const assignedPaths = new Set(assigned.map((p) => p.path).filter(Boolean));
-
-      const section = document.createElement('div');
-      section.className = 'vf-category-pick';
-      section.id = `category-block-${cat.id}`;
-
-      const h = document.createElement('h3');
-      h.className = 'vf-section-head';
-      h.id = `category-${cat.id}`;
-      h.textContent = `${cat.label}${assigned.length ? ` · ${assigned.length} assigned` : ' · needs 1+'}`;
-      section.appendChild(h);
-
-      const assignedGrid = document.createElement('div');
-      assignedGrid.className = 'vf-photo-grid';
-      if (assigned.length) {
-        assignedGrid.innerHTML = assigned
-          .map((p, i) => photoThumbHtml(p, i, { showRemove: true, extraClass: 'vf-cat-assigned' }))
-          .join('');
-        assignedGrid.querySelectorAll('.vf-photo-remove').forEach((btn) => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            removePhoto('category', Number(btn.dataset.seq), { categoryId: cat.id });
-          });
-        });
-      } else {
-        assignedGrid.innerHTML = `<div class="vf-cat-placeholder">No photo assigned yet — tap an after photo below</div>`;
-      }
-      section.appendChild(assignedGrid);
-
-      const pickLabel = document.createElement('div');
-      pickLabel.className = 'vf-cat-pick-label overlay-meta';
-      pickLabel.textContent = `Pick from afters for ${cat.label}:`;
-      section.appendChild(pickLabel);
-
-      const pickGrid = document.createElement('div');
-      pickGrid.className = 'vf-photo-grid vf-cat-picker-grid';
-      pickGrid.innerHTML = afters
-        .map((p, i) => {
-          const seq = p.seq ?? i + 1;
-          const selected = assignedPaths.has(p.path);
-          const pathAttr = p.path ? ` data-photo-path="${escapeHtml(p.path)}"` : '';
-          return `<button type="button" class="vf-photo-thumb vf-cat-pick-thumb ${
-            selected ? 'is-selected' : ''
-          }" data-after-seq="${seq}" title="${selected ? 'Already assigned' : 'Assign to ' + cat.label}"${pathAttr}>
-            <span class="vf-photo-badge">${selected ? '✓' : '#' + seq}</span>
-          </button>`;
-        })
-        .join('');
-      pickGrid.querySelectorAll('.vf-cat-pick-thumb').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          if (btn.classList.contains('is-selected')) {
-            toast('Already assigned to this category', 'info', 2000);
-            return;
-          }
-          assignCategoryFromAfter(cat.id, Number(btn.dataset.afterSeq)).catch((err) =>
-            toast(err.message || 'Assign failed', 'bad', 4000)
-          );
-        });
-      });
-      section.appendChild(pickGrid);
-      fillPhotoThumbs(section);
-      body.appendChild(section);
-    }
+    // Legacy step removed — bounce reps to After Photos + coaching.
+    goToSection('after_photos');
   }
 
   function surveyVisibility() {
@@ -1739,6 +1722,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       toast(`${q.failed} photo(s) failed — retry the red thumbs before sealing`, 'bad', 5000);
       return;
     }
+    // Sort afters into category buckets before the local canSeal gate
+    await classifyAfterPhotosQuiet();
     if (!vf.draft.canSeal) {
       toast('Finish blocked — fix the unmet list on Review first', 'bad', 4000);
       renderReview();

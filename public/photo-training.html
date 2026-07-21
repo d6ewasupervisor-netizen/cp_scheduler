@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f16">
+  <title>Photo AI Training — Central Pet</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/auth-gate.js"></script>
+  <script type="module">
+    import { initTheme } from '/ux/theme.js';
+    initTheme();
+  </script>
+  <style>
+    .train-page { max-width: 920px; margin: 0 auto; padding: 0.75rem 1rem 3rem; }
+    .train-hero { margin: 1rem 0 1.25rem; }
+    .train-hero h1 { margin: 0 0 0.35rem; font-size: 1.45rem; }
+    .train-status {
+      display: grid; gap: 0.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      margin: 1rem 0;
+    }
+    .train-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+    .train-stat strong { display: block; font-size: 1.25rem; color: var(--text); }
+    .train-stat span { color: var(--muted); font-size: 0.85rem; }
+    .train-cat {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 1rem;
+      margin: 0.85rem 0;
+    }
+    .train-cat h2 { margin: 0 0 0.35rem; font-size: 1.05rem; }
+    .train-cat .count { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
+    .train-cat.short { border-color: rgba(232, 160, 78, 0.55); }
+    .train-cat.ready { border-color: rgba(78, 200, 140, 0.4); }
+    .train-upload { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin-bottom: 0.75rem; }
+    .train-upload .field { flex: 1; min-width: 140px; margin: 0; }
+    .train-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 0.5rem;
+    }
+    .train-thumb {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .train-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .train-thumb button {
+      position: absolute; top: 4px; right: 4px;
+      min-height: 28px; padding: 0.15rem 0.45rem;
+      font-size: 0.75rem;
+    }
+    .train-steps { margin: 1.25rem 0; padding-left: 1.2rem; color: var(--muted); }
+    .train-steps li { margin: 0.4rem 0; }
+    .train-steps a { color: var(--accent); }
+  </style>
+</head>
+<body class="mode-admin">
+  <header class="topbar">
+    <div class="topbar-row">
+      <div>
+        <h1>Photo AI Training</h1>
+        <p class="subtitle">Teach Gemini what end caps, clip strips, liners &amp; Butcher Block look like</p>
+      </div>
+      <div class="user-bar" id="userBar" hidden>
+        <a class="subtle" href="/">Planning Desk</a>
+        <a class="subtle" href="/shiftday.html?preview=1">Shift Day</a>
+        <button type="button" id="btnSignOut" class="subtle">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="train-page">
+    <div class="train-hero plan-intro" role="note">
+      <strong>Admin training session.</strong>
+      Upload 3–5 clear examples per fixture. After photos in the field app are sorted automatically using these labels — reps never pick categories.
+      API key signup: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>
+      (Gemini 2.5 Flash-Lite — cheapest solid vision model).
+    </div>
+
+    <div class="train-status" id="trainStatus"></div>
+    <p class="week-status" id="trainMessage"></p>
+
+    <ol class="train-steps">
+      <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio → Get API key</a> and create a key.</li>
+      <li>Set <code>GEMINI_API_KEY</code> on Railway (cp_scheduler service) and locally in <code>.env</code> if you run npm start.</li>
+      <li>For each category below, upload <strong>at least 3</strong> varied photos (different stores/angles/lighting). Aim for 5.</li>
+      <li>Use real Fred Meyer Pet Care shots — end-of-aisle end caps, hanging clip strips, wing panels, litter liner packs, Butcher Block rack, finished CP shelf runs.</li>
+      <li>Optional note on each upload (“close-up of liner bags”, “full endcap”). Then run a Shift Day visit and take afters — sorting runs in the background.</li>
+    </ol>
+
+    <div id="trainCats"></div>
+  </div>
+
+  <script type="module" src="/photo-training.js"></script>
+</body>
+</html>

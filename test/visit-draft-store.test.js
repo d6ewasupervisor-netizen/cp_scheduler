@@ -80,7 +80,6 @@ describe('startVisit / resume', () => {
       'load_check',
       'write_order_checklist',
       'after_photos',
-      'category_photos',
       'survey',
       'time',
       'shift_log',
@@ -178,9 +177,9 @@ describe('autosave after every discrete action + resume mid-branch', () => {
     d = store.getDraft(REP_A, DATE, S);
     assert.equal(d.survey.q3, 'Fully stocked');
 
-    store.goToStep(REP_A, DATE, S, 'category_photos');
+    store.goToStep(REP_A, DATE, S, 'after_photos');
     d = store.getDraft(REP_A, DATE, S);
-    assert.equal(d.currentStep, 'category_photos');
+    assert.equal(d.currentStep, 'after_photos');
 
     // Simulate "kill and reopen the app" — a totally fresh read from disk
     // must reflect every one of the above, resuming exactly mid-branch.
@@ -188,7 +187,7 @@ describe('autosave after every discrete action + resume mid-branch', () => {
     assert.equal(reopened.beforePhotos.length, 1);
     assert.equal(reopened.checklist['ewc-01'].checked, true);
     assert.equal(reopened.survey.q1, 'yes');
-    assert.equal(reopened.currentStep, 'category_photos');
+    assert.equal(reopened.currentStep, 'after_photos');
   });
 
   it('resumes correctly after simulating an interrupt inside the load-check branch', () => {
@@ -412,8 +411,9 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     store.setSurveyAnswers(REP_A, date, S, { q2: 'Service day only (no new order)' });
     store.goToStep(REP_A, date, S, 'write_order_checklist');
     store.setChecklistItem(REP_A, date, S, 'ewc-01', { checked: true });
-    store.goToStep(REP_A, date, S, 'category_photos');
-    store.recordCategoryPhoto(REP_A, date, S, 'endcaps', { photoPath: 'fake/end.jpg' });
+    store.goToStep(REP_A, date, S, 'after_photos');
+    store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-1.jpg' });
+    store.assignCategoryFromAfter(REP_A, date, S, 'endcaps', { afterSeq: 1 });
     store.goToStep(REP_A, date, S, 'time');
     store.setTimes(REP_A, date, S, { stopActual: `${date}T14:30:00Z` });
 
@@ -444,10 +444,11 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
 
     const sections = new Set(blocked.unmet.map((u) => u.section));
     assert.ok(sections.has('before_photos'));
-    assert.ok(sections.has('category_photos'));
     assert.ok(sections.has('survey'));
     assert.ok(sections.has('after_photos'));
     assert.ok(sections.has('time'));
+    // Missing fixture coverage surfaces on after_photos (AI sort / coaching), not a separate step
+    assert.ok(blocked.unmet.some((u) => u.section === 'after_photos' && /end caps/i.test(u.message)));
 
     for (const u of blocked.unmet) {
       assert.ok(u.section && u.anchor && u.message, 'each unmet row needs section+anchor+message for Review deep links');
@@ -466,7 +467,7 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     const date = '2026-07-24';
     const S = 111;
     store.startVisit({ repKey: REP_A, date, actualStore: S, writeOrder: true, workLoad: true });
-    const order = ['review', 'time', 'survey', 'load_check', 'before_photos', 'write_order_checklist', 'category_photos', 'after_photos'];
+    const order = ['review', 'time', 'survey', 'load_check', 'before_photos', 'write_order_checklist', 'after_photos'];
     for (const step of order) {
       const d = store.goToStep(REP_A, date, S, step);
       assert.equal(d.currentStep, step);
