@@ -36,16 +36,18 @@ transmit, editing `prod-transmitter.js` (assembly) or `live-executor.js`
 Not for: the planning/scheduling side, the guided rep visit flow (Stage 3), or
 photo/survey capture — those are separate. This is only the **PROD write spine**.
 
-## Ground truth — the two HARs
+## Ground truth — HARs
 
-Every payload shape traces to a captured browser session. Keep these:
+Every payload shape traces to a captured browser session. Prefer the
+**kompass-netcap** capture (full request bodies via mitmproxy):
 
 | HAR | Path | Covers |
 |-----|------|--------|
+| **Primary (full bodies)** | `C:\Users\tgaut\Downloads\kompass-netcap_2026-07-21_00-35-01.har` | end-to-end complete of visit **27092092** (store 111) — survey, category reset, travel, punch+mileage, assignee/spent_time, PUT |
 | Start call | `C:\Users\tgaut\Downloads\prod completion.har` | the visit-**start** PATCH body |
-| Full complete shift | `C:\Users\tgaut\Downloads\prod completio7n.har` | the **entire** completion sequence (visit 26940175) — travel, punch, category reset, survey, final complete |
+| Earlier complete | `C:\Users\tgaut\Downloads\prod completio7n.har` | prior completion sequence (visit 26940175); still useful for edge cases |
 
-When any call returns an error you don't recognize, **grep the full-complete HAR
+When any call returns an error you don't recognize, **grep the primary HAR
 for that endpoint and copy its request body byte-for-byte.** That is how every fix
 below was found. See [references/diagnosing-errors.md](references/diagnosing-errors.md).
 
@@ -66,20 +68,20 @@ Assembled by `transmitVisit()` in `src/lib/prod-transmitter.js`, executed by
 [references/call-sequence.md](references/call-sequence.md). The tricky tail
 (category reset + final complete): [references/completion-flow.md](references/completion-flow.md).
 
+Order from kompass-netcap HAR 2026-07-21 (visit 27092092):
+
 1. **GETs** — resolve state + ids (shift-complete, shift, category-resets, survey, reasons, responders). Read-only.
-2. **Start visit** — `PATCH /field-app/visits/{id}/` with the **full start body** (empty `{}` → 400). Skip if the visit is already `in-progress`/punched.
-3. **to_store travel** — `POST /v2/field-app/travel/{shiftId}/to_store/` `{start_time, user_accepted_ss_replace:null}` (empty `{}` → 500).
-4. **Punch times** — `PATCH /v2/field-app/shifts/{shiftId}/` — **read-modify-write** (GET the full shift, merge) + `pin:0` + `is_supervisor_edit_mode:true` + **store-local dates**.
-5. **Step-advance** — `PATCH /field-app/visits/{id}/shift-complete/` `{shift_id}`.
-6. **Category-reset photos** — `PATCH /category-resets/{id}/` `{before|after:{image}, compress_image:true}` per photo.
-7. **validate-spent-time-reason** — `PATCH /category-resets/{id}/validate-spent-time-reason/`.
-8. **Assign reset** — `PATCH /category-resets/{id}/` `{new_assignee:{visit_id, employee_id}}` (**required** — `is_assignee_required`).
-9. **spent_time on reset** — `PATCH /category-resets/{id}/` `{id, shift_id, spent_time, spent_time_reason}`.
-10. **Complete reset** — `PATCH /category-resets/{id}/` `{category_completion:true, id, comment, exception:null}` (**`category_completion`, NOT `completion_status`**).
-11. **Survey** — `POST run-infos` → `POST answers` (+ `answer-images` multipart) → `POST responders` → `POST surveys/{id}/complete`.
-12. **to_home travel** — `POST /v2/field-app/travel/{shiftId}/to_home/` `{start_time, user_accepted_ss_replace:null}`. A 5xx here is **non-fatal** (mileage rides on the shift CHANGE; the real HAR never posts to_home).
-13. **Final shift PATCH** — times + S→H travel CHANGE record.
-14. **Complete visit** — `PATCH shift-complete {shift_id}` → **`PUT shift-complete`** with the full completion body (`{shift_id}` alone → 406) → `PATCH shift-complete {team_lead_feedback:null}`.
+2. **Start visit** — `PATCH /field-app/visits/{id}/` with the **full start body** (empty `{}` → 400). Skip if already `in-progress`/punched.
+3. **Survey** — `POST responders {visit_id, name}` (if needed) → `POST run-infos {responder, runid:null}` → `POST answers` (no `survey`/`runid` fields) + `answer-images` multipart → `POST responders {visit_id}` claim → `POST surveys/{id}/complete`.
+4. **Category-reset photos** — `PATCH /category-resets/{id}/` `{before|after:{image}, compress_image:true}` per photo.
+5. **category_completion** — `PATCH {category_completion:true, id, comment:"", exception:null}` (**before** T&E; `category_completion`, NOT `completion_status`).
+6. **to_store travel** — `POST /v2/field-app/travel/{shiftId}/to_store/` `{start_time, user_accepted_ss_replace:null}` (empty `{}` → 500).
+7. **Punch + mileage** — one `PATCH /v2/field-app/shifts/{shiftId}/` — **read-modify-write** + `pin:0` + `is_supervisor_edit_mode:true` + **store-local dates** + travel `CHANGE` row (`id:null`).
+8. **to_home** (last-stop / S→H only) — then optional second shift PATCH with S→H CHANGE. Soft-skip 5xx.
+9. **Mid ping** — `PATCH shift-complete {team_lead_feedback:null}` (not `{shift_id}`).
+10. **Assign reset** — `PATCH {new_assignee:{visit_id, employee_id}}` (**required**).
+11. **spent_time** — `PATCH {id, shift_id, spent_time, spent_time_reason}` (full reason object; null reason → 5% warning).
+12. **Complete visit** — **`PUT shift-complete`** full body → `PATCH {team_lead_feedback:null}`.
 
 ## Error → fix (memorize this table)
 
@@ -127,7 +129,7 @@ railway ssh -i ~/.ssh/railway_cursor_ed25519 --service cp_scheduler \
 ## Golden rules
 
 - **Dry-run is read-only; the live executor writes.** Assemble/verify with a dry run first.
-- **Never guess a payload — copy it from `prod completio7n.har`.**
+- **Never guess a payload — copy it from `kompass-netcap_2026-07-21_00-35-01.har`.**
 - **A failed write does not corrupt** — SAS rejects it; only successful calls land. Diagnose, fix, resume.
 - **Re-running from scratch duplicates** survey answers + photos. If a run got past the first writes, **resume** — don't restart.
 - **`allowed_overlap:true` is a human call.** It overrides a real payroll warning; the auto-mode classifier will (correctly) refuse to let an agent self-approve it.

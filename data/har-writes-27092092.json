@@ -1,0 +1,849 @@
+﻿[
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "visit_id": 27092092,
+      "actual_start_time": "12:36 AM",
+      "actual_start_datetime": "2026-07-21T07:36:00Z",
+      "start_location": [
+        -1,
+        -1
+      ],
+      "validate_geo": true,
+      "is_web": true,
+      "isMerchandiserStartingVisit": true,
+      "from_state": "admin",
+      "no_show_admin": true
+    },
+    "responsePreview": {
+      "message": "Schedule started successfully",
+      "success": true
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/responders/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "visit_id": 27092092,
+      "name": "tyson.gauthier@advantagesolutions.net"
+    },
+    "responsePreview": {
+      "id": 8363623,
+      "name": "tyson.gauthier@retailodyssey.com",
+      "visit_id": 27092092
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/run-infos/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "responder": 8363623,
+      "runid": null
+    },
+    "responsePreview": {
+      "id": 252333095,
+      "responder": 8363623,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c",
+      "created": "2026-07-21T07:36:38.147243Z"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "yes",
+      "question": 920233,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "yes",
+      "question": 920233,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:37:03.198471Z",
+      "id": 80821857,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryuJQjcGYoKrV9X2B1",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundaryuJQjcGYoKrV9X2B1",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821857,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_01-before-01.jpg",
+      "id": 26668957
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "No",
+      "question": 920234,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "No",
+      "question": 920234,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:37:16.602220Z",
+      "id": 80821859,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "Did not stock",
+      "question": 920235,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "Did not stock",
+      "question": 920235,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:06.995994Z",
+      "id": 80821866,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundarydCKSDvUGsTjS1TBE",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundarydCKSDvUGsTjS1TBE",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821866,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_02-after-01.jpg",
+      "id": 26668965
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no order",
+      "question": 920236,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no order",
+      "question": 920236,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:14.264060Z",
+      "id": 80821868,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no",
+      "question": 920237,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no",
+      "question": 920237,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:30.518580Z",
+      "id": 80821871,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryvyz1vrKx42AQ73MN",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundaryvyz1vrKx42AQ73MN",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821871,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_05-category-clipstrips-01.png",
+      "id": 26668969
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no order",
+      "question": 920238,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no order",
+      "question": 920238,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:36.604257Z",
+      "id": 80821872,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "No",
+      "question": 920239,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "No",
+      "question": 920239,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:41.128893Z",
+      "id": 80821873,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no order",
+      "question": 920240,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no order",
+      "question": 920240,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:46.637077Z",
+      "id": 80821874,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no",
+      "question": 920241,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no",
+      "question": 920241,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:49.953677Z",
+      "id": 80821875,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no order",
+      "question": 920242,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no order",
+      "question": 920242,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:38:55.654700Z",
+      "id": 80821876,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "no order/load",
+      "question": 920243,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "no order/load",
+      "question": 920243,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:39:05.388871Z",
+      "id": 80821877,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answers/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "answer": "yes",
+      "question": 920244,
+      "responder": 8363623,
+      "run_info": 252333095,
+      "is_field_web": true,
+      "delete": false
+    },
+    "responsePreview": {
+      "answer": "yes",
+      "question": 920244,
+      "responder": 8363623,
+      "survey": 115737,
+      "answer_status": "valid",
+      "time_modified": "2026-07-21T07:39:22.158485Z",
+      "id": 80821878,
+      "runid": "062f4cf3-2fc1-4ebe-b451-9f826c4dc24c"
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryBbo8sLRbRgRHhq2e",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundaryBbo8sLRbRgRHhq2e",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821878,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_02-after-02.jpg",
+      "id": 26668970
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryMDRkxKu9t7q6sAjS",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundaryMDRkxKu9t7q6sAjS",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821878,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_02-after-03.jpg",
+      "id": 26668971
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/answer-images/",
+    "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryQG5HPNBPuLYR6gKc",
+    "body": {
+      "_multipart": true,
+      "mimeType": "multipart/form-data; boundary=----WebKitFormBoundaryQG5HPNBPuLYR6gKc",
+      "params": "raw-b64"
+    },
+    "responsePreview": {
+      "answer": 80821878,
+      "image": "https://djttbrw0ufia8.cloudfront.net/media/surveys/answers/store-111_02-after-01_S2yy5KT.jpg",
+      "id": 26668972
+    }
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "path": "/api/v1/surveys/responders/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "visit_id": "27092092"
+    },
+    "responsePreview": {
+      "id": 8363623,
+      "name": "tyson.gauthier@retailodyssey.com",
+      "visit_id": 27092092
+    }
+  },
+  {
+    "method": "POST",
+    "status": 200,
+    "path": "/api/v1/surveys/surveys/115737/complete/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "responder": 8363623,
+      "run_info": 252333095
+    },
+    "responsePreview": {
+      "message": "Survey completed.",
+      "survey": 115737
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "before": {
+        "image": {
+          "filetype": "image/jpeg",
+          "filename": "store-111_01-before-01.jpg",
+          "filesize": 3142692,
+          "base64": "<base64 len=144272>"
+        }
+      },
+      "compress_image": true
+    },
+    "responsePreview": {
+      "images": [
+        {
+          "id": 80148677,
+          "url": "https://djttbrw0ufia8.cloudfront.net/media/store-111_01-before-01.jpg"
+        }
+      ],
+      "image_id": 80148677,
+      "image_url": "https://djttbrw0ufia8.cloudfront.net/media/store-111_01-before-01.jpg",
+      "message": "Category Reset Item images updated successfully.",
+      "success": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "after": {
+        "image": {
+          "filetype": "image/jpeg",
+          "filename": "store-111_02-after-01.jpg",
+          "filesize": 2924503,
+          "base64": "<base64 len=128792>"
+        }
+      },
+      "compress_image": true
+    },
+    "responsePreview": {
+      "images": [
+        {
+          "id": 80148678,
+          "url": "https://djttbrw0ufia8.cloudfront.net/media/store-111_02-after-01.jpg"
+        }
+      ],
+      "image_id": 80148678,
+      "image_url": "https://djttbrw0ufia8.cloudfront.net/media/store-111_02-after-01.jpg",
+      "message": "Category Reset Item images updated successfully.",
+      "success": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "category_completion": true,
+      "id": 41653639,
+      "comment": "",
+      "exception": null
+    },
+    "responsePreview": {
+      "message": "Category Reset Item updated successfully",
+      "success": true,
+      "data": {
+        "comment": "",
+        "completion_status": true,
+        "exception_id": null,
+        "time_modified": "2026-07-21T07:39:49.883292Z"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "status": 200,
+    "path": "/api/v2/field-app/travel/44611509/to_store/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "start_time": "2026-07-20T13:03:00.000Z",
+      "user_accepted_ss_replace": null
+    },
+    "responsePreview": [
+      {
+        "id": null,
+        "shift_id": 44611509,
+        "start_location_type": "H",
+        "end_location_type": "S",
+        "start_time": "2026-07-20T12:23:00Z",
+        "end_time": "2026-07-20T13:03:00Z",
+        "duration": "0.6667",
+        "distance": "30.80",
+        "replaced": false,
+        "travel_policy": {
+          "travel_type": "H-S",
+          "drive_time_threshold": 0.5
+        },
+        "is_system_generated": true,
+        "is_truncated": false
+      },
+      {
+        "id": null,
+        "shift_id": 44611509,
+        "start_location_type": "H",
+        "end_location_type": "S",
+        "start_time": "2026-07-20T12:23:00Z",
+        "end_time": "2026-07-20T13:03:00Z",
+        "duration": "0.6667",
+        "distance": "30.80",
+        "replaced": false,
+        "travel_policy": {
+          "travel_type": "H-S",
+          "drive_time_threshold": 0.5
+        },
+        "record_type": "LOG",
+        "is_system_generated": true,
+        "is_truncated": false
+      }
+    ]
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v2/field-app/shifts/44611509/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "id": 44611509,
+      "shift_breaks": [],
+      "travel_records": [
+        {
+          "id": null,
+          "shift_id": 44611509,
+          "start_time": "2026-07-20T12:53:00.000Z",
+          "end_time": "2026-07-20T13:03:00.000Z",
+          "distance": "4.80",
+          "duration": "0.1667",
+          "start_location_type": "H",
+          "end_location_type": "S",
+          "is_system_generated": false,
+          "is_truncated": false,
+          "user_accepted_overlap": null,
+          "record_type": "CHANGE",
+          "change_reason": 5,
+          "change_comment": "k"
+        },
+        {
+          "id": null,
+          "shift_id": 44611509,
+          "start_location_type": "H",
+          "end_location_type": "S",
+          "start_time": "2026-07-20T12:23:00Z",
+          "end_time": "2026-07-20T13:03:00Z",
+          "duration": "0.6667",
+          "distance": "30.80",
+          "replaced": false,
+          "travel_policy": {
+            "travel_type": "H-S",
+            "drive_time_threshold": 0.5
+          },
+          "record_type": "LOG",
+          "is_system_generated": true,
+          "is_truncated": false
+        }
+      ],
+      "actual_start_date": "2026-07-20",
+      "actual_start_time": "09:25:00",
+      "actual_end_date": "2026-07-20",
+      "actual_end_time": "11:18:00",
+      "executed_datetime": "2026-07-20T16:25:00.000Z",
+      "no_show": true,
+      "total_work_time": null,
+      "store_timezone": "America/Los_Angeles",
+      "timezone": "PDT",
+      "timezone_offset": "420",
+      "visit": 27092092,
+      "employee": 354456,
+      "time_change_reason": 5,
+      "time_change_comment": "k",
+      "capture_location": false,
+      "home_to_store": true,
+      "store_to_store": true,
+      "store_to_home": true,
+      "calculate_mileage": true,
+      "travel_time_maximum": 24,
+      "travel_distance_maximum": 1000,
+      "attestation_policy_link": "http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets",
+      "can_show_estimation_footnote": false,
+      "pin": 0,
+      "is_lead_edit_mode": false,
+      "is_supervisor_edit_mode": true,
+      "start_location": {
+        "type": "Point",
+        "coordinates": [
+          -1,
+          -1
+        ]
+      },
+      "end_location": {
+        "type": "Point",
+        "coordinates": [
+          -1,
+          -1
+        ]
+      },
+      "edited_by_merchandiser": false,
+      "validate_geo": true
+    },
+    "responsePreview": {
+      "id": 44611509,
+      "shift_breaks": [],
+      "travel_records": [
+        {
+          "id": null,
+          "shift_id": 44611509,
+          "start_location_type": "H",
+          "end_location_type": "S",
+          "start_time": "2026-07-20T12:53:00Z",
+          "end_time": "2026-07-20T13:03:00Z",
+          "duration": "0.1667",
+          "distance": "4.80",
+          "replaced": null,
+          "travel_policy": {},
+          "record_type": "CHANGE",
+          "is_system_generated": false,
+          "is_truncated": false
+        },
+        {
+          "id": null,
+          "shift_id": 44611509,
+          "start_location_type": "H",
+          "end_location_type": "S",
+          "start_time": "2026-07-20T12:23:00Z",
+          "end_time": "2026-07-20T13:03:00Z",
+          "duration": "0.6667",
+          "distance": "30.80",
+          "replaced": null,
+          "travel_policy": {},
+          "is_system_generated": true,
+          "is_truncated": false
+        }
+      ],
+      "actual_start_date": "2026-07-20",
+      "actual_start_time": "09:25:00",
+      "actual_end_date": "2026-07-20",
+      "actual_end_time": "11:18:00",
+      "executed_datetime": "2026-07-20T16:25:00Z",
+      "no_show": false,
+      "total_work_time": "1h 53m",
+      "store_timezone": "America/Los_Angeles",
+      "timezone": "PDT",
+      "timezone_offset": "420",
+      "visit": 27092092,
+      "employee": 354456,
+      "time_change_reason": 5,
+      "time_change_comment": "k",
+      "capture_location": false,
+      "home_to_store": true,
+      "store_to_store": true,
+      "store_to_home": true,
+      "calculate_mileage": true,
+      "travel_time_maximum": 24,
+      "travel_distance_maximum": 1000,
+      "attestation_policy_link": "http://advantagesolutionsnet.sharepoint.com/sites/SASConnects/SiteAssets/Forms/AllItems.aspx?id=%2fsites%2fSASConnects%2fSiteAssets%2fSAS%20-%20CA%20Meal%20and%20Rest%20Breaks%204%2016%202024%2Epdf&parent=%2fsites%2fSASConnects%2fSiteAssets"
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/shift-complete/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "team_lead_feedback": null
+    },
+    "responsePreview": null
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "id": 41653639,
+      "new_assignee": {
+        "visit_id": "27092092",
+        "employee_id": 354456
+      }
+    },
+    "responsePreview": {
+      "message": "Category Reset Item updated successfully",
+      "success": true,
+      "data": {}
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "id": 41653639,
+      "shift_id": 44611509,
+      "spent_time": "1h 53m",
+      "spent_time_reason": null
+    },
+    "responsePreview": {
+      "message": [
+        "Please select spent time reason as cummulative spent time on this category is more than 5.00%"
+      ],
+      "success": false,
+      "is_spent_time": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/category-resets/41653639/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "id": 41653639,
+      "shift_id": 44611509,
+      "spent_time": "1h 53m",
+      "spent_time_reason": {
+        "id": 3,
+        "time_created": null,
+        "time_modified": null,
+        "registered_timestamp": "2016-07-11T11:30:03.484000Z",
+        "unregistered_timestamp": null,
+        "text": "Other ΓÇô supervisor was contacted",
+        "route": "field-app/spent-time-reasons/",
+        "reqParams": null,
+        "restangularized": true,
+        "fromServer": true,
+        "parentResource": null,
+        "restangularCollection": false
+      }
+    },
+    "responsePreview": {
+      "message": "Category Reset Item updated successfully",
+      "success": true,
+      "data": {}
+    }
+  },
+  {
+    "method": "PUT",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/shift-complete/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "allowed_overlap": false,
+      "allowed_missing_ques": false,
+      "allowed_truncation": false,
+      "team_lead_feedback": null,
+      "end_location": [
+        -1,
+        -1
+      ],
+      "validate_geo": true
+    },
+    "responsePreview": {
+      "message": "Visit completed successfully.",
+      "success": true
+    }
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "path": "/api/v1/field-app/visits/27092092/shift-complete/",
+    "contentType": "application/json;charset=UTF-8",
+    "body": {
+      "team_lead_feedback": null
+    },
+    "responsePreview": null
+  }
+]

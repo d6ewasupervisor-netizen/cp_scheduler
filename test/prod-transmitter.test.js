@@ -347,8 +347,10 @@ describe('transmitVisit — reason-string resolution (exact match against live e
     const sealed = makeSealedRecord({ beforePhotos: [tmpPhoto('before.jpg')], afterPhotos: [tmpPhoto('after.jpg')] });
     const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
     assert.equal(result.status, 'ok');
-    const validateCall = result.calls.find((c) => (c.url || '').includes('/validate-spent-time-reason/'));
-    assert.equal(validateCall.payload.team_data[0].spent_time_reason.id, 3);
+    const spentCall = result.calls.find(
+      (c) => c.payload?.spent_time && c.payload?.spent_time_reason && (c.url || '').includes('/category-resets/')
+    );
+    assert.equal(spentCall.payload.spent_time_reason.id, 3);
     assert.equal(writeReasons.categorySpentTimeReason.selected.text, 'Other \u2013 supervisor was contacted');
   });
 
@@ -414,7 +416,8 @@ describe('transmitVisit — photo slotting', () => {
     });
     const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
     assert.equal(result.status, 'aborted');
-    assert.match(result.abortReason, /^photo_unreadable:before:/);
+    // Survey runs before category photos (HAR 2026-07-21), so q1's before image fails first.
+    assert.match(result.abortReason, /^photo_unreadable:(q1|before):/);
   });
 });
 
@@ -434,36 +437,43 @@ describe('transmitVisit — ordering / dependencies / sourceRef', () => {
     }
 
     const methodsInOrder = result.calls.map((c) => `${c.method} ${c.url.split('?')[0].split('/').slice(3).join('/')}`);
-    const travelIdx = methodsInOrder.findIndex((m) => m.includes('travel/44390825/to_store'));
-    const startShiftIdx = methodsInOrder.findIndex((m, i) => i > travelIdx && m.startsWith('PATCH api/v2/field-app/shifts/'));
     const surveyCompleteIdx = methodsInOrder.findIndex((m) => m.includes('surveys/surveys/115502/complete'));
-    const stopShiftIdx = methodsInOrder.findIndex((m, i) => i > surveyCompleteIdx && m.startsWith('PATCH api/v2/field-app/shifts/'));
+    const travelIdx = methodsInOrder.findIndex((m) => m.includes('travel/44390825/to_store'));
+    const punchIdx = methodsInOrder.findIndex((m, i) => i > travelIdx && m.startsWith('PATCH api/v2/field-app/shifts/'));
     const finalPutIdx = methodsInOrder.findIndex((m) => m.startsWith('PUT'));
 
-    assert.ok(travelIdx < startShiftIdx, 'travel preview must precede the start-shift PATCH');
-    assert.ok(startShiftIdx < surveyCompleteIdx, 'start-shift must precede survey completion');
-    assert.ok(surveyCompleteIdx < stopShiftIdx, 'survey completion must precede the stop-shift PATCH');
-    assert.ok(stopShiftIdx < finalPutIdx, 'stop-shift must precede the final PUT shift-complete');
+    // kompass-netcap HAR 2026-07-21: survey → to_store → punch → PUT
+    assert.ok(surveyCompleteIdx < travelIdx, 'survey completion must precede to_store');
+    assert.ok(travelIdx < punchIdx, 'travel preview must precede the punch PATCH');
+    assert.ok(punchIdx < finalPutIdx, 'punch must precede the final PUT shift-complete');
   });
 
-  it('threads runid/responder/answer ids as {{placeholder}} references, never invented literal ids', async () => {
+  it('threads run_info/responder/answer ids as {{placeholder}} references, never invented literal ids', async () => {
     const opts = baseOpts();
     opts.sasGet = makeFixtureSasGet({ 'surveys/responders/': async () => [] }); // force a fresh responder
+    opts.surveyResponderName = 'tyson.gauthier@advantagesolutions.net';
     const sealed = makeSealedRecord({ beforePhotos: [tmpPhoto('before.jpg')], afterPhotos: [tmpPhoto('after.jpg')] });
     const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts });
     assert.equal(result.status, 'ok');
 
-    const createResponder = result.calls.find((c) => c.url.endsWith('/surveys/responders/') && c.payload?.visit_id);
-    assert.ok(createResponder);
     const runInfo = result.calls.find((c) => c.url.endsWith('/surveys/run-infos/'));
     assert.ok(runInfo);
-    assert.equal(runInfo.payload.responder, `{{step${createResponder.seq}.id}}`);
+    assert.equal(runInfo.payload.runid, null);
+
+    const createBeforeRun = result.calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/surveys/responders/') && c.seq < runInfo.seq
+    );
+    assert.ok(createBeforeRun, 'create responder before run-infos');
+    assert.equal(createBeforeRun.payload.name, 'tyson.gauthier@advantagesolutions.net');
+    assert.equal(runInfo.payload.responder, `{{step${createBeforeRun.seq}.id}}`);
 
     const answers = result.calls.filter((c) => c.url.endsWith('/surveys/answers/'));
     assert.ok(answers.length > 0);
     for (const a of answers) {
-      assert.equal(a.payload.responder, `{{step${createResponder.seq}.id}}`);
-      assert.equal(a.payload.runid, `{{step${runInfo.seq}.runid}}`);
+      assert.equal(a.payload.responder, `{{step${createBeforeRun.seq}.id}}`);
+      assert.equal(a.payload.run_info, `{{step${runInfo.seq}.id}}`);
+      assert.equal(a.payload.runid, undefined);
+      assert.equal(a.payload.survey, undefined);
       assert.ok(a.dependsOn.includes(runInfo.seq));
     }
 
@@ -482,11 +492,11 @@ describe('transmitVisit — ordering / dependencies / sourceRef', () => {
     for (const a of answers) assert.equal(a.payload.responder, 8336939);
 
     const responderPosts = result.calls.filter((c) => c.url.endsWith('/surveys/responders/') && c.method === 'POST');
-    assert.equal(responderPosts.length, 1);
+    assert.equal(responderPosts.length, 1, 'existing responder → only the claim POST');
     const completeIdx = result.calls.findIndex((c) => c.url.includes('surveys/surveys/115502/complete'));
     const responderIdx = result.calls.indexOf(responderPosts[0]);
     const lastAnswerIdx = Math.max(...answers.map((a) => result.calls.indexOf(a)));
-    assert.ok(responderIdx > lastAnswerIdx, 'claim POST must come after all answers, mirroring HAR entry #305');
+    assert.ok(responderIdx > lastAnswerIdx, 'claim POST must come after all answers, mirroring HAR');
     assert.ok(responderIdx < completeIdx, 'claim POST must come before survey completion');
   });
 });
@@ -566,6 +576,7 @@ describe('unit helpers', () => {
       changeComment: 'Entered from Stage 3 sealed record',
     });
     assert.equal(row.shift_id, 44392384);
+    assert.equal(row.id, null);
     assert.equal(row.start_location_type, 'S');
     assert.equal(row.end_location_type, 'H');
     assert.equal(row.distance, '3.40');
@@ -688,42 +699,36 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     const shiftPatches = result.calls.filter(
       (c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/44390825/')
     );
-    // home→store leg: time-only + H→S mileage CHANGE + final reaffirm
-    assert.ok(shiftPatches.length >= 2, 'expected early punch + later shift PATCH(es)');
+    // home→store: one punch PATCH carries times + H→S CHANGE (kompass-netcap HAR)
+    assert.equal(shiftPatches.length, 1, 'expected single punch+mileage shift PATCH');
 
-    const startPayload = shiftPatches[0].payload;
-    const lastPayload = shiftPatches[shiftPatches.length - 1].payload;
+    const punchPayload = shiftPatches[0].payload;
 
-    // James FM53 + HAR: full start+stop early (not provisional end=start) so work time > 0
-    assert.equal(startPayload.actual_start_time, '06:01:00');
-    assert.equal(startPayload.actual_end_time, '11:01:00'); // full stop on first punch
-    assert.equal(lastPayload.actual_end_time, '11:01:00'); // reaffirm
-    assert.equal(startPayload.time_change_reason, writeReasons.shiftTimeChangeReason.selected.id);
-    // time_change_comment now carries store attribution so the real store is recallable from PROD.
+    assert.equal(punchPayload.actual_start_time, '06:01:00');
+    assert.equal(punchPayload.actual_end_time, '11:01:00');
+    assert.equal(punchPayload.time_change_reason, writeReasons.shiftTimeChangeReason.selected.id);
     assert.equal(
-      startPayload.time_change_comment,
+      punchPayload.time_change_comment,
       'Entered from Stage 3 sealed record | Actual store 215 (scheduled placeholder 391)'
     );
 
-    // Time-only first patch uses empty travel_records; home→store also gets a CHANGE patch
-    assert.deepEqual(startPayload.travel_records, []);
-    const mileagePatch = shiftPatches.find((c) => (c.payload.travel_records || []).some((t) => t.record_type === 'CHANGE'));
-    assert.ok(mileagePatch, 'home→store matrix leg should assemble travel CHANGE');
-    assert.equal(mileagePatch.payload.travel_records[0].distance, '3.60');
-    assert.equal(mileagePatch.payload.travel_records[0].change_reason, 5);
-    assert.equal(mileagePatch.payload.travel_records[0].shift_id, 44390825);
+    assert.ok(punchPayload.travel_records?.some((t) => t.record_type === 'CHANGE'));
+    assert.equal(punchPayload.travel_records[0].distance, '3.60');
+    assert.equal(punchPayload.travel_records[0].change_reason, 5);
+    assert.equal(punchPayload.travel_records[0].shift_id, 44390825);
+    assert.equal(punchPayload.travel_records[0].id, null);
 
-    assert.equal(startPayload.actual_start_date, '2026-07-08');
+    assert.equal(punchPayload.actual_start_date, '2026-07-08');
     assert.ok(result.mileageAudit, 'matrix leg retained as audit-only on result');
     assert.equal(result.mileageAudit.distance, '3.60');
     assert.equal(result.mileageAudit._auditOnly, true);
 
     // Explicit anti-regression: must not reintroduce the UTC-slice bug
-    assert.notEqual(startPayload.actual_start_time, '13:01:00');
-    assert.notEqual(lastPayload.actual_end_time, '18:01:00');
+    assert.notEqual(punchPayload.actual_start_time, '13:01:00');
+    assert.notEqual(punchPayload.actual_end_time, '18:01:00');
   });
 
-  it('assembles automator-aligned travel {} + shift_id pings + survey run_info', async () => {
+  it('assembles automator-aligned travel + survey run_info (HAR 2026-07-21)', async () => {
     const sealed = makeSealedRecord({
       beforePhotos: [tmpPhoto('before.jpg')],
       afterPhotos: [tmpPhoto('after.jpg')],
@@ -732,21 +737,33 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(result.status, 'ok');
 
     const travel = result.calls.find((c) => c.url.includes('/travel/') && c.url.includes('/to_store/'));
-    // prod completio7n.har: to_store carries start_time (UTC) + user_accepted_ss_replace, not {}.
     assert.deepEqual(travel.payload, {
       start_time: '2026-07-08T13:01:00.000Z',
       user_accepted_ss_replace: null,
     });
 
-    const pings = result.calls.filter(
+    // No shift_id step-advance pings — mid/final use team_lead_feedback:null
+    const shiftIdPings = result.calls.filter(
       (c) => c.method === 'PATCH' && c.url.includes('/shift-complete/') && c.payload && c.payload.shift_id
     );
-    assert.ok(pings.length >= 2);
-    assert.equal(pings[0].payload.shift_id, 44390825);
+    assert.equal(shiftIdPings.length, 0);
+    const feedbackPings = result.calls.filter(
+      (c) =>
+        c.method === 'PATCH' &&
+        c.url.includes('/shift-complete/') &&
+        c.payload &&
+        Object.prototype.hasOwnProperty.call(c.payload, 'team_lead_feedback') &&
+        !Object.prototype.hasOwnProperty.call(c.payload, 'allowed_overlap')
+    );
+    assert.ok(feedbackPings.length >= 2);
 
     const answer = result.calls.find((c) => c.url.endsWith('/surveys/answers/'));
     assert.ok(answer.payload.run_info);
-    assert.ok(answer.payload.runid);
+    assert.equal(answer.payload.runid, undefined);
+    assert.equal(answer.payload.is_field_web, true);
+
+    const runInfo = result.calls.find((c) => c.url.endsWith('/surveys/run-infos/'));
+    assert.equal(runInfo.payload.runid, null);
 
     const complete = result.calls.find((c) => c.url.includes('/surveys/surveys/') && c.url.endsWith('/complete/'));
     assert.equal(complete.payload.responder, 8336939);
@@ -756,29 +773,31 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(ansImg.payload._executorEncoding, 'multipart-answer-image');
   });
 
-  it('assembles validate-spent-time-reason before category completion', async () => {
+  it('assembles assignee + spent_time after punch; category_completion before T&E', async () => {
     const sealed = makeSealedRecord({
       beforePhotos: [tmpPhoto('before.jpg')],
       afterPhotos: [tmpPhoto('after.jpg')],
     });
     const result = await transmitVisit({ sealedRecord: sealed, matchedVisit: makeMatchedVisit(), opts: baseOpts() });
     assert.equal(result.status, 'ok');
-    const validate = result.calls.find((c) => (c.url || '').includes('/validate-spent-time-reason/'));
-    assert.ok(validate, 'validate-spent-time-reason call');
-    assert.equal(validate.payload.shift_id, 44390825);
-    assert.equal(validate.payload.spent_time_reason.id, 3);
-    assert.match(validate.payload.spent_time_reason.text, /supervisor was contacted/);
-    assert.ok(validate.payload.team_data?.[0]?.work_time);
+
+    assert.ok(!result.calls.some((c) => (c.url || '').includes('/validate-spent-time-reason/')));
 
     const completeIdx = result.calls.findIndex(
-      (c) => c.payload?.category_completion === true && c.url.includes('/category-resets/') && !c.url.includes('validate')
+      (c) => c.payload?.category_completion === true && c.url.includes('/category-resets/')
     );
-    const validateIdx = result.calls.indexOf(validate);
-    assert.ok(validateIdx < completeIdx, 'validate before completion');
-    // reset must be assigned to the employee before completion (is_assignee_required)
+    const punchIdx = result.calls.findIndex((c) => c.method === 'PATCH' && c.url.includes('/api/v2/field-app/shifts/'));
     const assignIdx = result.calls.findIndex((c) => c.payload?.new_assignee && c.url.includes('/category-resets/'));
-    assert.ok(assignIdx >= 0, 'new_assignee call present');
+    const spentIdx = result.calls.findIndex(
+      (c) => c.payload?.spent_time && c.payload?.spent_time_reason && c.url.includes('/category-resets/')
+    );
+
+    assert.ok(completeIdx >= 0 && completeIdx < punchIdx, 'category_completion before punch');
+    assert.ok(assignIdx > punchIdx, 'new_assignee after punch');
     assert.equal(result.calls[assignIdx].payload.new_assignee.employee_id, 354456);
+    assert.ok(spentIdx > assignIdx, 'spent_time after assignee');
+    assert.equal(result.calls[spentIdx].payload.spent_time_reason.id, 3);
+    assert.match(result.calls[spentIdx].payload.spent_time_reason.text, /supervisor was contacted/);
 
     assert.ok(result.recompletePayload?.['category-reset']?.[0]?.id);
     assert.equal(result.recompletePayload.complete_shift_final.allowed_truncation, false);
@@ -828,10 +847,11 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(startVisitCall.payload.isMerchandiserStartingVisit, true);
     assert.equal(startVisitCall.payload.from_state, 'admin');
     assert.deepEqual(startVisitCall.payload.start_location, [-1, -1]);
-    assert.ok(startVisitIdx < toStoreIdx, 'start visit before to_store');
+    // kompass-netcap HAR 2026-07-21 order: start → survey → category_completion → to_store → punch → to_home → PUT
+    assert.ok(startVisitIdx < surveyDoneIdx, 'start visit before survey');
+    assert.ok(surveyDoneIdx < teamCompleteIdx, 'survey before category_completion');
+    assert.ok(teamCompleteIdx < toStoreIdx, 'category_completion before to_store');
     assert.ok(toStoreIdx < firstShiftIdx, 'to_store before punch');
-    assert.ok(firstShiftIdx >= 0 && teamCompleteIdx > firstShiftIdx, 'full punch before category completion+spent_time');
-    assert.ok(firstShiftIdx < surveyDoneIdx, 'full punch before survey complete');
     assert.ok(surveyDoneIdx < toHomeIdx, 'to_home after survey');
     assert.ok(toHomeIdx < putIdx, 'to_home before PUT complete');
 
@@ -847,10 +867,12 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     );
     assert.deepEqual(earlyShift.payload.travel_records, []);
 
-    const teamCall = result.calls.find((c) => c.payload?.team_data?.[0]?.spent_time_reason != null);
-    assert.ok(teamCall, 'spent_time_reason on category team_data (validate-spent-time-reason)');
-    assert.equal(teamCall.payload.team_data[0].spent_time, '0h 24m');
-    assert.equal(teamCall.payload.team_data[0].spent_time_reason.id, 3);
+    const spentCall = result.calls.find(
+      (c) => c.payload?.spent_time && c.payload?.spent_time_reason && (c.url || '').includes('/category-resets/')
+    );
+    assert.ok(spentCall, 'spent_time_reason on category reset');
+    assert.equal(spentCall.payload.spent_time, '0h 24m');
+    assert.equal(spentCall.payload.spent_time_reason.id, 3);
 
     const toHome = result.calls.find((c) => c.url.includes('/to_home/'));
     // to_home mirrors to_store: start_time (UTC, = stop) + user_accepted_ss_replace, not {}.
@@ -870,6 +892,7 @@ describe('transmitVisit — actual_start_time/actual_end_time are store-local (H
     assert.equal(sh.change_reason, 5);
     assert.equal(sh.change_comment, 'Entered from Stage 3 sealed record');
     assert.equal(sh.shift_id, 44390825);
+    assert.equal(sh.id, null);
     assert.equal(finalShift.payload.time_change_reason, 5);
 
     const put = result.calls.find((c) => c.method === 'PUT' && c.url.includes('/shift-complete/'));

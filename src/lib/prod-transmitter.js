@@ -5,19 +5,11 @@
  *
  * transmitVisit() ASSEMBLES the ordered write sequence prod would need for one
  * sealed visit — it never sends any of it. Every call in the output carries a
- * sourceRef citing the exact HAR entry (central pet shifts.json, visit 27000510,
- * shift 44390825, survey 115502 — see data/har-evidence-27000510.json) or the
- * relevant Cursor skill section that justifies its endpoint/method/payload shape.
+ * sourceRef citing the kompass-netcap HAR (2026-07-21, visit 27092092) or an
+ * earlier capture that justifies its endpoint/method/payload shape.
  *
- * Two categories of evidence, both surfaced explicitly rather than blurred:
- *  - Directly observed: HAR response bodies that echo the request fields back
- *    (e.g. survey answers, category-reset completion, photo uploads).
- *  - Reconstructed: Chrome's HAR export never captured POST/PATCH request
- *    bodies (confirmed empty postData.params on every write call — the same
- *    gap the sas-prod-shift-management-har skill already documents). Calls
- *    whose payload shape is inferred from response echoes rather than a
- *    literal captured request are marked reconstructed: true, per T's
- *    2026-07-13 sign-off to reconstruct-and-flag rather than block entirely.
+ * Primary ground truth: Downloads/kompass-netcap_2026-07-21_00-35-01.har
+ * (full request bodies via mitmproxy). Summary: data/har-writes-27092092.json.
  *
  * Reads (GETs) run live and read-only during assembly, mirroring
  * punch-mileage-puller.js / visit-matcher.js — needed to resolve real ids and
@@ -287,6 +279,8 @@ function buildTravelChangeRecord(leg, opts = {}) {
   }
 
   const row = {
+    // kompass-netcap HAR 2026-07-21 (visit 27092092): new CHANGE rows send id:null explicitly.
+    id: opts.existingTravelId != null ? Number(opts.existingTravelId) : null,
     shift_id: Number(shiftId),
     start_time: startIso,
     end_time: endIso,
@@ -301,7 +295,6 @@ function buildTravelChangeRecord(leg, opts = {}) {
     change_reason: opts.changeReasonId,
     change_comment: opts.changeComment,
   };
-  if (opts.existingTravelId != null) row.id = Number(opts.existingTravelId);
   return row;
 }
 
@@ -366,9 +359,14 @@ function isCompleteTravelChangeRecord(tr) {
   return true;
 }
 
-/** Step-advance / complete pings need shift_id on live completed & in-progress paths. */
+/** Legacy step-advance ping — kept for callers; UI complete path uses teamLeadFeedbackPing. */
 function shiftCompletePingPayload(shiftId) {
   return { shift_id: Number(shiftId) };
+}
+
+/** Mid/final shift-complete ping from kompass-netcap HAR 2026-07-21 (visit 27092092). */
+function teamLeadFeedbackPing() {
+  return { team_lead_feedback: null };
 }
 
 /**
@@ -441,12 +439,26 @@ function workTimeColonLabel(startIso, stopIso) {
 }
 
 /**
- * Minimal spent_time_reason object (prod completion.har validate-spent-time-reason).
- * UI sends Restangular noise; API only needs id + text.
+ * spent_time_reason object for category-reset PATCH.
+ * kompass-netcap HAR 2026-07-21 sends the full Restangular-shaped reason from
+ * GET /field-app/spent-time-reasons/ (id+text alone also works, but mirror UI).
  */
 function spentTimeReasonRef(reason) {
   if (!reason) return null;
-  return { id: reason.id, text: reason.text };
+  return {
+    id: reason.id,
+    time_created: reason.time_created ?? null,
+    time_modified: reason.time_modified ?? null,
+    registered_timestamp: reason.registered_timestamp ?? null,
+    unregistered_timestamp: reason.unregistered_timestamp ?? null,
+    text: reason.text,
+    route: reason.route || 'field-app/spent-time-reasons/',
+    reqParams: reason.reqParams ?? null,
+    restangularized: true,
+    fromServer: true,
+    parentResource: null,
+    restangularCollection: false,
+  };
 }
 
 /** Work duration in minutes (for duration ≤ work-time rules). */
@@ -588,7 +600,14 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     return seq;
   }
 
-  const { token } = await loadSession();
+  const session = await loadSession();
+  const { token } = session;
+  const surveyResponderName =
+    opts.surveyResponderName ||
+    session.userInfo?.email ||
+    session.userInfo?.username ||
+    process.env.SAS_USERNAME ||
+    null;
 
   /* ---- Idempotency + dependency resolution (all live reads) ---- */
 
@@ -746,11 +765,16 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   const primaryResetRow = resolveResetRowForCategory();
   if (!primaryResetRow) return abort(result, 'category_reset_row_not_resolved_for_multi_category_visit');
 
-  /* ================= Begin assembled write sequence (mirrors HAR order) =================
-   * Send contract: docs/sas-payload-contract.md
-   * Re-baselined James FM53 first-time complete HAR 2026-07-15 (visit 27000977). */
+  /* ================= Begin assembled write sequence =================
+   * Ground truth: kompass-netcap HAR 2026-07-21 (visit 27092092, store 111) —
+   * full request bodies via mitmproxy. Order that closed the visit:
+   *   start → survey → category photos → category_completion → to_store →
+   *   shift PATCH (times + travel CHANGE) → team_lead_feedback ping →
+   *   new_assignee → spent_time → PUT shift-complete → team_lead_feedback.
+   * to_home + S→H CHANGE remain for last-stop / store-to-home legs.
+   */
 
-  // Matrix leg audit + live CHANGE builder (prod completion.har travel edit)
+  // Matrix leg audit + live CHANGE builder
   const travelAudit = buildTravelRecordFragment(leg, visitStartIso);
   result.mileageAudit = travelAudit;
 
@@ -760,7 +784,6 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   if (!localStartTime || !localStopTime) {
     return abort(result, `store_timezone_unresolved:${storeForTimezone ?? 'null'}`);
   }
-  // 12-hour local + UTC datetime for the visit-start PATCH body (prod completion.har shape).
   const localStartTime12h = toStoreLocalTime12h(visitStartIso, storeForTimezone);
   const startDatetimeUtc = new Date(visitStartIso).toISOString().replace(/\.\d{3}Z$/, 'Z');
   const shiftFlags = {
@@ -770,13 +793,8 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     calculate_mileage: shiftPreState?.calculate_mileage ?? true,
   };
 
-  // Work minutes must be known before category completion so spent_time ≤ work time.
-  const workMinutes = totalWorkMinutes(visitStartIso, visitStopIso);
-  if (workMinutes <= 0) {
-    return abort(result, 'visit_duration_zero_or_negative');
-  }
   result.workTime = {
-    minutes: workMinutes,
+    minutes: totalWorkMinutes(visitStartIso, visitStopIso),
     label: totalWorkTimeLabel(visitStartIso, visitStopIso),
     needsSpentTimeReason: needsSpentTimeReason(visitStartIso, visitStopIso),
   };
@@ -787,11 +805,10 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   const isStoreToHomeLeg = legFrom === 'S' && legTo === 'H';
   const isStoreToStoreLeg = legFrom === 'S' && legTo === 'S';
 
-  // 0. Start schedule — PATCH visit → "Schedule started successfully" (before travel / T&E).
-  //    prod completion.har: body carries visit_id + actual_start_time (12h local) +
-  //    actual_start_datetime (UTC) + geo/admin flags. An EMPTY body 400s (was the
-  //    2026-07-15/17 partial failure at this seq). Skip when the visit schedule is
-  //    already started (punched OR status 'in-progress' from a prior run).
+  const spentLabel = categorySpentTimeLabel(visitStartIso, visitStopIso);
+  const spentReasonObj = spentTimeReasonRef(categoryReason);
+
+  // 0. Start schedule — skip when already in-progress / punched.
   if (!visitAlreadyStarted) {
     pushCall({
       method: 'PATCH',
@@ -808,235 +825,24 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         no_show_admin: true,
       },
       sourceRef:
-        'prod completion.har — PATCH /api/v1/field-app/visits/{visitId}/ start: visit_id + actual_start_time (12h local) + actual_start_datetime (UTC) + start_location/validate_geo/is_web/isMerchandiserStartingVisit/from_state/no_show_admin. Empty body 400s.',
-      reconstructed: true,
+        'kompass-netcap HAR 2026-07-21 visit 27092092 — PATCH /visits/{id}/ start body. Empty {} 400s.',
     });
   } else {
     result.skippedVisitStart = true;
   }
 
-  // 1. Travel H→S — POST { start_time (UTC, = arrival/visit-start), user_accepted_ss_replace: null }.
-  //    An empty {} body 500s (was the 2026-07-17 seq-10 failure) — prod completio7n.har visit 26940175.
-  //    System may invent ~32 mi; corrected later via shift PATCH travel CHANGE when leg is H→S.
-  //    Skip when PROD already has travel_records (rep started/traveled in field app first).
-  if (!hasExistingTravel) {
-    pushCall({
-      method: 'POST',
-      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
-      payload: {
-        start_time: new Date(visitStartIso).toISOString(),
-        user_accepted_ss_replace: null,
-      },
-      sourceRef:
-        'prod completio7n.har (visit 26940175) — POST …/to_store/ body { start_time (UTC), user_accepted_ss_replace: null }. Empty {} 500s. Skip at execute if shift already has travel_records.',
-    });
-  } else {
-    result.skippedToStore = true;
-  }
-
-  // 2. Full punch times EARLY with time_change_reason + comment (required for T&E edit).
-  //    travel_records: [] on pure time edit (prod completion supervisor patches).
-  //    Full start+stop before category work so duration ≤ total work time.
-  const timeOnlyShiftPayload = shiftPatchPayload({
-    actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
-    actualStartTime: localStartTime,
-    actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
-    actualEndTime: localStopTime,
-    timeChangeReasonId: shiftReason.id,
-    timeChangeComment: attributionComment,
-    flags: shiftFlags,
-    includeEmptyTravelRecords: true,
-  });
-  const startShiftSeq = pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-    payload: timeOnlyShiftPayload,
-    sourceRef:
-      'James FM53 + prod completion.har — actual_*_time + time_change_reason/comment; travel_records [] on time-only edit. Full start+stop before category spent_time.',
-    reconstructed: true,
-  });
-
-  // 2b. If leg is home→store (or store→store inbound), correct system H→S/S→S mileage now.
-  let homeToStoreMileageSeq = null;
-  if ((isHomeToStoreLeg || isStoreToStoreLeg) && leg.miles != null) {
-    const inboundChange = buildTravelChangeRecord(leg, {
-      shiftId,
-      visitStartIso,
-      visitStopIso,
-      changeReasonId: shiftReason.id,
-      changeComment: timeChangeComment,
-    });
-    if (inboundChange && isCompleteTravelChangeRecord(inboundChange)) {
-      homeToStoreMileageSeq = pushCall({
-        method: 'PATCH',
-        url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-        payload: shiftPatchPayload({
-          actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
-          actualStartTime: localStartTime,
-          actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
-          actualEndTime: localStopTime,
-          timeChangeReasonId: shiftReason.id,
-          timeChangeComment: attributionComment,
-          flags: shiftFlags,
-          travelRecords: [inboundChange],
-        }),
-        dependsOn: [startShiftSeq],
-        sourceRef:
-          'prod completion.har 2026-07-16T01:30:57 — travel_records CHANGE with change_reason/comment + distance/duration/shift_id. Corrects system ~32mi after to_store.',
-        reconstructed: true,
-      });
-      result.mileageCorrection = { direction: `${legFrom}-${legTo}`, distance: inboundChange.distance, phase: 'after_to_store' };
-    }
-  }
-
-  // 3. Shift-complete step-advance — live needs { shift_id } (empty {} → 406)
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: shiftCompletePingPayload(shiftId),
-    sourceRef: 'HAR entry #141 step-advance; live contract requires { shift_id } (empty body 406)',
-  });
-
-  // 4. Category Reset — before photo(s)
-  const beforePhotoSeqs = [];
-  for (const photo of sealedRecord.beforePhotos || []) {
-    const image = readPhotoBase64(photo);
-    if (!image) return abort(result, `photo_unreadable:before:${photo.path}`);
-    beforePhotoSeqs.push(
-      pushCall({
-        method: 'PATCH',
-        url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-        payload: { before: { image }, compress_image: true },
-        sourceRef: 'HAR entry #167 — before-photo slot PATCH, request shape matches sas-upload-category-after-photos skill exactly',
-      })
-    );
-  }
-
-  // 5. Category Reset — after photo(s)
-  const afterPhotoSeqs = [];
-  for (const photo of sealedRecord.afterPhotos || []) {
-    const image = readPhotoBase64(photo);
-    if (!image) return abort(result, `photo_unreadable:after:${photo.path}`);
-    afterPhotoSeqs.push(
-      pushCall({
-        method: 'PATCH',
-        url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-        payload: { after: { image }, compress_image: true },
-        sourceRef: 'HAR entry #173 — after-photo slot PATCH, same shape as before',
-      })
-    );
-  }
-
-  // 6. Category photos (endcaps/wings/clipstrips/cat-litter/butcher-block/section)
-  //    -> same PATCH endpoint, folded into the after slot (this is additional
-  //    photographic evidence of the completed reset, not a separate reset row).
-  const categoryPhotoCounts = {};
-  for (const target of CATEGORY_PHOTO_TARGETS) {
-    const photos = sealedRecord.categoryPhotos?.[target.id] || [];
-    categoryPhotoCounts[target.id] = photos.length;
-    for (const photo of photos) {
-      const image = readPhotoBase64(photo);
-      if (!image) return abort(result, `photo_unreadable:${target.id}:${photo.path}`);
-      pushCall({
-        method: 'PATCH',
-        url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-        payload: { after: { image }, compress_image: true },
-        sourceRef: `HAR entry #173 pattern — category photo (${target.label}) folded into the single reset row's after slot; no HAR evidence of a per-category-target sub-endpoint`,
-      });
-    }
-  }
-  result.photoCounts = {
-    before: (sealedRecord.beforePhotos || []).length,
-    after: (sealedRecord.afterPhotos || []).length,
-    ...categoryPhotoCounts,
-  };
-
-  // 7a. Validate spent-time reason BEFORE completion (prod completion.har).
-  //    Endpoint: PATCH …/category-resets/{id}/validate-spent-time-reason/
-  //    Fail path: spent_time_reason null → success:false is_spent_time (5% rule).
-  //    Pass path: spent_time_reason {id,text} → "Validated Successfully".
-  const spentLabel = categorySpentTimeLabel(visitStartIso, visitStopIso);
-  const spentReasonObj = spentTimeReasonRef(categoryReason);
-  const teamDataRow = {
-    id: shiftEmployee.id,
-    shift_id: Number(shiftId),
-    spent_time: spentLabel,
-    spent_time_reason: spentReasonObj,
-    work_time: workTimeColonLabel(visitStartIso, visitStopIso),
-    is_duration_required: true,
-  };
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/validate-spent-time-reason/`,
-    payload: {
-      id: primaryResetRow.id,
-      shift_id: Number(shiftId),
-      spent_time: spentLabel,
-      spent_time_reason: spentReasonObj,
-      team_data: [teamDataRow],
-    },
-    sourceRef:
-      'prod completion.har 2026-07-16 — PATCH …/validate-spent-time-reason/ with spent_time + spent_time_reason {id,text} + team_data. Always send reason when category share > 5% (single-category CP).',
-    reconstructed: true,
-  });
-
-  // 7a2. Assign the reset to the shift employee + set spent_time ON the reset.
-  //      is_assignee_required is true and the reset's team must be populated, else the
-  //      final PUT 400s "Category Reset is not completed" even with category_completion
-  //      set (prod completio7n.har new_assignee + spent_time PATCHes).
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-    payload: {
-      id: primaryResetRow.id,
-      new_assignee: { visit_id: String(visitId), employee_id: shiftEmployee.id },
-    },
-    sourceRef:
-      'prod completio7n.har — assign reset to employee { new_assignee:{visit_id, employee_id} }. Reset requires an assignee (is_assignee_required) to count as completed.',
-    reconstructed: true,
-  });
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-    payload: {
-      id: primaryResetRow.id,
-      shift_id: Number(shiftId),
-      spent_time: spentLabel,
-      spent_time_reason: spentReasonObj,
-    },
-    sourceRef:
-      'prod completio7n.har — spent_time set on the reset { id, shift_id, spent_time, spent_time_reason }.',
-    reconstructed: true,
-  });
-
-  // 7b. Category Reset completion — prod completio7n.har uses category_completion:true
-  //     (NOT completion_status, which SAS silently ignores → "Category Reset is not
-  //     completed" on the final PUT). id + comment + exception:null.
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
-    payload: {
-      category_completion: true,
-      id: primaryResetRow.id,
-      comment: attributionComment,
-      exception: null,
-    },
-    sourceRef:
-      'prod completio7n.har — category-reset completion { category_completion:true, id, comment, exception:null }. completion_status is ignored by SAS.',
-    reconstructed: true,
-  });
-
-  /* ---- Survey ---- */
+  /* ---- Survey (before T&E — kompass-netcap HAR 2026-07-21) ---- */
 
   let responderCreateSeq = null;
   if (!responderId) {
+    const createPayload = { visit_id: visitId };
+    if (surveyResponderName) createPayload.name = surveyResponderName;
     responderCreateSeq = pushCall({
       method: 'POST',
       url: `${BASE}/api/v1/surveys/responders/`,
-      payload: { visit_id: visitId },
+      payload: createPayload,
       sourceRef:
-        'HAR entry #305 — response echoes {id,name,visit_id} with id/name server-derived from the auth session; only visit_id is a plausible client field. Placed BEFORE answers here (unlike the HAR, where a responder already existed) because every answer POST requires a responder id.',
-      reconstructed: true,
+        'kompass-netcap HAR 2026-07-21 — POST responders { visit_id, name:<session email> } before run-infos.',
     });
     responderId = `{{step${responderCreateSeq}.id}}`;
   }
@@ -1044,11 +850,10 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
   const runInfoSeq = pushCall({
     method: 'POST',
     url: `${BASE}/api/v1/surveys/run-infos/`,
-    payload: { responder: responderId },
-    sourceRef: 'HAR entry #207 — response echoes {id,responder,runid,created}; responder is the only plausible client-supplied field',
-    reconstructed: true,
+    payload: { responder: responderId, runid: null },
+    dependsOn: responderCreateSeq ? [responderCreateSeq] : [],
+    sourceRef: 'kompass-netcap HAR 2026-07-21 — POST run-infos { responder, runid:null }.',
   });
-  const runidPlaceholder = `{{step${runInfoSeq}.runid}}`;
 
   for (const { q, prodQuestion, answerText, photoRecord } of resolvedAnswers) {
     const answerSeq = pushCall({
@@ -1058,15 +863,12 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         answer: answerText,
         question: prodQuestion.id,
         responder: responderId,
-        survey: surveyId,
-        runid: runidPlaceholder,
-        // Prod requires run_info (run-infos row id); prod completion.har also sends is_field_web
         run_info: `{{step${runInfoSeq}.id}}`,
         is_field_web: true,
         delete: false,
       },
       dependsOn: [runInfoSeq, ...(responderCreateSeq ? [responderCreateSeq] : [])],
-      sourceRef: `HAR #220 + prod completion.har (${q.id}) — answer + question + responder + run_info + is_field_web`,
+      sourceRef: `kompass-netcap HAR 2026-07-21 (${q.id}) — answer payload has no survey/runid fields`,
     });
 
     if (photoRecord) {
@@ -1078,28 +880,22 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         payload: {
           answer: `{{step${answerSeq}.id}}`,
           image,
-          // Executor converts to multipart/form-data (JSON image → 400 "not a file")
           _executorEncoding: 'multipart-answer-image',
         },
         dependsOn: [answerSeq],
         sourceRef:
-          'HAR entry #221 pattern + live 26822165 — POST answer-images requires multipart file (not JSON base64). Assembler carries base64; live-executor encodes multipart. Do not change to category-reset image shape.',
-        reconstructed: true,
+          'kompass-netcap HAR 2026-07-21 — POST answer-images multipart (answer id + file). JSON base64 400s.',
       });
     }
   }
 
-  if (!responderCreateSeq) {
-    // Claim/refresh the *rep* responder row (not session owner) before complete.
-    pushCall({
-      method: 'POST',
-      url: `${BASE}/api/v1/surveys/responders/`,
-      payload: { visit_id: visitId },
-      sourceRef:
-        'HAR entry #305 — claim responder for this visit. Prefer pre-resolved rep responder id for answers; claim still uses visit_id only. Note: completed_by may still be the API session user on admin-driven complete.',
-      reconstructed: true,
-    });
-  }
+  // Always claim responder before survey complete (HAR does this even after create).
+  pushCall({
+    method: 'POST',
+    url: `${BASE}/api/v1/surveys/responders/`,
+    payload: { visit_id: String(visitId) },
+    sourceRef: 'kompass-netcap HAR 2026-07-21 — claim POST responders { visit_id } before survey complete.',
+  });
 
   pushCall({
     method: 'POST',
@@ -1109,14 +905,128 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       run_info: `{{step${runInfoSeq}.id}}`,
     },
     dependsOn: [runInfoSeq, ...(responderCreateSeq ? [responderCreateSeq] : [])],
-    sourceRef:
-      'HAR entry #308 + live 26822165 — complete requires responder + run_info (run-infos id); empty body 400s. Responder must be the visit rep row when available.',
+    sourceRef: 'kompass-netcap HAR 2026-07-21 — POST surveys/{id}/complete { responder, run_info }.',
   });
 
-  /* ---- Last-stop travel home + time reaffirm + mileage CHANGE + first-time complete ---- */
+  /* ---- Category reset photos + early category_completion ---- */
 
-  // Store→home when last stop OR sealed leg is S→H (James FM53 isLastStop + 3.4 mi home).
-  // If PROD already has an S→H travel row, skip (rep may have ended travel in field app).
+  for (const photo of sealedRecord.beforePhotos || []) {
+    const image = readPhotoBase64(photo);
+    if (!image) return abort(result, `photo_unreadable:before:${photo.path}`);
+    pushCall({
+      method: 'PATCH',
+      url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+      payload: { before: { image }, compress_image: true },
+      sourceRef: 'kompass-netcap HAR 2026-07-21 — before-photo PATCH { before:{image}, compress_image:true }',
+    });
+  }
+
+  for (const photo of sealedRecord.afterPhotos || []) {
+    const image = readPhotoBase64(photo);
+    if (!image) return abort(result, `photo_unreadable:after:${photo.path}`);
+    pushCall({
+      method: 'PATCH',
+      url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+      payload: { after: { image }, compress_image: true },
+      sourceRef: 'kompass-netcap HAR 2026-07-21 — after-photo PATCH { after:{image}, compress_image:true }',
+    });
+  }
+
+  const categoryPhotoCounts = {};
+  for (const target of CATEGORY_PHOTO_TARGETS) {
+    const photos = sealedRecord.categoryPhotos?.[target.id] || [];
+    categoryPhotoCounts[target.id] = photos.length;
+    for (const photo of photos) {
+      const image = readPhotoBase64(photo);
+      if (!image) return abort(result, `photo_unreadable:${target.id}:${photo.path}`);
+      pushCall({
+        method: 'PATCH',
+        url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+        payload: { after: { image }, compress_image: true },
+        sourceRef: `kompass-netcap HAR pattern — category photo (${target.label}) folded into after slot`,
+      });
+    }
+  }
+  result.photoCounts = {
+    before: (sealedRecord.beforePhotos || []).length,
+    after: (sealedRecord.afterPhotos || []).length,
+    ...categoryPhotoCounts,
+  };
+
+  // category_completion early (before travel/punch). comment is "" in the working HAR.
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+    payload: {
+      category_completion: true,
+      id: primaryResetRow.id,
+      comment: '',
+      exception: null,
+    },
+    sourceRef:
+      'kompass-netcap HAR 2026-07-21 — { category_completion:true, id, comment:"", exception:null } before T&E. Use category_completion not completion_status.',
+  });
+
+  /* ---- Travel + punch + mileage ---- */
+
+  if (!hasExistingTravel) {
+    pushCall({
+      method: 'POST',
+      url: `${BASE}/api/v2/field-app/travel/${shiftId}/to_store/`,
+      payload: {
+        start_time: new Date(visitStartIso).toISOString(),
+        user_accepted_ss_replace: null,
+      },
+      sourceRef:
+        'kompass-netcap HAR 2026-07-21 — POST …/to_store/ { start_time (UTC), user_accepted_ss_replace:null }. Empty {} 500s.',
+    });
+  } else {
+    result.skippedToStore = true;
+  }
+
+  // Build inbound travel CHANGE (H→S / S→S) for the single punch PATCH.
+  const inboundTravelRecords = [];
+  if ((isHomeToStoreLeg || isStoreToStoreLeg) && leg.miles != null) {
+    const inboundChange = buildTravelChangeRecord(leg, {
+      shiftId,
+      visitStartIso,
+      visitStopIso,
+      changeReasonId: shiftReason.id,
+      changeComment: timeChangeComment,
+    });
+    if (inboundChange && isCompleteTravelChangeRecord(inboundChange)) {
+      inboundTravelRecords.push(inboundChange);
+      result.mileageCorrection = {
+        direction: `${legFrom}-${legTo}`,
+        distance: inboundChange.distance,
+        phase: 'with_punch',
+        duration: inboundChange.duration,
+      };
+    }
+  }
+
+  const punchPayload = shiftPatchPayload({
+    actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
+    actualStartTime: localStartTime,
+    actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
+    actualEndTime: localStopTime,
+    timeChangeReasonId: shiftReason.id,
+    timeChangeComment: attributionComment,
+    flags: shiftFlags,
+    travelRecords: inboundTravelRecords.length ? inboundTravelRecords : null,
+    includeEmptyTravelRecords: inboundTravelRecords.length === 0,
+  });
+  const punchShiftSeq = pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
+    payload: punchPayload,
+    sourceRef:
+      inboundTravelRecords.length
+        ? 'kompass-netcap HAR 2026-07-21 — one shift PATCH: store-local times + travel CHANGE (id:null) + pin/supervisor flags. Executor RMW echoes system LOG rows.'
+        : 'kompass-netcap HAR 2026-07-21 — shift PATCH times + time_change_reason; travel_records [] (outbound mileage may follow after to_home).',
+  });
+
+  // Store→home when last stop OR sealed leg is S→H.
   const isLastStop = sealedRecord.isLastStopOfDay === true;
   const hasStoreToHomeTravel = existingTravelRecords.some(
     (tr) =>
@@ -1136,7 +1046,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
         user_accepted_ss_replace: null,
       },
       sourceRef:
-        'POST /api/v2/field-app/travel/{shiftId}/to_home/ body { start_time (UTC, = departure/stop), user_accepted_ss_replace: null } — mirrors to_store; empty {} 500s. System may invent ~32mi S-H; corrected next via travel CHANGE.',
+        'POST …/to_home/ { start_time (UTC = stop), user_accepted_ss_replace:null }. Soft-skipped on 5xx in executor.',
       reconstructed: true,
     });
     result.toHomeAssembled = true;
@@ -1145,10 +1055,7 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     if (hasStoreToHomeTravel) result.skippedToHome = true;
   }
 
-  // Final shift PATCH: reaffirm times (time_change_reason) AND/OR mileage CHANGE.
-  // prod completion.har: travel_records[{ record_type:CHANGE, change_reason, change_comment,
-  //   distance, duration, shift_id, start/end times, S→H }].
-  const finalTravelRecords = [];
+  // Outbound S→H mileage CHANGE (when leg is store→home).
   if (isStoreToHomeLeg && leg.miles != null) {
     const outboundChange = buildTravelChangeRecord(leg, {
       shiftId,
@@ -1158,7 +1065,23 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       changeComment: timeChangeComment,
     });
     if (outboundChange && isCompleteTravelChangeRecord(outboundChange)) {
-      finalTravelRecords.push(outboundChange);
+      pushCall({
+        method: 'PATCH',
+        url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
+        payload: shiftPatchPayload({
+          actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
+          actualStartTime: localStartTime,
+          actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
+          actualEndTime: localStopTime,
+          timeChangeReasonId: shiftReason.id,
+          timeChangeComment: attributionComment,
+          flags: shiftFlags,
+          travelRecords: [outboundChange],
+        }),
+        dependsOn: [punchShiftSeq],
+        sourceRef:
+          'S→H travel CHANGE after to_home — distance/duration/change_reason; executor RMW keeps system LOG rows.',
+      });
       result.mileageCorrection = {
         ...(result.mileageCorrection || {}),
         direction: 'S-H',
@@ -1169,35 +1092,40 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
     }
   }
 
-  const finalShiftPayload = shiftPatchPayload({
-    actualStartDate: toStoreLocalDate(visitStartIso, storeForTimezone),
-    actualStartTime: localStartTime,
-    actualEndDate: toStoreLocalDate(visitStopIso, storeForTimezone),
-    actualEndTime: localStopTime,
-    timeChangeReasonId: shiftReason.id,
-    timeChangeComment: attributionComment,
-    flags: shiftFlags,
-    travelRecords: finalTravelRecords.length ? finalTravelRecords : null,
-    includeEmptyTravelRecords: finalTravelRecords.length === 0,
-  });
-  pushCall({
-    method: 'PATCH',
-    url: `${BASE}/api/v2/field-app/shifts/${shiftId}/`,
-    payload: finalShiftPayload,
-    dependsOn: [startShiftSeq, ...(homeToStoreMileageSeq ? [homeToStoreMileageSeq] : [])],
-    sourceRef:
-      finalTravelRecords.length
-        ? 'prod completion.har mileage edit + James FM53 — times + time_change_reason/comment + travel_records CHANGE (change_reason/comment, distance, duration, shift_id). Corrects system S-H ~32mi to matrix miles.'
-        : 'James FM53 final shift PATCH — reaffirm actual times + time_change_reason/comment after survey; travel_records [].',
-    reconstructed: true,
-  });
+  /* ---- Assignee + spent_time (after punch — required for completed:true) ---- */
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: shiftCompletePingPayload(shiftId),
-    sourceRef: 'HAR entry #372 / James FM53 step-advance with { shift_id }',
+    payload: teamLeadFeedbackPing(),
+    sourceRef: 'kompass-netcap HAR 2026-07-21 — mid PATCH shift-complete { team_lead_feedback:null } after punch.',
   });
+
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+    payload: {
+      id: primaryResetRow.id,
+      new_assignee: { visit_id: String(visitId), employee_id: shiftEmployee.id },
+    },
+    sourceRef:
+      'kompass-netcap HAR 2026-07-21 — { new_assignee:{visit_id, employee_id} }. Required (is_assignee_required) before PUT.',
+  });
+
+  pushCall({
+    method: 'PATCH',
+    url: `${BASE}/api/v1/field-app/visits/${visitId}/category-resets/${primaryResetRow.id}/`,
+    payload: {
+      id: primaryResetRow.id,
+      shift_id: Number(shiftId),
+      spent_time: spentLabel,
+      spent_time_reason: spentReasonObj,
+    },
+    sourceRef:
+      'kompass-netcap HAR 2026-07-21 — spent_time with reason object (null reason returns 5% warning). No separate validate-spent-time-reason call in this capture.',
+  });
+
+  /* ---- Final complete ---- */
 
   pushCall({
     method: 'PUT',
@@ -1211,18 +1139,16 @@ async function transmitVisit({ sealedRecord, matchedVisit, opts = {} } = {}) {
       validate_geo: true,
     },
     sourceRef:
-      'prod completio7n.har — PUT …/shift-complete/ first-time complete: { allowed_overlap, allowed_missing_ques, allowed_truncation, team_lead_feedback, end_location:[-1,-1], validate_geo }. A { shift_id }-only body 406s.',
+      'kompass-netcap HAR 2026-07-21 — PUT shift-complete full body. { shift_id } alone 406s.',
   });
 
   pushCall({
     method: 'PATCH',
     url: `${BASE}/api/v1/field-app/visits/${visitId}/shift-complete/`,
-    payload: { team_lead_feedback: null },
-    sourceRef: 'prod completio7n.har — final PATCH …/shift-complete/ { team_lead_feedback: null }.',
+    payload: teamLeadFeedbackPing(),
+    sourceRef: 'kompass-netcap HAR 2026-07-21 — final PATCH shift-complete { team_lead_feedback:null }.',
   });
 
-  // testMode / already-completed re-close payload (prod completion.har recomplete).
-  // Empty {} often soft-fails; UI posts category-reset + complete_shift_final.
   result.recompletePayload = {
     'category-reset': [
       {
@@ -1272,6 +1198,7 @@ module.exports = {
   pickVisitRepResponder,
   shiftPatchPayload,
   shiftCompletePingPayload,
+  teamLeadFeedbackPing,
   defaultReadPhotoBase64,
   buildTravelRecordFragment,
   buildTravelChangeRecord,

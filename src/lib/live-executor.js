@@ -765,6 +765,9 @@ async function executeLiveTransmit({
                   return rest;
                 })
                 .filter((tr) => {
+                  // CHANGE rows require change_reason; system LOG rows are added
+                  // later by read-modify-write from the GET response.
+                  const isChange = String(tr.record_type || '').toUpperCase() === 'CHANGE';
                   return (
                     tr.shift_id != null &&
                     tr.start_time &&
@@ -775,7 +778,7 @@ async function executeLiveTransmit({
                     tr.duration !== '' &&
                     tr.start_location_type &&
                     tr.end_location_type &&
-                    tr.change_reason != null
+                    (!isChange || tr.change_reason != null)
                   );
                 });
               if (cleaned.length === 0) {

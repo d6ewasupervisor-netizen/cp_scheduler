@@ -34,32 +34,27 @@ The one that matters for completion:
    ```json
    { "id": {resetId}, "new_assignee": { "visit_id": "{visitId}", "employee_id": {employeeId} } }
    ```
-   `employee_id` = the shift employee's `id` (from `shift-complete` `employees[].id`,
-   e.g. `394407` for James). After this, `team` fills with the rep and `completed`
-   can flip.
+   `employee_id` = the shift employee's `id` (from `shift-complete` `employees[].id`).
+   In the working HAR this lands **after** the punch PATCH.
 
 2. **spent_time** on the reset:
    ```json
-   { "id": {resetId}, "shift_id": {shiftId}, "spent_time": "1h 13m",
+   { "id": {resetId}, "shift_id": {shiftId}, "spent_time": "1h 53m",
      "spent_time_reason": { "id": 3, "text": "Other – supervisor was contacted" } }
    ```
-   `spent_time` = category work time (single-category CP ≈ total work time).
-   The reason id resolves by **exact text** from `GET /field-app/spent-time-reasons/`.
-   (There is also a separate `PATCH …/validate-spent-time-reason/` earlier in the
-   sequence with `team_data` — keep it; it is not the same as setting spent_time
-   on the reset row.)
+   Reason id resolves by **exact text** from `GET /field-app/spent-time-reasons/`.
+   Null reason when share > 5% returns a soft business failure — send the reason.
 
 3. **Completion flag** — use `category_completion`, **not** `completion_status`
    (SAS silently ignores `completion_status`):
    ```json
    { "category_completion": true, "id": {resetId}, "comment": "", "exception": null }
    ```
+   In kompass-netcap HAR 2026-07-21 this is sent **early** (right after photos,
+   before travel/punch). Assignee + spent_time still follow after the punch.
 
 After all three, re-`GET` the reset and confirm `completed: true` and `team` is
 non-empty before attempting the visit PUT.
-
-> The full-complete HAR (visit 26940175) does these as PATCHes #1–3 + #6 to the
-> **same reset id**, interleaved with the before/after image PATCHes (#4–5).
 
 ## The final complete — PUT body + the overlap gate
 
