@@ -134,3 +134,8 @@ railway ssh -i ~/.ssh/railway_cursor_ed25519 --service cp_scheduler \
 - **A failed write does not corrupt** — SAS rejects it; only successful calls land. Diagnose, fix, resume.
 - **Re-running from scratch duplicates** survey answers + photos. If a run got past the first writes, **resume** — don't restart.
 - **`allowed_overlap:true` is a human call.** It overrides a real payroll warning; the auto-mode classifier will (correctly) refuse to let an agent self-approve it.
+
+## Atomic skills
+
+Step-level reusable skills (personal + cp_scheduler):
+`sas-prod-shift-process` (index), `sas-prod-start-visit`, `sas-prod-category-photos`, `sas-prod-category-assign`, `sas-prod-category-spent-time`, `sas-prod-category-complete`, `sas-prod-shift-allocate-time`, `sas-prod-mileage-home-to-store`, `sas-prod-mileage-store-to-store`, `sas-prod-mileage-store-to-home`, `sas-prod-complete-shift`.
