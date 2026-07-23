@@ -1900,6 +1900,7 @@ body.mode-admin .day-col.eligible .day-head::after {
   font-size: 0.72rem;
   color: var(--muted);
   overflow: hidden;
+  cursor: pointer;
 }
 .vf-photo-thumb.vf-photo-queued,
 .vf-photo-thumb.vf-photo-uploading {
@@ -2420,23 +2421,91 @@ body.visit-workspace-open {
   align-items: center;
 }
 
-.vf-photo-actions .vf-photo-input,
+.vf-photo-actions .vf-live-open-btn,
 .vf-photo-actions .vf-photo-files-btn {
-  flex: 1 1 100%;
-  min-height: 52px;
+  flex: 1 1 calc(50% - 0.25rem);
+  min-width: 0;
+  min-height: 48px;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
-.vf-photo-actions .vf-live-open-btn {
+.vf-photo-actions .vf-photo-input {
   flex: 1 1 100%;
-  min-height: 52px;
-  font-weight: 700;
+  min-height: 48px;
 }
 
-.vf-photo-edit-toggle { min-height: 44px; }
+.vf-photo-edit-toggle {
+  flex: 1 1 100%;
+  min-height: 44px;
+}
+
+/* Full-screen photo lightbox */
+.vf-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+}
+.vf-lightbox[hidden] {
+  display: none !important;
+}
+.vf-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+}
+.vf-lightbox-frame {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: min(96vw, 720px);
+  max-height: 92vh;
+  width: 100%;
+  background: #0b0b0b;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.vf-lightbox-img {
+  display: block;
+  width: 100%;
+  max-height: calc(92vh - 3.5rem);
+  object-fit: contain;
+  background: #000;
+  flex: 1 1 auto;
+}
+.vf-lightbox-x {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 2;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.vf-lightbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.55rem 0.75rem;
+  background: rgba(20, 20, 20, 0.95);
+}
+.vf-lightbox-close {
+  min-height: 40px;
+}
 
 /* Gallery pick coach + staging review (mobile-first) */
 .vf-file-sheet {

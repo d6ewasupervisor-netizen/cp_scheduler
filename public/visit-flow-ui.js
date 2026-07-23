@@ -32,7 +32,7 @@ const LEGACY_STEP_REDIRECT = {
 
 /** Inline category photos on survey answers (must match visit-flow.js). */
 const SURVEY_INLINE_PHOTOS = {
-  q3: { categoryId: 'cp-serviced-section', label: 'Photo of stocked section' },
+  q3: { categoryId: 'cp-serviced-section', label: 'Did you stock the section?' },
   q5: { categoryId: 'clipstrips', label: 'Photo of clip strips' },
   q7: { categoryId: 'cat-litter-pan-liners', label: 'Photo of cat litter top shelf' },
   q9: { categoryId: 'butcher-block-rack', label: 'Photo of Butcher Block rack' },
@@ -130,6 +130,19 @@ function formatMileageTravel(travel) {
   const route = `${formatTravelEndpoint(travel.from)} → ${formatTravelEndpoint(travel.to)}`;
   const base = `${type} · ${miles} · ${route}`;
   return travel.warning ? `${base} — ${travel.warning}` : base;
+}
+
+/** Show every calculated travel (e.g. last stop = store→store + store→home). */
+function formatMileageTravels(mileage) {
+  if (!mileage) return 'Not calculated yet.';
+  const list =
+    Array.isArray(mileage.legs) && mileage.legs.length
+      ? mileage.legs
+      : mileage.leg
+        ? [mileage.leg]
+        : [];
+  if (!list.length) return 'Not calculated yet.';
+  return list.map((t) => formatMileageTravel(t)).join('\n');
 }
 
 /** Mirrors src/lib/visit-flow.js surveyVisibility so the UI can react live
@@ -977,7 +990,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
   async function openLiveCamera(opts = {}) {
     if (!vf.draft) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      toast('Live camera not supported on this device — use Add from files / gallery', 'warn', 4500);
+      toast('Live camera not supported on this device — use Add from gallery', 'warn', 4500);
       return;
     }
     // Accept legacy string kind ('before'|'after') or { kind, extra, title }.
@@ -1054,7 +1067,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       stopLiveCamera({ rerender: false });
       vf.liveCam = null;
       toast(
-        `Could not open camera: ${err.message || err.name || 'permission denied'}. Use Add from files / gallery instead.`,
+        `Could not open camera: ${err.message || err.name || 'permission denied'}. Use Add from gallery instead.`,
         'bad',
         6000
       );
@@ -1102,12 +1115,86 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
   function photoThumbHtml(p, i, { showRemove = false, extraClass = '' } = {}) {
     const seq = p.seq ?? i + 1;
     const pathAttr = p.path ? ` data-photo-path="${escapeHtml(p.path)}"` : '';
-    return `<div class="vf-photo-thumb vf-photo-ok ${extraClass}" data-seq="${seq}" title="Saved #${seq}"${pathAttr}>
+    return `<div class="vf-photo-thumb vf-photo-ok ${extraClass}" data-seq="${seq}" role="button" tabindex="0" title="View photo #${seq}"${pathAttr}>
       <span class="vf-photo-badge">#${seq}</span>${
         showRemove
           ? `<button type="button" class="vf-photo-remove" data-seq="${seq}" aria-label="Remove photo">×</button>`
           : ''
       }</div>`;
+  }
+
+  function closePhotoLightbox() {
+    const sheet = document.getElementById('vfPhotoLightbox');
+    if (sheet) sheet.hidden = true;
+    const img = sheet?.querySelector('.vf-lightbox-img');
+    if (img) {
+      img.removeAttribute('src');
+      img.alt = '';
+    }
+  }
+
+  function ensurePhotoLightboxDom() {
+    let sheet = document.getElementById('vfPhotoLightbox');
+    if (sheet) return sheet;
+    sheet = document.createElement('div');
+    sheet.id = 'vfPhotoLightbox';
+    sheet.className = 'vf-lightbox';
+    sheet.hidden = true;
+    sheet.innerHTML = `
+      <div class="vf-lightbox-backdrop" data-lightbox-dismiss="1"></div>
+      <div class="vf-lightbox-frame" role="dialog" aria-modal="true" aria-label="Photo preview">
+        <button type="button" class="vf-lightbox-x" data-lightbox-dismiss="1" aria-label="Close">×</button>
+        <img class="vf-lightbox-img" alt="Uploaded photo">
+        <div class="vf-lightbox-footer">
+          <button type="button" class="subtle vf-lightbox-close" data-lightbox-dismiss="1">Close</button>
+        </div>
+      </div>`;
+    sheet.addEventListener('click', (e) => {
+      if (e.target?.dataset?.lightboxDismiss) {
+        e.preventDefault();
+        closePhotoLightbox();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sheet && !sheet.hidden) closePhotoLightbox();
+    });
+    document.body.appendChild(sheet);
+    return sheet;
+  }
+
+  async function openPhotoLightbox({ path = null, previewUrl = null, title = 'Photo' } = {}) {
+    const sheet = ensurePhotoLightboxDom();
+    const img = sheet.querySelector('.vf-lightbox-img');
+    let url = previewUrl || null;
+    if (!url && path) url = await ensurePhotoPreview({ path });
+    if (!url || !img) return;
+    img.src = url;
+    img.alt = title;
+    sheet.hidden = false;
+  }
+
+  function wirePhotoThumbClicks(root) {
+    if (!root) return;
+    root.querySelectorAll('.vf-photo-thumb').forEach((el) => {
+      const open = (e) => {
+        if (e.target.closest('.vf-photo-remove, .vf-photo-retry')) return;
+        e.preventDefault();
+        const path = el.dataset.photoPath || null;
+        const bg = el.style.backgroundImage || '';
+        const m = bg.match(/url\(['"]?(.*?)['"]?\)/);
+        const previewUrl = m ? m[1] : null;
+        if (!path && !previewUrl) return;
+        openPhotoLightbox({
+          path,
+          previewUrl,
+          title: el.getAttribute('title') || 'Photo',
+        });
+      };
+      el.addEventListener('click', open);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') open(e);
+      });
+    });
   }
 
   function revokeFileStagingUrls(files) {
@@ -1393,7 +1480,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         const bg = p.previewUrl
           ? `style="background-image:url('${p.previewUrl}');background-size:cover;background-position:center"`
           : '';
-        return `<div class="vf-photo-thumb vf-photo-${st}" data-qid="${p.id}" title="${title}" ${bg}>
+        return `<div class="vf-photo-thumb vf-photo-${st}" data-qid="${p.id}" role="button" tabindex="0" title="${title}" ${bg}>
           <span class="vf-photo-badge">${st === 'failed' ? '!' : n}</span>${retry}
         </div>`;
       })
@@ -1409,7 +1496,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         <button type="button" class="primary vf-live-open-btn">${
           liveOpen ? 'Camera open…' : 'Take photo'
         }</button>
-        <button type="button" class="subtle vf-photo-files-btn">Add from files / gallery</button>
+        <button type="button" class="subtle vf-photo-files-btn">Add from gallery</button>
         <input type="file" accept="image/*,.heic,.heif" multiple hidden class="vf-photo-file-input">
         ${
           onRemove
@@ -1418,10 +1505,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
               }</button>`
             : ''
         }
-      </div>
-      <p class="vf-photo-hint overlay-meta">
-        <strong>Take photo</strong> = open the live camera. <strong>Add from files / gallery</strong> = pick photos already on this device (Recents first). Press and hold the first photo, tap more, then Done — then confirm with <strong>Add to shift</strong>.
-      </p>`;
+      </div>`;
 
     wrap.querySelector('.vf-live-open-btn')?.addEventListener('click', () =>
       openLiveCamera({
@@ -1467,6 +1551,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       });
     });
     fillPhotoThumbs(wrap);
+    wirePhotoThumbClicks(wrap);
     return wrap;
   }
 
@@ -2077,7 +2162,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
 
     const renderMileage = () => {
       const el = $('time-mileage');
-      if (el) el.textContent = formatMileageTravel(vf.draft.mileage?.leg);
+      if (!el) return;
+      el.textContent = formatMileageTravels(vf.draft.mileage);
+      el.style.whiteSpace = 'pre-line';
     };
     renderMileage();
 
@@ -2216,7 +2303,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         ${uploadLine}
         <div><dt>Start</dt><dd>${d.visitStart.actual || '—'}</dd></div>
         <div><dt>Stop</dt><dd>${d.visitStop.actual || '—'}</dd></div>
-        <div><dt>Mileage</dt><dd>${d.mileage?.leg ? formatMileageTravel(d.mileage.leg) : '—'}</dd></div>
+        <div><dt>Mileage</dt><dd style="white-space:pre-line">${d.mileage?.leg || (d.mileage?.legs || []).length ? formatMileageTravels(d.mileage) : '—'}</dd></div>
       </dl>
       ${unmetHtml}
       <p class="overlay-meta">Every section stays editable until you seal. Use the sidebar to jump anywhere — nothing is locked. Photo captures upload in the background; Finish stays off until all uploads succeed.</p>`;

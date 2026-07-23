@@ -594,18 +594,62 @@ function listDraftsForRep(repKey) {
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
 }
 
-/** Most recently completed (stopActual set) visit for this rep/day, excluding one store. */
-function previousCompletedStoreForDay(repKey, date, { excludeActualStore = null, beforeIso = null } = {}) {
-  const drafts = listDraftsForRep(repKey).filter(
+function draftSortTime(d) {
+  return d?.visitStop?.actual || d?.visitStart?.actual || '';
+}
+
+/**
+ * Prior visit earlier today for store→store mileage.
+ * Prefers drafts with a stop time (or sealed), falling back to any started visit
+ * when clock order is messy (e.g. next visit started before prior stop was saved).
+ * @returns {{ actualStore:number, visitStop:string|null, visitStart:string|null }|null}
+ */
+function previousCompletedVisitForDay(repKey, date, { excludeActualStore = null, beforeIso = null } = {}) {
+  const others = listDraftsForRep(repKey).filter(
     (d) =>
       d.date === date &&
-      (excludeActualStore == null || Number(d.actualStore) !== Number(excludeActualStore)) &&
-      d.visitStop?.actual
+      (excludeActualStore == null || Number(d.actualStore) !== Number(excludeActualStore))
   );
-  const filtered = beforeIso ? drafts.filter((d) => d.visitStop.actual < beforeIso) : drafts;
-  if (!filtered.length) return null;
-  filtered.sort((a, b) => (a.visitStop.actual < b.visitStop.actual ? 1 : -1));
-  return filtered[0].actualStore;
+
+  const sealedOrStopped = (d) =>
+    !!(
+      d.visitStop?.actual ||
+      d.status === 'ready_for_prod' ||
+      d.status === 'transmitted' ||
+      d.status === 'transmitting'
+    );
+
+  let candidates = others.filter(sealedOrStopped);
+  if (beforeIso) {
+    const before = candidates.filter((d) => {
+      const t = draftSortTime(d);
+      return t && t < beforeIso;
+    });
+    if (before.length) candidates = before;
+  }
+
+  if (!candidates.length) {
+    candidates = others.filter((d) => d.visitStart?.actual);
+    if (beforeIso) {
+      const before = candidates.filter((d) => d.visitStart.actual < beforeIso);
+      if (before.length) candidates = before;
+    }
+  }
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (draftSortTime(a) < draftSortTime(b) ? 1 : -1));
+  const best = candidates[0];
+  return {
+    actualStore: Number(best.actualStore),
+    visitStop: best.visitStop?.actual || null,
+    visitStart: best.visitStart?.actual || null,
+  };
+}
+
+/** Most recently completed visit store for this rep/day, excluding one store. */
+function previousCompletedStoreForDay(repKey, date, opts = {}) {
+  const prev = previousCompletedVisitForDay(repKey, date, opts);
+  return prev ? prev.actualStore : null;
 }
 
 /**
@@ -694,6 +738,7 @@ module.exports = {
   listDraftsForRep,
   listAllDrafts,
   previousCompletedStoreForDay,
+  previousCompletedVisitForDay,
   summarize,
   setPhotoDelivery,
   listUnmetRequirements,

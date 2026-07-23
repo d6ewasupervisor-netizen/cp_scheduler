@@ -28,8 +28,8 @@ const CATEGORY_LABELS = {
   litterliners: 'Cat litter pan liners',
   'butcher-block-rack': 'Butcher Block rack',
   butcherblock: 'Butcher Block rack',
-  'cp-serviced-section': 'CP-serviced section',
-  section: 'CP-serviced section',
+  'cp-serviced-section': 'Did you stock the section?',
+  section: 'Did you stock the section?',
 };
 
 function shareGone(res, share) {

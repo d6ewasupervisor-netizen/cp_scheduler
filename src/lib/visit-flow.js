@@ -34,7 +34,7 @@ const CATEGORY_PHOTO_TARGETS = [
   },
   { id: 'cat-litter-pan-liners', label: 'Cat litter pan liners' },
   { id: 'butcher-block-rack', label: 'Butcher Block rack' },
-  { id: 'cp-serviced-section', label: 'Each CP-serviced section' },
+  { id: 'cp-serviced-section', label: 'Did you stock the section?' },
 ];
 
 /**
@@ -74,7 +74,7 @@ const AFTER_PHOTO_COACH = [
   },
   {
     id: 'cp-serviced-section',
-    label: 'CP-serviced sections',
+    label: 'Did you stock the section?',
     tip: 'Two 4ft sections per shot of the finished Pet Care aisle you worked.',
   },
 ];
@@ -139,7 +139,7 @@ const LEGACY_STEP_REDIRECT = {
 
 /** Survey answers that need an inline category photo (matches prod transmit slots). */
 const SURVEY_CATEGORY_PHOTO = {
-  q3: { categoryId: 'cp-serviced-section', label: 'CP-serviced section' },
+  q3: { categoryId: 'cp-serviced-section', label: 'Did you stock the section?' },
   q5: { categoryId: 'clipstrips', label: 'Clip strips' },
   q7: { categoryId: 'cat-litter-pan-liners', label: 'Cat litter top shelf' },
   q9: { categoryId: 'butcher-block-rack', label: 'Butcher Block rack' },
@@ -553,13 +553,36 @@ function computeMileageLeg(opts) {
 }
 
 /**
- * @returns {Array<{from:string, to:string, miles:number|null, source:string, warning:string|null}>}
+ * Attach wall-clock windows when we know prior stop / this visit start/stop.
+ * Prod CHANGE rows prefer these over estimated drive-back times.
+ */
+function stampMileageLegTimes(legs, { previousStopIso = null, visitStartIso = null, visitStopIso = null } = {}) {
+  return (legs || []).map((leg) => {
+    if (!leg || leg.source === 'unresolved') return leg;
+    const next = { ...leg };
+    if (leg.source === 'store-to-store' || leg.source === 'same-store') {
+      if (previousStopIso) next.startTime = previousStopIso;
+      if (visitStartIso) next.endTime = visitStartIso;
+    } else if (leg.source === 'home-to-store') {
+      if (visitStartIso) next.endTime = visitStartIso;
+    } else if (leg.source === 'store-to-home') {
+      if (visitStopIso) next.startTime = visitStopIso;
+    }
+    return next;
+  });
+}
+
+/**
+ * @returns {Array<{from:string, to:string, miles:number|null, source:string, warning:string|null, startTime?:string, endTime?:string}>}
  */
 function computeMileageLegs({
   workdayGivenId,
   actualStore,
   previousCompletedStore = null,
   isLastStopOfDay = false,
+  previousStopIso = null,
+  visitStartIso = null,
+  visitStopIso = null,
 }) {
   const rep = homeMatrix.reps[String(workdayGivenId)];
   if (!rep) {
@@ -636,7 +659,7 @@ function computeMileageLegs({
           ? `No Store To Home mileage on file for Store ${actualStore} — note the miles below`
           : null,
     });
-    return legs;
+    return stampMileageLegTimes(legs, { previousStopIso, visitStartIso, visitStopIso });
   }
 
   if (previousCompletedStore != null && Number(previousCompletedStore) !== Number(actualStore)) {
@@ -644,47 +667,56 @@ function computeMileageLegs({
     const miles = Object.prototype.hasOwnProperty.call(storeMatrix.matrix, key)
       ? storeMatrix.matrix[key]
       : null;
-    return [
-      {
-        from: String(previousCompletedStore),
-        to: String(actualStore),
-        miles,
-        source: 'store-to-store',
-        warning:
-          miles == null
-            ? `No Store To Store mileage on file for Store ${previousCompletedStore} → Store ${actualStore} — note the miles below`
-            : null,
-      },
-    ];
+    return stampMileageLegTimes(
+      [
+        {
+          from: String(previousCompletedStore),
+          to: String(actualStore),
+          miles,
+          source: 'store-to-store',
+          warning:
+            miles == null
+              ? `No Store To Store mileage on file for Store ${previousCompletedStore} → Store ${actualStore} — note the miles below`
+              : null,
+        },
+      ],
+      { previousStopIso, visitStartIso, visitStopIso }
+    );
   }
 
   if (previousCompletedStore != null && Number(previousCompletedStore) === Number(actualStore)) {
-    return [
-      {
-        from: String(previousCompletedStore),
-        to: String(actualStore),
-        miles: 0,
-        source: 'same-store',
-        warning: null,
-      },
-    ];
+    return stampMileageLegTimes(
+      [
+        {
+          from: String(previousCompletedStore),
+          to: String(actualStore),
+          miles: 0,
+          source: 'same-store',
+          warning: null,
+        },
+      ],
+      { previousStopIso, visitStartIso, visitStopIso }
+    );
   }
 
   const miles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
     ? rep.miles[String(actualStore)]
     : null;
-  return [
-    {
-      from: 'home',
-      to: String(actualStore),
-      miles,
-      source: 'home-to-store',
-      warning:
-        miles == null
-          ? `No Home To Store mileage on file for Store ${actualStore} — note the miles below`
-          : null,
-    },
-  ];
+  return stampMileageLegTimes(
+    [
+      {
+        from: 'home',
+        to: String(actualStore),
+        miles,
+        source: 'home-to-store',
+        warning:
+          miles == null
+            ? `No Home To Store mileage on file for Store ${actualStore} — note the miles below`
+            : null,
+      },
+    ],
+    { previousStopIso, visitStartIso, visitStopIso }
+  );
 }
 
 module.exports = {

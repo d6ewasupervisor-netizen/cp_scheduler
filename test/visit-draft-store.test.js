@@ -278,6 +278,26 @@ describe('mileage: previousCompletedStoreForDay (mid-day leg selection)', () => 
     const prev = store.previousCompletedStoreForDay(REP_A, date, { excludeActualStore: 28 });
     assert.equal(prev, 23); // later stopActual wins over 19
   });
+
+  it('falls back when prior stop is after current start (clock order quirk)', () => {
+    store.startVisit({ repKey: REP_A, date, actualStore: 19, writeOrder: false, workLoad: false });
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 23,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: '2026-07-14T15:00:00Z',
+    });
+    // Prior stop saved after next visit already started
+    store.setTimes(REP_A, date, 19, { stopActual: '2026-07-14T15:30:00Z' });
+
+    const prev = store.previousCompletedVisitForDay(REP_A, date, {
+      excludeActualStore: 23,
+      beforeIso: '2026-07-14T15:00:00Z',
+    });
+    assert.equal(prev?.actualStore, 19);
+  });
 });
 
 describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal gate', () => {

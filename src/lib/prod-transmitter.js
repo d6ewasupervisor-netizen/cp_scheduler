@@ -270,8 +270,36 @@ function buildTravelChangeRecord(leg, opts = {}) {
 
   let startIso;
   let endIso;
-  // Inbound to store: ends at visit start. Outbound from store: starts at visit stop.
+  // Prefer wall-clock windows stamped on the sealed leg (prior stop → this start,
+  // or this stop → home). Otherwise estimate drive time from matrix miles.
   // Always normalize via Date#toISOString (prod completion.har uses .000Z millis).
+  if (leg.startTime && leg.endTime) {
+    startIso = new Date(leg.startTime).toISOString();
+    endIso = new Date(leg.endTime).toISOString();
+    const wallMs = Math.max(0, new Date(endIso).getTime() - new Date(startIso).getTime());
+    if (wallMs > 0) {
+      // Keep matrix distance; duration follows the actual travel window.
+      const wallHours = wallMs / 3600000;
+      const row = {
+        id: opts.existingTravelId != null ? Number(opts.existingTravelId) : null,
+        shift_id: Number(shiftId),
+        start_time: startIso,
+        end_time: endIso,
+        distance: Number(leg.miles).toFixed(2),
+        duration: Math.max(5 / 60, wallHours).toFixed(4),
+        start_location_type: from,
+        end_location_type: to,
+        is_system_generated: false,
+        is_truncated: false,
+        user_accepted_overlap: null,
+        record_type: 'CHANGE',
+        change_reason: opts.changeReasonId,
+        change_comment: opts.changeComment,
+      };
+      return row;
+    }
+  }
+
   if (to === 'S' && from === 'H') {
     endIso = new Date(opts.visitStartIso).toISOString();
     startIso = new Date(new Date(endIso).getTime() - durationMs).toISOString();

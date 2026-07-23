@@ -441,6 +441,20 @@ describe('computeMileageLeg', () => {
     assert.equal(typeof leg.miles, 'number');
   });
 
+  it('stamps prior-stop → arrival times on store-to-store legs', () => {
+    const legs = visitFlow.computeMileageLegs({
+      workdayGivenId: BRIAN,
+      actualStore: 23,
+      previousCompletedStore: 19,
+      previousStopIso: '2026-07-14T14:00:00.000Z',
+      visitStartIso: '2026-07-14T14:45:00.000Z',
+    });
+    assert.equal(legs.length, 1);
+    assert.equal(legs[0].source, 'store-to-store');
+    assert.equal(legs[0].startTime, '2026-07-14T14:00:00.000Z');
+    assert.equal(legs[0].endTime, '2026-07-14T14:45:00.000Z');
+  });
+
   it('store → home is primary when marked last stop; legs also keep inbound S→S', () => {
     const leg = visitFlow.computeMileageLeg({
       workdayGivenId: BRIAN,
