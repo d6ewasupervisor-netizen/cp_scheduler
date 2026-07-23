@@ -72,12 +72,18 @@ const STEP_LABELS = {
 const API = '/api/central-pet';
 
 /**
- * Live camera zoom — HARDWARE ONLY below 1×. A digital "0.5×" cannot see wider
- * than the lens; it just shrinks the picture, so it was removed. Real wide
- * comes from opening the phone's actual ultrawide lens (auto-picked by probe).
+ * Live camera zoom — native-style dual lens:
+ *   0.5× = real ultrawide lens (or hardware zoom < 1 when the phone exposes it)
+ *   1×   = main rear camera (default open)
+ *   >1×  = hardware tele / digital crop-in
+ * Never fake-widen by shrinking the preview into a letterbox.
  */
+const LIVE_CAMERA_ZOOM_MIN = 0.5;
+const LIVE_CAMERA_ZOOM_DEFAULT = 1;
 const LIVE_CAMERA_ZOOM_MAX_DIGITAL = 4;
-const LENS_PROBE_CACHE_KEY = 'vfLensProbe_v2';
+const LENS_PROBE_CACHE_KEY = 'vfLensProbe_v3';
+/** UI zoom below this switches to the ultrawide lens when one was probed. */
+const LIVE_CAMERA_ULTRA_THRESHOLD = 0.95;
 
 async function apiCall(path, opts = {}) {
   const res = await window.cpAuthFetch(`${API}${path}`, {
@@ -484,7 +490,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         </div>
         <div class="vf-live-zoom" id="vfLiveZoomBar">
           <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomOut" aria-label="Zoom out">−</button>
-          <input type="range" class="vf-live-zoom-range" id="vfLiveZoomRange" min="1" max="4" step="0.05" value="1">
+          <input type="range" class="vf-live-zoom-range" id="vfLiveZoomRange" min="0.5" max="4" step="0.05" value="1">
           <span id="vfLiveZoomLabel" class="vf-live-zoom-label" aria-live="polite">0.5×</span>
           <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomIn" aria-label="Zoom in">+</button>
         </div>
@@ -611,7 +617,16 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       .filter((l) => l.zoomMin != null && l.zoomMin < 1)
       .sort((a, b) => a.zoomMin - b.zoomMin)[0];
     if (subOne) return subOne;
-    return null; // no detectable wide lens — use the default environment camera
+    return null;
+  }
+
+  /** Main 1× rear lens — anything that isn't the ultrawide. */
+  function pickMainLens(lenses, ultraWide) {
+    if (!lenses?.length) return null;
+    const ultraId = ultraWide?.deviceId;
+    const candidates = lenses.filter((l) => l.deviceId !== ultraId && !l.ultraWideLabel);
+    const nearOne = candidates.find((l) => l.zoomMin == null || l.zoomMin >= 0.99);
+    return nearOne || candidates[0] || null;
   }
 
   function updateLiveVideoPreview() {
@@ -620,6 +635,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     if (!cam || !video) return;
     // Preview always fills the stage. Only digital zoom-IN (no hardware zoom)
     // scales the video up to mimic the crop that capture will apply.
+    // Never scale below 1× — that just shrinks the picture (fake "wide").
     const digitalZoomIn = !cam.hardwareCapable && cam.zoom > 1.001;
     if (digitalZoomIn) {
       video.style.transformOrigin = 'center center';
@@ -652,21 +668,81 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  async function applyLiveZoom(value) {
+  async function applyLiveZoom(value, { skipLensSwitch = false } = {}) {
     const cam = vf.liveCam;
     if (!cam) return;
-    const clamped = Math.min(cam.zoomMax, Math.max(cam.zoomMin, value));
+    const clamped = Math.min(cam.zoomMax, Math.max(LIVE_CAMERA_ZOOM_MIN, value));
+    const wantUltra = clamped < LIVE_CAMERA_ULTRA_THRESHOLD;
+    const onUltra =
+      !!cam.ultraWideLens &&
+      cam.deviceId &&
+      cam.deviceId === cam.ultraWideLens.deviceId;
+
+    // Native-style: slide below 1× → open the real ultrawide lens (true FOV).
+    if (!skipLensSwitch && wantUltra && cam.ultraWideLens && !onUltra) {
+      cam.zoom = clamped;
+      try {
+        await startLiveStream({
+          deviceId: cam.ultraWideLens.deviceId,
+          preserveZoom: clamped,
+        });
+        toast('0.5× ultrawide', 'ok', 1600);
+      } catch {
+        toast('Ultrawide lens unavailable — staying at 1×', 'warn', 2800);
+        cam.zoom = Math.max(1, clamped);
+        updateLiveZoomChrome();
+      }
+      return;
+    }
+    // Slide back to 1×+ → return to the main rear lens.
+    if (!skipLensSwitch && !wantUltra && onUltra && cam.mainLens) {
+      cam.zoom = clamped;
+      try {
+        await startLiveStream({
+          deviceId: cam.mainLens.deviceId,
+          preserveZoom: clamped,
+        });
+      } catch {
+        await startLiveStream({ deviceId: null, preserveZoom: clamped });
+      }
+      return;
+    }
+
     cam.zoom = clamped;
     updateLiveZoomChrome();
 
-    if (!cam.hardwareCapable || !cam.track?.applyConstraints) return;
-
-    const hwTarget = Math.max(cam.hardwareMin, clamped);
-    try {
-      await cam.track.applyConstraints({ advanced: [{ zoom: hwTarget }] });
-    } catch {
-      cam.hardwareCapable = false;
-      updateLiveVideoPreview();
+    if (cam.track?.applyConstraints) {
+      let hwTarget = clamped;
+      if (cam.hardwareCapable) {
+        if (clamped < 1 && cam.hardwareMin < 1) {
+          // Map UI 0.5→1 onto this lens's hardwareMin→1.
+          const t = (clamped - LIVE_CAMERA_ZOOM_MIN) / (1 - LIVE_CAMERA_ZOOM_MIN);
+          hwTarget = cam.hardwareMin + t * (1 - cam.hardwareMin);
+        } else {
+          hwTarget = Math.min(cam.hardwareMax, Math.max(cam.hardwareMin, clamped));
+        }
+      }
+      try {
+        await cam.track.applyConstraints({ advanced: [{ zoom: hwTarget }] });
+        if (!cam.hardwareCapable && clamped < 1) {
+          // Device accepted a sub-1× zoom even without advertising it.
+          cam.hardwareCapable = true;
+          cam.hardwareMin = Math.min(cam.hardwareMin, hwTarget);
+        }
+      } catch {
+        if (clamped < 1 && !cam.ultraWideLens && !cam._wideWarnShown) {
+          cam._wideWarnShown = true;
+          toast(
+            'This phone does not expose an ultrawide lens to the browser — 1× is as wide as the web camera can go. Tap ⟲ to try other lenses.',
+            'warn',
+            4500
+          );
+        }
+        if (clamped >= 1 && cam.hardwareCapable) {
+          cam.hardwareCapable = false;
+          updateLiveVideoPreview();
+        }
+      }
     }
   }
 
@@ -683,7 +759,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     const range = document.getElementById('vfLiveZoomRange');
     if (!bar || !range) return;
     bar.hidden = false;
-    range.min = String(cam.zoomMin);
+    // Always expose 0.5×…max so the rep can zoom out to ultrawide.
+    range.min = String(LIVE_CAMERA_ZOOM_MIN);
     range.max = String(cam.zoomMax);
     range.step = '0.05';
     updateLiveZoomChrome();
@@ -761,7 +838,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
    * No artificial caps: asks for the sensor's max resolution and exposes the
    * hardware's full zoom range, torch, and every lens the device has.
    */
-  async function startLiveStream({ deviceId = null } = {}) {
+  async function startLiveStream({ deviceId = null, preserveZoom = null } = {}) {
     const cam = vf.liveCam;
     if (!cam) return;
 
@@ -814,17 +891,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     cam.hardwareCapable = hardwareCapable;
     cam.torchCapable = torchCapable;
     cam.torchOn = false;
-    // Honest zoom range only: the hardware's own limits, or a digital
-    // zoom-IN fallback. Nothing below what the lens can really see.
-    if (hardwareCapable) {
-      cam.zoomMin = hardwareMin;
-      cam.zoomMax = Math.max(hardwareMax, hardwareMin);
+    // UI always allows 0.5×…max. True wide comes from switching to ultrawide
+    // (or hardwareMin < 1 on a logical multi-camera). Never fake-shrink.
+    cam.zoomMin = LIVE_CAMERA_ZOOM_MIN;
+    cam.zoomMax = Math.max(LIVE_CAMERA_ZOOM_MAX_DIGITAL, hardwareMax);
+    if (preserveZoom != null && Number.isFinite(preserveZoom)) {
+      cam.zoom = Math.min(cam.zoomMax, Math.max(cam.zoomMin, preserveZoom));
+    } else if (cam.zoom == null || !Number.isFinite(cam.zoom)) {
+      cam.zoom = LIVE_CAMERA_ZOOM_DEFAULT;
     } else {
-      cam.zoomMin = 1;
-      cam.zoomMax = LIVE_CAMERA_ZOOM_MAX_DIGITAL;
+      cam.zoom = Math.min(cam.zoomMax, Math.max(cam.zoomMin, cam.zoom));
     }
-    // Always open at the widest view this lens offers.
-    cam.zoom = cam.zoomMin;
 
     const video = document.getElementById('vfLiveVideo');
     video.srcObject = stream;
@@ -851,7 +928,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     }
 
     setupLiveCameraZoom();
-    await applyLiveZoom(cam.zoom);
+    await applyLiveZoom(cam.zoom, { skipLensSwitch: true });
   }
 
   /** Cycle to the device's next lens/camera — captured photos keep flowing to the same visit. */
@@ -861,7 +938,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     const idx = cam.devices.findIndex((d) => d.deviceId === cam.deviceId);
     const next = cam.devices[(idx + 1) % cam.devices.length];
     try {
-      await startLiveStream({ deviceId: next.deviceId });
+      await startLiveStream({ deviceId: next.deviceId, preserveZoom: cam.zoom });
       updateLiveCameraChrome();
       const label = next.label || `Camera ${((idx + 1) % cam.devices.length) + 1}`;
       toast(label, 'ok', 1800);
@@ -893,12 +970,19 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     stopLiveCamera({ rerender: false });
     const overlay = ensureLiveCameraDom();
     try {
-      // Find the phone's REAL widest rear lens (probe once, cached).
+      // Probe rear lenses once (cached). Open on the MAIN 1× camera; sliding
+      // the zoom below 1× switches to the real ultrawide for a true wide FOV.
+      let lenses = [];
       let wideLens = null;
+      let mainLens = null;
       try {
-        wideLens = pickWidestLens(await probeRearLenses());
+        lenses = await probeRearLenses();
+        wideLens = pickWidestLens(lenses);
+        mainLens = pickMainLens(lenses, wideLens);
       } catch {
+        lenses = [];
         wideLens = null;
+        mainLens = null;
       }
       vf.liveCam = {
         kind,
@@ -908,24 +992,31 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         extra: { target: kind },
         devices: [],
         deviceId: null,
-        zoomMin: 1,
+        lenses,
+        ultraWideLens: wideLens,
+        mainLens,
+        zoomMin: LIVE_CAMERA_ZOOM_MIN,
         zoomMax: LIVE_CAMERA_ZOOM_MAX_DIGITAL,
-        zoom: null, // set to the lens's widest once capabilities are read
+        zoom: LIVE_CAMERA_ZOOM_DEFAULT,
         hardwareMin: 1,
         hardwareMax: LIVE_CAMERA_ZOOM_MAX_DIGITAL,
         hardwareCapable: false,
         torchCapable: false,
         torchOn: false,
         photoDrawerOpen: false,
+        _wideWarnShown: false,
       };
       try {
-        await startLiveStream({ deviceId: wideLens?.deviceId || null });
+        await startLiveStream({
+          deviceId: mainLens?.deviceId || null,
+          preserveZoom: LIVE_CAMERA_ZOOM_DEFAULT,
+        });
       } catch {
         // Stale/blocked device id — fall back to the default environment camera.
-        await startLiveStream({ deviceId: null });
+        await startLiveStream({ deviceId: null, preserveZoom: LIVE_CAMERA_ZOOM_DEFAULT });
       }
       if (wideLens && vf.liveCam) {
-        toast(`Using widest lens: ${wideLens.label || 'wide camera'}`, 'ok', 2500);
+        toast('Drag zoom left to 0.5× for ultrawide', 'info', 2800);
       } else if (vf.liveCam && (vf.liveCam.devices?.length || 0) > 1) {
         toast('Tip: tap ⟲ to try each lens — one may be wider', 'info', 3500);
       }

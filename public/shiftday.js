@@ -18,6 +18,7 @@ import {
 } from '/shared.js';
 import { createVisitFlowController } from '/visit-flow-ui.js';
 import { initAppShell } from '/ux/app-shell.js';
+import { mountThemeToggle } from '/ux/theme.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
 import { needsProdSync, markProdSynced } from '/ux/prod-sync.js';
 
@@ -556,6 +557,12 @@ async function init() {
       isVisitOpen: () => !!visitFlow.getDraft?.(),
     },
   });
+  // Same Night/Light/Auto control as the schedule page user bar — available
+  // inside the visit workspace sidebar (topbar is hidden while a visit is open).
+  const sidebarTheme = $('vfSidebarTheme');
+  if (sidebarTheme && !sidebarTheme.querySelector('[data-theme-toggle]')) {
+    mountThemeToggle(sidebarTheme);
+  }
 
   state.repKey = await resolveRepKey();
   $('sdLoading').hidden = true;

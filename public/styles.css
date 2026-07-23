@@ -1817,6 +1817,16 @@ body.mode-admin .day-col.eligible .day-head::after {
 }
 .vf-nav-label { display: inline-flex; align-items: center; }
 
+.vf-sidebar-theme {
+  margin-bottom: 0.4rem;
+}
+
+.vf-sidebar-theme .theme-toggle {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+}
+
 .vf-sidebar-share {
   width: 100%;
   min-height: 44px;
@@ -2449,7 +2459,7 @@ body.visit-workspace-open {
   flex: 1;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   background: transparent;
   min-height: 0;
   will-change: transform;
