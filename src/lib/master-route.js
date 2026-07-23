@@ -197,6 +197,14 @@ function getRep(nameOrKey) {
   return rep || null;
 }
 
+/** Visit slots for one store from the master route (any district / rep row). */
+function visitSlotsForStore(storeNum) {
+  const master = loadMasterRoute();
+  const rows = (master.rows || []).filter((r) => Number(r.storeNum) === Number(storeNum));
+  if (!rows.length) return [];
+  return buildVisitSlots(rows);
+}
+
 function resolveRepKey(rep) {
   return rep?.repKey || rep?.name;
 }
@@ -230,6 +238,7 @@ module.exports = {
   loadD8Assignees,
   listReps,
   getRep,
+  visitSlotsForStore,
   resolveRepKey,
   defaultPlacementsForWeek,
   buildD8PoolRep,

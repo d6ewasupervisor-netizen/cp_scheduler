@@ -3,10 +3,17 @@
 const { WORK_DAYS } = require('./constants');
 
 function visitTypeLabel(slot) {
+  const action = (slot.action || '').toUpperCase();
   const hasPick = !!slot.pickDay;
   const hasDelivery = !!slot.deliveryDay;
   if (!hasPick && !hasDelivery && (slot.visitIndex ?? 0) > 0) {
-    return 'Follow-up visit (work load only)';
+    return 'Follow-up visit (work load only — no write order)';
+  }
+  if (hasPick && hasLoadWriteOnly(action)) {
+    return 'Write order visit (no work load)';
+  }
+  if (hasPick && hasDelivery && action.includes('WORK LOAD') && action.includes('WRITE ORDER')) {
+    return 'Full service visit (work load + write order)';
   }
   if (hasPick && hasDelivery) {
     return 'Full service visit';
@@ -14,10 +21,17 @@ function visitTypeLabel(slot) {
   return 'Single service visit';
 }
 
+function hasLoadWriteOnly(action) {
+  return action.includes('WRITE ORDER') && !action.includes('WORK LOAD');
+}
+
 function schedulingRule(slot) {
   const allowed = (slot.allowedDays || []).join(', ') || 'Mon–Fri';
   if (!slot.pickDay && !slot.deliveryDay && (slot.visitIndex ?? 0) > 0) {
-    return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay} (lighter follow-up stop).`;
+    return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay} (work prior delivery — do not write order).`;
+  }
+  if (hasLoadWriteOnly((slot.action || '').toUpperCase()) && slot.deliveryDay) {
+    return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay}. Order picks ${slot.pickDay}, delivers ${slot.deliveryDay} (one delivery/week).`;
   }
   return `Place on one of: ${allowed}. Default day: ${slot.anchorServiceDay}.`;
 }
@@ -51,6 +65,7 @@ function buildVisitBrief(slot, placement, { isD8Pool = false, allowsRepAvailabil
   const lines = [];
   lines.push(visitTypeLabel(slot));
   if (slot.action) lines.push(`Do: ${slot.action}`);
+  if (slot.cadence) lines.push(slot.cadence);
   lines.push(schedulingRule(slot));
   lines.push(fieldTimeNote());
   const assignee = proposedAssigneeNote(isD8Pool, placement);

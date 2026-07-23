@@ -8,6 +8,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { deliveryDayFromText, decodeD8Note } = require('../src/lib/d8-note-decoder');
+const { processFlagsFromSlot } = require('../src/lib/order-timing');
 
 const FULL_DAY_NAMES = {
   Sun: 'Sunday',
@@ -28,12 +29,13 @@ function fullDayName(token) {
 }
 
 function resolveShiftScopeTags(shift) {
-  const workLoad = !!shift.workLoad;
-  const writeOrder = !!shift.writeOrder;
   const slots = shift.masterRoute?.slots || [];
   const day = shift.dayOfWeek || null;
-  const slot =
-    (day && slots.find((x) => x.anchorServiceDay === day)) || slots[0] || null;
+  const daySlot = day ? slots.find((x) => x.anchorServiceDay === day) || null : null;
+  const slot = daySlot || slots[0] || null;
+  const fromSlot = processFlagsFromSlot(daySlot);
+  const workLoad = fromSlot ? fromSlot.workLoad : !!shift.workLoad;
+  const writeOrder = fromSlot ? fromSlot.writeOrder : !!shift.writeOrder;
 
   let deliveryDay = shift.deliveryDay || null;
   let picksDay = shift.picksDay || null;
@@ -59,7 +61,7 @@ function resolveShiftScopeTags(shift) {
     const pickLabel = fullDayName(picksDay);
     tags.push({ key: 'picks', label: pickLabel ? `Picks ${pickLabel}` : 'Picks TBD' });
   }
-  return { tags, deliveryDay, picksDay };
+  return { tags, deliveryDay, picksDay, workLoad, writeOrder };
 }
 
 describe('shift scope surface pills', () => {
@@ -152,6 +154,71 @@ describe('shift scope surface pills', () => {
         ],
       },
     });
+    assert.equal(deliveryDay, 'Thu');
+    assert.deepEqual(
+      tags.map((t) => t.label),
+      ['Delivers Thursday', 'Work Load']
+    );
+  });
+
+  it('682 Tue master route overrides stale note that claimed work load', () => {
+    const { tags, workLoad, writeOrder } = resolveShiftScopeTags({
+      workLoad: true,
+      writeOrder: true,
+      dayOfWeek: 'Tue',
+      masterRoute: {
+        slots: [
+          {
+            visitIndex: 0,
+            anchorServiceDay: 'Tue',
+            pickDay: 'Wed',
+            deliveryDay: 'Thu',
+            action: 'WRITE ORDER',
+          },
+          {
+            visitIndex: 1,
+            anchorServiceDay: 'Fri',
+            pickDay: null,
+            deliveryDay: null,
+            action: 'WORK LOAD',
+          },
+        ],
+      },
+    });
+    assert.equal(writeOrder, true);
+    assert.equal(workLoad, false);
+    assert.deepEqual(
+      tags.map((t) => t.label),
+      ['Write Order', 'Picks Wednesday']
+    );
+  });
+
+  it('682 Fri master route overrides stale note that claimed write order', () => {
+    const { tags, workLoad, writeOrder, deliveryDay } = resolveShiftScopeTags({
+      workLoad: true,
+      writeOrder: true,
+      dayOfWeek: 'Fri',
+      masterRoute: {
+        slots: [
+          {
+            visitIndex: 0,
+            anchorServiceDay: 'Tue',
+            pickDay: 'Wed',
+            deliveryDay: 'Thu',
+            action: 'WRITE ORDER',
+          },
+          {
+            visitIndex: 1,
+            anchorServiceDay: 'Fri',
+            pickDay: null,
+            deliveryDay: null,
+            action: 'WORK LOAD',
+          },
+        ],
+      },
+    });
+    assert.equal(writeOrder, false);
+    assert.equal(workLoad, true);
     assert.equal(deliveryDay, 'Thu');
     assert.deepEqual(
       tags.map((t) => t.label),

@@ -158,31 +158,42 @@ async function collectProdRows({
 }
 
 function prodRowsToShifts(prodRows) {
+  const { visitSlotsForStore } = require('./master-route');
+  const { resolveProcessFlags } = require('./order-timing');
   return prodRows
     .filter((p) => p.repKey && p.date && p.actualStore)
-    .map((p, i) => ({
-      id: `prod-${p.visitId}-${p.shiftId || i}`,
-      repKey: p.repKey,
-      empNum: p.workdayGivenId,
-      empName: p.empName,
-      date: p.date,
-      dayOfWeek: dateToDayOfWeek(p.date),
-      scheduledStore: p.scheduledStore,
-      actualStore: p.actualStore,
-      writeOrder: p.writeOrder !== false,
-      workLoad: !!p.workLoad,
-      picksDay: p.picksDay || null,
-      delivery: p.delivery || null,
-      deliveryDay: p.deliveryDay || null,
-      shiftStart: p.shiftStart,
-      shiftEnd: p.shiftEnd,
-      rawNote: p.redirected ? `redirected from ${p.scheduledStore}` : null,
-      redirected: !!p.redirected,
-      visitId: p.visitId,
-      shiftId: p.shiftId,
-      visitStatus: p.visitStatus,
-      source: 'prod',
-    }))
+    .map((p, i) => {
+      const dayOfWeek = dateToDayOfWeek(p.date);
+      const flags = resolveProcessFlags({
+        slots: visitSlotsForStore(p.actualStore),
+        dayOfWeek,
+        writeOrder: p.writeOrder,
+        workLoad: p.workLoad,
+      });
+      return {
+        id: `prod-${p.visitId}-${p.shiftId || i}`,
+        repKey: p.repKey,
+        empNum: p.workdayGivenId,
+        empName: p.empName,
+        date: p.date,
+        dayOfWeek,
+        scheduledStore: p.scheduledStore,
+        actualStore: p.actualStore,
+        writeOrder: flags.writeOrder,
+        workLoad: flags.workLoad,
+        picksDay: p.picksDay || null,
+        delivery: p.delivery || null,
+        deliveryDay: p.deliveryDay || null,
+        shiftStart: p.shiftStart,
+        shiftEnd: p.shiftEnd,
+        rawNote: p.redirected ? `redirected from ${p.scheduledStore}` : null,
+        redirected: !!p.redirected,
+        visitId: p.visitId,
+        shiftId: p.shiftId,
+        visitStatus: p.visitStatus,
+        source: 'prod',
+      };
+    })
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.repKey).localeCompare(b.repKey));
 }
 

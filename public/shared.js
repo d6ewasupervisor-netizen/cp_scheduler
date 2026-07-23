@@ -256,6 +256,24 @@ export function isWriteOrderVisit(slot) {
   return action.includes('WRITE ORDER') || action.includes('WORK LOAD/WRITE ORDER');
 }
 
+/**
+ * Process flags from master-route slot action (planner truth).
+ * Blank pick/delivery follow-ups are work-load only.
+ */
+export function processFlagsFromSlot(slot) {
+  if (!slot) return null;
+  const action = (slot.action || '').toUpperCase();
+  const hasWrite = action.includes('WRITE ORDER');
+  const hasLoad = action.includes('WORK LOAD');
+  if (!slot.pickDay && !slot.deliveryDay) {
+    return {
+      writeOrder: false,
+      workLoad: hasLoad || (slot.visitIndex ?? 0) > 0,
+    };
+  }
+  return { writeOrder: hasWrite, workLoad: hasLoad };
+}
+
 /** Card subtitle: pick day for write-order visits, delivery day for work-load visits. */
 export function orderTimingLine(slot, slots) {
   if (!slot) return '';
@@ -304,6 +322,8 @@ export function fullDayName(token) {
  * Resolve surface-level scope tags for a shift pill.
  * Order: Delivers {day} → Work Load → Write Order → Picks {day}
  * Fills gaps from masterRoute.slots when note fields are missing.
+ * When a day-matched master-route slot exists, its action overrides note flags
+ * (e.g. 682 Tue write-order-only / Fri work-load-only).
  *
  * @param {object} shift
  * @returns {{ workLoad: boolean, writeOrder: boolean, deliveryDay: string|null, picksDay: string|null, tags: Array<{key:string,label:string,className:string}> }}
@@ -312,12 +332,13 @@ export function resolveShiftScopeTags(shift) {
   if (!shift) {
     return { workLoad: false, writeOrder: false, deliveryDay: null, picksDay: null, tags: [] };
   }
-  const workLoad = !!shift.workLoad;
-  const writeOrder = !!shift.writeOrder;
   const slots = shift.masterRoute?.slots || [];
   const day = shift.dayOfWeek || null;
-  const slot =
-    (day && slots.find((x) => x.anchorServiceDay === day)) || slots[0] || null;
+  const daySlot = day ? slots.find((x) => x.anchorServiceDay === day) || null : null;
+  const slot = daySlot || slots[0] || null;
+  const fromSlot = processFlagsFromSlot(daySlot);
+  const workLoad = fromSlot ? fromSlot.workLoad : !!shift.workLoad;
+  const writeOrder = fromSlot ? fromSlot.writeOrder : !!shift.writeOrder;
 
   let deliveryDay = shift.deliveryDay || null;
   let picksDay = shift.picksDay || null;

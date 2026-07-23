@@ -93,6 +93,7 @@ router.get('/master-route', (_req, res) => {
     versionDate: data.versionDate,
     sourceFile: data.sourceFile,
     rowCount: data.rowCount,
+    storeCadenceNotes: data.storeCadenceNotes || {},
   });
 });
 
@@ -339,13 +340,14 @@ function shiftDayScope(req, _res, next) {
 }
 
 function masterRouteContextForStore(storeNum) {
-  const rep = getRep('__D8_CENTRAL_PET__');
-  const slots = (rep?.visitSlots || []).filter((s) => Number(s.storeNum) === Number(storeNum));
+  const { visitSlotsForStore } = require('../lib/master-route');
+  const slots = visitSlotsForStore(storeNum);
   return {
     storeNum: Number(storeNum),
     slots: slots.map((s) => ({
       visitIndex: s.visitIndex,
       action: s.action,
+      cadence: s.cadence || null,
       anchorServiceDay: s.anchorServiceDay,
       pickDay: s.pickDay,
       deliveryDay: s.deliveryDay,
@@ -358,11 +360,21 @@ function masterRouteContextForStore(storeNum) {
 /**
  * Fill picks/delivery days for surface pills from note fields + master route.
  * Order expected on UI: Delivers {day} → Work Load → Write Order → Picks {day}
+ * Process flags prefer master-route slot actions when a day slot matches
+ * (stops stale PROD "WORK LOAD/WRITE ORDER" notes from forcing both on 682 Tue/Fri).
  */
 function enrichShiftScopeFields(shift, masterRouteCtx) {
+  const { resolveProcessFlags } = require('../lib/order-timing');
   const slots = masterRouteCtx?.slots || [];
   const day = shift.dayOfWeek || null;
+  const flags = resolveProcessFlags({
+    slots,
+    dayOfWeek: day,
+    writeOrder: shift.writeOrder,
+    workLoad: shift.workLoad,
+  });
   const slot =
+    flags.slot ||
     (day && slots.find((x) => x.anchorServiceDay === day)) ||
     slots[0] ||
     null;
@@ -378,19 +390,21 @@ function enrichShiftScopeFields(shift, masterRouteCtx) {
     const idx = slot.visitIndex ?? 0;
     const prev =
       idx > 0 ? slots.find((x) => (x.visitIndex ?? 0) === idx - 1) || null : null;
-    if (!picksDay && shift.writeOrder && slot.pickDay) picksDay = slot.pickDay;
+    if (!picksDay && flags.writeOrder && slot.pickDay) picksDay = slot.pickDay;
     // Work-load delivery: prior visit's delivery day (when the load arrives)
-    if (!deliveryDay && shift.workLoad) {
+    if (!deliveryDay && flags.workLoad) {
       deliveryDay = prev?.deliveryDay || slot.deliveryDay || null;
     }
     // Write-order without work-load still needs pick; delivery is for load arrival
-    if (!picksDay && slot.pickDay && (shift.writeOrder || /write\s+order/i.test(slot.action || ''))) {
+    if (!picksDay && slot.pickDay && (flags.writeOrder || /write\s+order/i.test(slot.action || ''))) {
       picksDay = slot.pickDay;
     }
   }
 
   return {
     ...shift,
+    writeOrder: flags.writeOrder,
+    workLoad: flags.workLoad,
     picksDay: picksDay || null,
     deliveryDay: deliveryDay || null,
   };
@@ -959,6 +973,11 @@ router.post('/shift-day/visit/start', shiftDayScope, (req, res) => {
   const shift = findShift(repKey, weekStart, shiftId);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   try {
+    const day = shift.dayOfWeek || dateToDayOfWeek(shift.date);
+    const enriched = enrichShiftScopeFields(
+      { ...shift, dayOfWeek: day },
+      masterRouteContextForStore(shift.actualStore)
+    );
     const draft = visitDraftStore.startVisit({
       repKey,
       weekStart,
@@ -966,9 +985,9 @@ router.post('/shift-day/visit/start', shiftDayScope, (req, res) => {
       date: shift.date,
       actualStore: shift.actualStore,
       scheduledStore: shift.scheduledStore,
-      writeOrder: !!shift.writeOrder,
-      workLoad: !!shift.workLoad,
-      picksDay: shift.picksDay,
+      writeOrder: !!enriched.writeOrder,
+      workLoad: !!enriched.workLoad,
+      picksDay: enriched.picksDay || shift.picksDay,
       startedAt: startedAt || undefined,
       startedBy: req.user?.email || null,
     });

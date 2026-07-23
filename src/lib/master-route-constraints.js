@@ -93,6 +93,7 @@ function buildVisitSlots(storeRows) {
       account: row.account,
       visitIndex: index,
       action: row.action,
+      cadence: row.cadence || null,
       anchorServiceDay: row.serviceDay,
       pickDay: row.pickDay,
       deliveryDay: row.deliveryDay,

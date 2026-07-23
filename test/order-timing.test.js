@@ -3,39 +3,12 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildVisitSlots } = require('../src/lib/master-route-constraints');
-
-// Mirror shared.js order-timing helpers for Node tests (ESM in browser only).
-function priorVisitDeliveryDay(slots, slot) {
-  if (!slot || !slots?.length) return null;
-  const idx = slot.visitIndex ?? 0;
-  if (idx === 0) return slot.deliveryDay || null;
-  const prev = slots.find(
-    (s) => s.storeNum === slot.storeNum && (s.visitIndex ?? 0) === idx - 1
-  );
-  return prev?.deliveryDay || null;
-}
-
-function isWorkLoadVisit(slot) {
-  if (!slot || slot.pickDay || slot.deliveryDay) return false;
-  const action = (slot.action || '').toUpperCase();
-  return action.includes('WORK LOAD') || (slot.visitIndex ?? 0) > 0;
-}
-
-function isWriteOrderVisit(slot) {
-  if (!slot?.pickDay) return false;
-  const action = (slot.action || '').toUpperCase();
-  return action.includes('WRITE ORDER') || action.includes('WORK LOAD/WRITE ORDER');
-}
-
-function orderTimingLine(slot, slots) {
-  if (!slot) return '';
-  if (isWriteOrderVisit(slot)) return `Order picks ${slot.pickDay}`;
-  if (isWorkLoadVisit(slot)) {
-    const delivered = priorVisitDeliveryDay(slots, slot);
-    if (delivered) return `Order delivered ${delivered}`;
-  }
-  return '';
-}
+const {
+  orderTimingLine,
+  processFlagsFromSlot,
+  resolveProcessFlags,
+} = require('../src/lib/order-timing');
+const { visitSlotsForStore } = require('../src/lib/master-route');
 
 describe('order-timing', () => {
   const slots = buildVisitSlots([
@@ -61,5 +34,63 @@ describe('order-timing', () => {
 
   it('work-load follow-up shows prior delivery day', () => {
     assert.equal(orderTimingLine(slots[1], slots), 'Order delivered Thu');
+  });
+
+  it('processFlagsFromSlot separates write-order vs work-load actions', () => {
+    assert.deepEqual(processFlagsFromSlot(slots[0]), { writeOrder: true, workLoad: false });
+    assert.deepEqual(processFlagsFromSlot(slots[1]), { writeOrder: false, workLoad: true });
+  });
+
+  it('combined WORK LOAD/WRITE ORDER keeps both flags', () => {
+    const slot = buildVisitSlots([
+      {
+        storeNum: 19,
+        serviceDay: 'Tue',
+        pickDay: 'Wed',
+        deliveryDay: 'Thu',
+        action: 'WORK LOAD/WRITE ORDER',
+      },
+    ])[0];
+    assert.deepEqual(processFlagsFromSlot(slot), { writeOrder: true, workLoad: true });
+  });
+});
+
+describe('store 682 one-delivery cadence', () => {
+  it('master route: Tue write-order only, Fri work-load only (Thu delivery)', () => {
+    const slots = visitSlotsForStore(682);
+    assert.equal(slots.length, 2);
+    assert.equal(slots[0].anchorServiceDay, 'Tue');
+    assert.equal(slots[0].action, 'WRITE ORDER');
+    assert.equal(slots[0].pickDay, 'Wed');
+    assert.equal(slots[0].deliveryDay, 'Thu');
+    assert.deepEqual(processFlagsFromSlot(slots[0]), { writeOrder: true, workLoad: false });
+
+    assert.equal(slots[1].anchorServiceDay, 'Fri');
+    assert.equal(slots[1].action, 'WORK LOAD');
+    assert.deepEqual(processFlagsFromSlot(slots[1]), { writeOrder: false, workLoad: true });
+    assert.equal(orderTimingLine(slots[1], slots), 'Order delivered Thu');
+  });
+
+  it('stale PROD notes cannot force both flags on Tue or Fri', () => {
+    const slots = visitSlotsForStore(682);
+    const tue = resolveProcessFlags({
+      slots,
+      dayOfWeek: 'Tue',
+      writeOrder: true,
+      workLoad: true,
+    });
+    assert.equal(tue.writeOrder, true);
+    assert.equal(tue.workLoad, false);
+    assert.equal(tue.fromMasterRoute, true);
+
+    const fri = resolveProcessFlags({
+      slots,
+      dayOfWeek: 'Fri',
+      writeOrder: true,
+      workLoad: true,
+    });
+    assert.equal(fri.writeOrder, false);
+    assert.equal(fri.workLoad, true);
+    assert.equal(fri.fromMasterRoute, true);
   });
 });
