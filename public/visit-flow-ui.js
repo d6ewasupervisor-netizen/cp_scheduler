@@ -57,6 +57,7 @@ const STEP_HINTS = {
 };
 
 const STEP_LABELS = {
+  visit: 'Visit',
   before_photos: 'Before photos',
   load_check: 'Load',
   write_order_checklist: 'Order Checklist',
@@ -1343,94 +1344,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       btn.addEventListener('click', () => goToSection(btn.dataset.section, btn.dataset.anchor || null));
     });
     body.appendChild(box);
-  }
-
-  function renderTimeUnmet(body) {
-    const body = $('vfBody');
-    body.innerHTML = '';
-    const status = vf.draft.loadCheck?.status || null;
-    const askEl = document.createElement('div');
-    askEl.className = 'overlay-meta';
-    askEl.id = 'load-check';
-    askEl.innerHTML = `<strong>Did you find the load?</strong>`;
-    body.appendChild(askEl);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'vf-btn-row';
-    btnRow.innerHTML = `
-      <button type="button" id="vfLoadYes" class="${status === 'yes' ? 'primary' : ''}">Yes</button>
-      <button type="button" id="vfLoadNo" class="${status && status !== 'yes' ? 'primary' : ''}">No</button>`;
-    body.appendChild(btnRow);
-
-    const instr = document.createElement('p');
-    instr.className = 'overlay-meta';
-    body.appendChild(instr);
-
-    if (status === 'yes') {
-      instr.textContent = 'Great — take a photo of the load, then work it to the shelf.';
-      const loadExtra = { target: 'load', status: 'yes' };
-      body.appendChild(
-        photoCaptureBlock({
-          label: 'Load photo',
-          photos: vf.draft.loadCheck?.photo ? [vf.draft.loadCheck.photo] : [],
-          minRequired: 1,
-          anchorId: 'load-photo',
-          pending: photoQueue.pendingFor(loadExtra),
-          extra: loadExtra,
-          onCapture: (file) => queuePhoto(file, loadExtra),
-        })
-      );
-    } else if (status === 'no_found_later') {
-      instr.textContent =
-        "Check the racks in the back of the warehouse. Look behind everything, and confirm the load wasn't already placed on the floor or near the pet area.";
-      const stillNot = document.createElement('button');
-      stillNot.type = 'button';
-      stillNot.className = 'subtle';
-      stillNot.textContent = 'Still not found — contact supervisor';
-      stillNot.addEventListener('click', () =>
-        autosave(() =>
-          apiCall('/shift-day/visit/load-check', {
-            method: 'POST',
-            body: JSON.stringify({
-              repKey: getRepKey(),
-              date: vf.draft.date,
-              actualStore: vf.draft.actualStore,
-              status: 'no_escalated',
-            }),
-          })
-        ).then(renderAll)
-      );
-      body.appendChild(stillNot);
-    } else if (status === 'no_escalated') {
-      instr.textContent = `Contact me so I can check if tracking is available for your store — include the store number you are physically at (store ${vf.draft.actualStore}). Escalation counts as a complete load outcome.`;
-    }
-
-    $('vfLoadYes').addEventListener('click', () =>
-      autosave(() =>
-        apiCall('/shift-day/visit/load-check', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-            status: 'yes',
-          }),
-        })
-      ).then(renderAll)
-    );
-    $('vfLoadNo').addEventListener('click', () =>
-      autosave(() =>
-        apiCall('/shift-day/visit/load-check', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-            status: 'no_found_later',
-          }),
-        })
-      ).then(renderAll)
-    );
   }
 
   function writeOrderItems() {
