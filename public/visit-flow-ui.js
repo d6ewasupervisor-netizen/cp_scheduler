@@ -178,6 +178,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     photoEditMode: false,
     /** @type {null | { kind: string, stream: MediaStream, count: number, extra: object }} */
     liveCam: null,
+    /** Gallery multi-select staging before enqueue. */
+    fileStaging: null,
+    filePickCoach: null,
     /** path -> object URL for authenticated photo previews */
     previewCache: new Map(),
   };
@@ -1085,6 +1088,237 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       }</div>`;
   }
 
+  function revokeFileStagingUrls(files) {
+    for (const f of files || []) {
+      if (f?.previewUrl) {
+        try {
+          URL.revokeObjectURL(f.previewUrl);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  function closeFileStaging({ keepUrls = false } = {}) {
+    const sheet = document.getElementById('vfFileStaging');
+    if (sheet) sheet.hidden = true;
+    if (!keepUrls && vf.fileStaging?.items) revokeFileStagingUrls(vf.fileStaging.items);
+    vf.fileStaging = null;
+  }
+
+  function closeFilePickCoach() {
+    const sheet = document.getElementById('vfFilePickCoach');
+    if (sheet) sheet.hidden = true;
+    vf.filePickCoach = null;
+  }
+
+  function ensureFilePickCoachDom() {
+    let sheet = document.getElementById('vfFilePickCoach');
+    if (sheet) return sheet;
+    sheet = document.createElement('div');
+    sheet.id = 'vfFilePickCoach';
+    sheet.className = 'vf-file-sheet';
+    sheet.hidden = true;
+    sheet.innerHTML = `
+      <div class="vf-file-sheet-card" role="dialog" aria-modal="true" aria-labelledby="vfFileCoachTitle">
+        <h2 id="vfFileCoachTitle" class="vf-file-sheet-title">Add photos from your gallery</h2>
+        <p class="vf-file-sheet-lead">You will pick photos already on this device (Recents / Gallery) — not the live camera.</p>
+        <ol class="vf-file-sheet-steps">
+          <li><strong>Press and hold</strong> the first photo until it highlights.</li>
+          <li><strong>Tap</strong> every other photo you want (they stay selected).</li>
+          <li>When finished selecting, tap <strong>Open</strong>, <strong>Add</strong>, or <strong>Done</strong> on that screen.</li>
+          <li>Come back here and tap the big blue <strong>Add to shift</strong> button.</li>
+        </ol>
+        <p class="vf-file-sheet-tip">Tip: look in <strong>Recents</strong> or <strong>Photos</strong> so the newest shots are at the top.</p>
+        <div class="vf-file-sheet-actions">
+          <button type="button" class="subtle" id="vfFileCoachCancel">Cancel</button>
+          <button type="button" class="primary" id="vfFileCoachContinue">Got it — open my photos</button>
+        </div>
+      </div>`;
+    document.body.appendChild(sheet);
+    sheet.querySelector('#vfFileCoachCancel').addEventListener('click', () => closeFilePickCoach());
+    sheet.querySelector('#vfFileCoachContinue').addEventListener('click', () => {
+      const input = vf.filePickCoach?.input;
+      closeFilePickCoach();
+      // Defer so the sheet closes before the native picker covers the screen.
+      setTimeout(() => {
+        try {
+          input?.click();
+        } catch {
+          toast('Could not open the photo picker', 'bad', 3000);
+        }
+      }, 50);
+    });
+    sheet.addEventListener('click', (e) => {
+      if (e.target === sheet) closeFilePickCoach();
+    });
+    return sheet;
+  }
+
+  function openFilePickCoach(inputEl) {
+    vf.filePickCoach = { input: inputEl };
+    const sheet = ensureFilePickCoachDom();
+    sheet.hidden = false;
+  }
+
+  function ensureFileStagingDom() {
+    let sheet = document.getElementById('vfFileStaging');
+    if (sheet) return sheet;
+    sheet = document.createElement('div');
+    sheet.id = 'vfFileStaging';
+    sheet.className = 'vf-file-sheet';
+    sheet.hidden = true;
+    sheet.innerHTML = `
+      <div class="vf-file-sheet-card vf-file-staging-card" role="dialog" aria-modal="true" aria-labelledby="vfFileStagingTitle">
+        <h2 id="vfFileStagingTitle" class="vf-file-sheet-title">Review photos</h2>
+        <p class="vf-file-sheet-lead" id="vfFileStagingLead">Check these, then add them to the shift.</p>
+        <div class="vf-file-staging-grid" id="vfFileStagingGrid"></div>
+        <p class="vf-file-sheet-tip" id="vfFileStagingTip">Tap × on a thumbnail to drop it from this batch.</p>
+        <div class="vf-file-sheet-actions vf-file-staging-actions">
+          <button type="button" class="subtle" id="vfFileStagingCancel">Cancel</button>
+          <button type="button" class="subtle" id="vfFileStagingMore">Pick more</button>
+          <button type="button" class="primary" id="vfFileStagingAdd">Add to shift</button>
+        </div>
+      </div>`;
+    document.body.appendChild(sheet);
+
+    sheet.querySelector('#vfFileStagingCancel').addEventListener('click', () => {
+      closeFileStaging();
+      toast('Photos not added', 'info', 2000);
+    });
+    sheet.querySelector('#vfFileStagingMore').addEventListener('click', () => {
+      const input = vf.fileStaging?.input;
+      // Keep current staging; picker appends more on next change.
+      if (input) {
+        try {
+          input.click();
+        } catch {
+          toast('Could not open the photo picker', 'bad', 3000);
+        }
+      }
+    });
+    sheet.querySelector('#vfFileStagingAdd').addEventListener('click', () => {
+      const staging = vf.fileStaging;
+      if (!staging?.items?.length) {
+        closeFileStaging();
+        return;
+      }
+      const { items, onCapture, label } = staging;
+      const files = items.map((it) => it.file).filter(Boolean);
+      // Keep preview URLs until queue creates its own; revoke ours after enqueue.
+      closeFileStaging({ keepUrls: true });
+      let ok = 0;
+      for (const file of files) {
+        try {
+          onCapture(file);
+          ok += 1;
+        } catch (err) {
+          toast(`Could not queue ${file.name || 'photo'}: ${err.message}`, 'bad', 3500);
+        }
+      }
+      revokeFileStagingUrls(items);
+      if (ok) {
+        toast(
+          ok === 1 ? `Added 1 photo to ${label || 'shift'}` : `Added ${ok} photos to ${label || 'shift'}`,
+          'ok',
+          2800
+        );
+        renderAll();
+      }
+    });
+    sheet.addEventListener('click', (e) => {
+      if (e.target === sheet) {
+        closeFileStaging();
+        toast('Photos not added', 'info', 2000);
+      }
+    });
+    return sheet;
+  }
+
+  function renderFileStagingGrid() {
+    const grid = document.getElementById('vfFileStagingGrid');
+    const lead = document.getElementById('vfFileStagingLead');
+    const addBtn = document.getElementById('vfFileStagingAdd');
+    const staging = vf.fileStaging;
+    if (!grid || !staging) return;
+    const n = staging.items.length;
+    if (lead) {
+      lead.textContent =
+        n === 0
+          ? 'No photos selected yet — tap Pick more.'
+          : n === 1
+            ? '1 photo ready. Tap Add to shift when it looks right.'
+            : `${n} photos ready. Tap Add to shift to upload them all.`;
+    }
+    if (addBtn) {
+      addBtn.disabled = n === 0;
+      addBtn.textContent = n === 0 ? 'Add to shift' : n === 1 ? 'Add 1 photo to shift' : `Add ${n} photos to shift`;
+    }
+    grid.innerHTML = '';
+    staging.items.forEach((item, idx) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'vf-file-staging-thumb';
+      if (item.previewUrl) thumb.style.backgroundImage = `url('${item.previewUrl}')`;
+      const badge = document.createElement('span');
+      badge.className = 'vf-file-staging-badge';
+      badge.textContent = String(idx + 1);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'vf-file-staging-remove';
+      remove.setAttribute('aria-label', `Remove photo ${idx + 1}`);
+      remove.textContent = '×';
+      remove.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const [gone] = staging.items.splice(idx, 1);
+        if (gone?.previewUrl) {
+          try {
+            URL.revokeObjectURL(gone.previewUrl);
+          } catch {
+            /* ignore */
+          }
+        }
+        renderFileStagingGrid();
+      });
+      thumb.appendChild(badge);
+      thumb.appendChild(remove);
+      grid.appendChild(thumb);
+    });
+  }
+
+  function openFileStaging({ files, onCapture, label, input }) {
+    const incoming = [...(files || [])].filter((f) => {
+      if (!f) return false;
+      if (/^image\//i.test(f.type || '')) return true;
+      if (!f.type && /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name || '')) return true;
+      return /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name || '');
+    });
+    if (!incoming.length) {
+      toast('No image files were selected', 'warn', 3000);
+      return;
+    }
+    const sheet = ensureFileStagingDom();
+    if (!vf.fileStaging) {
+      vf.fileStaging = { items: [], onCapture, label, input };
+    } else {
+      vf.fileStaging.onCapture = onCapture;
+      vf.fileStaging.label = label;
+      vf.fileStaging.input = input || vf.fileStaging.input;
+    }
+    for (const file of incoming) {
+      let previewUrl = '';
+      try {
+        previewUrl = URL.createObjectURL(file);
+      } catch {
+        previewUrl = '';
+      }
+      vf.fileStaging.items.push({ file, previewUrl });
+    }
+    renderFileStagingGrid();
+    sheet.hidden = false;
+  }
+
   function photoCaptureBlock({
     label,
     photos,
@@ -1153,10 +1387,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       <div class="vf-photo-grid">${serverThumbs}${pendingThumbs}</div>
       <div class="vf-photo-actions">
         ${liveBtn}
-        <label class="vf-photo-input ${liveKind ? 'subtle' : 'primary'}">
-          ${liveKind ? (bursting ? 'Add one more (file)' : 'Add from files') : bursting ? 'Next photo' : 'Start capturing'}
-          <input type="file" accept="image/*" capture="environment" hidden>
-        </label>
+        <button type="button" class="vf-photo-files-btn ${liveKind ? 'subtle' : 'primary'}">
+          ${liveKind ? 'Add from files / gallery' : bursting ? 'Add more from gallery' : 'Add from files / gallery'}
+        </button>
+        <input type="file" accept="image/*,.heic,.heif" multiple hidden class="vf-photo-file-input">
         ${
           onRemove
             ? `<button type="button" class="subtle vf-photo-edit-toggle">${
@@ -1167,31 +1401,26 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       </div>
       <p class="vf-photo-hint overlay-meta">${
         liveKind
-          ? 'Open the camera once, take every shot, then tap <strong>Done</strong>. Photos upload in the background.'
-          : 'Shots upload in the background. Keep capturing until you tap <strong>Done capturing</strong>.'
+          ? 'Camera = take new shots now. <strong>Add from files / gallery</strong> = pull photos already on this phone or tablet (Recents first). Press and hold the first photo, tap more, then Done — then confirm with <strong>Add to shift</strong>.'
+          : 'Tap <strong>Add from files / gallery</strong>, press and hold the first recent photo, tap the rest, then Done. Confirm with <strong>Add to shift</strong>.'
       }</p>`;
 
     wrap.querySelector('.vf-live-open-btn')?.addEventListener('click', () => openLiveCamera(liveKind));
 
-    const input = wrap.querySelector('input[type=file]');
+    const input = wrap.querySelector('.vf-photo-file-input');
+    const filesBtn = wrap.querySelector('.vf-photo-files-btn');
+    filesBtn?.addEventListener('click', () => openFilePickCoach(input));
+
     input.addEventListener('change', (e) => {
-      const file = e.target.files?.[0];
+      const list = e.target.files ? [...e.target.files] : [];
       e.target.value = '';
-      if (!file) return;
-      try {
-        onCapture(file);
-        // File-input path: keep optional burst re-open for single-shot sections
-        // (load/checklist) and as a fallback for before/after.
-        if (!liveKind) {
-          if (!vf.burst || vf.burst.key !== bKey) startBurst(bKey, input);
-          updateBurstStatus();
-          reOpenCamera(input);
-        } else {
-          renderAll();
-        }
-      } catch (err) {
-        toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
-      }
+      if (!list.length) return;
+      openFileStaging({
+        files: list,
+        onCapture,
+        label,
+        input,
+      });
     });
     wrap.querySelector('.vf-photo-edit-toggle')?.addEventListener('click', () => {
       vf.photoEditMode = !vf.photoEditMode;

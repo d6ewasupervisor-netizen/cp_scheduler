@@ -2420,13 +2420,149 @@ body.visit-workspace-open {
   align-items: center;
 }
 
-.vf-photo-actions .vf-photo-input {
-  flex: 1;
-  min-height: 48px;
+.vf-photo-actions .vf-photo-input,
+.vf-photo-actions .vf-photo-files-btn {
+  flex: 1 1 100%;
+  min-height: 52px;
   align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.vf-photo-actions .vf-live-open-btn {
+  flex: 1 1 100%;
+  min-height: 52px;
+  font-weight: 700;
 }
 
 .vf-photo-edit-toggle { min-height: 44px; }
+
+/* Gallery pick coach + staging review (mobile-first) */
+.vf-file-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+}
+.vf-file-sheet[hidden] { display: none !important; }
+.vf-file-sheet-card {
+  width: min(100%, 34rem);
+  max-height: min(92vh, 44rem);
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 1rem 1rem 0.75rem 0.75rem;
+  padding: 1.1rem 1rem 1rem;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+}
+.vf-file-sheet-title {
+  margin: 0 0 0.55rem;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+.vf-file-sheet-lead {
+  margin: 0 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+.vf-file-sheet-steps {
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+.vf-file-sheet-steps li { margin-bottom: 0.55rem; }
+.vf-file-sheet-tip {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.65rem;
+  background: var(--accent-soft, rgba(78, 161, 232, 0.15));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.vf-file-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.vf-file-sheet-actions .primary,
+.vf-file-sheet-actions .subtle {
+  flex: 1 1 auto;
+  min-height: 52px;
+  font-weight: 700;
+  justify-content: center;
+}
+.vf-file-sheet-actions .primary {
+  flex: 1 1 100%;
+  font-size: 1.05rem;
+}
+.vf-file-staging-actions .primary {
+  order: 3;
+}
+.vf-file-staging-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0 0 0.85rem;
+}
+.vf-file-staging-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 0.65rem;
+  background: var(--surface-3) center/cover no-repeat;
+  border: 1px solid var(--border-strong);
+}
+.vf-file-staging-badge {
+  position: absolute;
+  left: 0.35rem;
+  top: 0.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vf-file-staging-remove {
+  position: absolute;
+  right: 0.25rem;
+  top: 0.25rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (min-width: 700px) {
+  .vf-file-sheet {
+    align-items: center;
+  }
+  .vf-file-sheet-card {
+    border-radius: 1rem;
+  }
+  .vf-file-staging-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 
 /* Live camera — stays open for full before/after bursts */
 .vf-live-camera {
