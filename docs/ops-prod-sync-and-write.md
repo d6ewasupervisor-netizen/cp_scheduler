@@ -52,7 +52,7 @@ Every surface (Dashboard, Shift Day, Planning Desk, My Week) shows a sticky **SA
 | **warn** (amber) | Session aging / incomplete |
 | **down** (red) | Bridge or morning auth offline |
 
-**Refresh auth** next to the beacon force-mints via eod-api and re-probes. Polls every 30s (like EOD connection dots). On recover, Shift Day / Dashboard auto re-sync the week.
+The SAS beacon force-mints via eod-api in the **background** (no button/toasts): status poll every 30s, warm refresh every ~15m, and on down/stale/visible. On recover, Shift Day / Dashboard quietly re-sync the week.
 
 On sync failure, UI falls back to last local week; error text points at the beacon when morning auth needs attention.
 

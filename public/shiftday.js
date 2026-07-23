@@ -489,7 +489,7 @@ async function loadWeek({ resync = false, silent = false, force = false } = {}) 
     } catch (err) {
       const msg = err.message || '';
       const sessionHint = /sas_session_|No sas-auth session|session stale/i.test(msg)
-        ? ' — use Refresh auth in the top SAS beacon, then Resync from PROD'
+        ? ' — SAS auth is refreshing in the background; try Resync from PROD in a moment'
         : '';
       toast(
         `PROD sync failed — showing last saved schedule. ${msg}${sessionHint}`.trim(),
@@ -536,8 +536,7 @@ async function resyncFromProd() {
 }
 
 /**
- * General schedule refresh: force SAS PROD auth refresh, then pull the week
- * and reload match/draft status so the board is current.
+ * Pull the week from PROD (auth warms itself via sas-beacon in the background).
  */
 async function refreshConnectionAndSchedule() {
   const btn = $('btnSdRefresh');
@@ -546,33 +545,12 @@ async function refreshConnectionAndSchedule() {
     btn.textContent = 'Refreshing…';
   }
   try {
-    beginBusy('Refreshing PROD connection…', { force: true });
+    beginBusy('Refreshing schedule…', { force: true });
+    // Nudge silent auth if beacon is present; do not toast or block on it
     try {
-      const authRes = await window.cpAuthFetch('/api/central-pet/shift-day/sas-refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: true }),
-      });
-      const authData = await authRes.json().catch(() => ({}));
-      if (!authRes.ok) {
-        toast(
-          `Auth refresh warning: ${authData.error || authRes.statusText}. Still pulling schedule…`,
-          'warn',
-          5000
-        );
-      } else if (window.cpSasBeacon?.refresh) {
-        // Keep sticky beacon in sync with the force-refresh we just did
-        try {
-          await window.cpSasBeacon.poll?.();
-        } catch {
-          /* optional */
-        }
-        toast(authData.ok !== false ? 'SAS PROD auth refreshed' : 'Auth refreshed', 'ok', 2200);
-      } else {
-        toast(authData.ok !== false ? 'SAS PROD auth refreshed' : 'Auth refreshed', 'ok', 2500);
-      }
-    } catch (err) {
-      toast(`Auth refresh failed: ${err.message || err}. Still pulling schedule…`, 'warn', 5000);
+      await window.cpSasBeacon?.refresh?.();
+    } catch {
+      /* optional */
     }
     await loadWeek({ resync: true, silent: false, force: true });
     toast('Schedule refreshed from PROD', 'ok', 3000);
@@ -844,9 +822,9 @@ async function init() {
   registerAppServiceWorker();
   preloadFieldData({ api, repKey: state.repKey, weekStart: currentWeek()?.start }).catch(() => {});
 
-  // SAS auth recovered → force a fresh pull
+  // SAS auth recovered (silent beacon) → quiet schedule pull
   window.addEventListener('cp-sas-auth', (ev) => {
-    if (ev?.detail?.ok) {
+    if (ev?.detail?.ok && (ev.detail.recovered || !ev.detail.silent)) {
       loadWeek({ resync: true, silent: true, force: true }).catch(() => {});
     }
   });

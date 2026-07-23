@@ -1,16 +1,27 @@
-// sas-beacon.js — sticky SAS PROD auth health indicator + refresh (all pages)
-// Polls like the EOD app connection dots; never displays tokens/secrets.
+// sas-beacon.js — sticky SAS PROD auth health + silent background refresh
+// Polls status; re-auths on its own when down/stale or on a warm interval.
+// Never displays tokens/secrets. No user prompts, toasts, or button taps required.
 
 (function () {
   'use strict';
 
   const POLL_MS = 30000;
+  /** Proactive warm refresh so sessions don't expire mid-day. */
+  const AUTO_REFRESH_MS = 15 * 60 * 1000;
+  /** Re-auth when session age exceeds this (minutes), even if still "ok". */
+  const STALE_REFRESH_MIN = 25;
+  /** Back off after a failed silent refresh before trying again. */
+  const FAIL_BACKOFF_MS = 2 * 60 * 1000;
   const API_STATUS = '/api/central-pet/shift-day/sas-status';
   const API_REFRESH = '/api/central-pet/shift-day/sas-refresh';
 
   let pollTimer = null;
+  let refreshTimer = null;
   let refreshing = false;
   let lastStatus = null;
+  let lastRefreshAt = 0;
+  let lastFailAt = 0;
+  let bootDone = false;
 
   function el(id) {
     return document.getElementById(id);
@@ -30,19 +41,13 @@
       '    <strong id="sasBeaconLabel">SAS PROD · checking…</strong>',
       '    <span id="sasBeaconDetail">Connecting to morning auth…</span>',
       '  </div>',
-      '  <button type="button" class="sas-beacon-refresh" id="sasBeaconRefresh" title="Force-refresh SAS PROD session via eod-api">',
-      '    Refresh auth',
-      '  </button>',
       '</div>',
     ].join('');
 
-    // Insert at the very top of the document body so every section sees it.
     const body = document.body;
     if (body.firstChild) body.insertBefore(bar, body.firstChild);
     else body.appendChild(bar);
     body.classList.add('has-sas-beacon');
-
-    el('sasBeaconRefresh').addEventListener('click', () => refreshAuth(true));
     return bar;
   }
 
@@ -61,7 +66,6 @@
     const bar = el('sasBeacon');
     const label = el('sasBeaconLabel');
     const detail = el('sasBeaconDetail');
-    const btn = el('sasBeaconRefresh');
 
     const state = status?.state || (status?.ok ? 'live' : 'down');
     bar.className = `sas-beacon state-${state}`;
@@ -88,11 +92,22 @@
     if (extraDetail) bits.unshift(extraDetail);
     detail.textContent = bits.join(' · ') || '—';
     detail.title = status?.error || detail.textContent;
+  }
 
-    if (btn && !refreshing) {
-      btn.disabled = false;
-      btn.textContent = 'Refresh auth';
-    }
+  function needsRefresh(status) {
+    if (!status) return true;
+    if (!status.ok || status.state === 'down') return true;
+    if (status.stale || status.state === 'warn') return true;
+    const age = Number(status.ageMinutes);
+    if (Number.isFinite(age) && age >= STALE_REFRESH_MIN) return true;
+    return false;
+  }
+
+  function canAttemptRefresh() {
+    if (refreshing) return false;
+    if (document.hidden) return false;
+    if (lastFailAt && Date.now() - lastFailAt < FAIL_BACKOFF_MS) return false;
+    return true;
   }
 
   async function fetchStatus() {
@@ -100,7 +115,7 @@
     try {
       const res = await window.cpAuthFetch(API_STATUS, { headers: { Accept: 'application/json' } });
       const data = await res.json().catch(() => ({}));
-      applyStatus({
+      const status = {
         ok: !!data.ok || res.ok,
         healthy: data.healthy ?? data.ok,
         stale: data.stale,
@@ -114,7 +129,13 @@
         hasCsrf: data.hasCsrf,
         hasCookie: data.hasCookie,
         bridge: data.bridge,
-      });
+      };
+      applyStatus(status);
+
+      // Silent auto-heal when status looks bad / stale
+      if (needsRefresh(status) && canAttemptRefresh()) {
+        refreshAuth({ silent: true, force: true, reason: 'status' });
+      }
       return data;
     } catch (err) {
       applyStatus({
@@ -124,22 +145,31 @@
         label: 'SAS PROD · offline',
         error: err.message || 'Could not reach status API',
       });
+      if (canAttemptRefresh()) {
+        refreshAuth({ silent: true, force: true, reason: 'status-error' });
+      }
       return null;
     }
   }
 
-  async function refreshAuth(force) {
-    if (refreshing) return;
+  /**
+   * @param {{ silent?: boolean, force?: boolean, reason?: string }} [opts]
+   */
+  async function refreshAuth(opts) {
+    const silent = opts?.silent !== false;
+    const force = opts?.force !== false;
+    if (refreshing) return lastStatus;
+    if (silent && !canAttemptRefresh()) return lastStatus;
+
     refreshing = true;
-    const btn = el('sasBeaconRefresh');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Refreshing…';
+    const prevOk = !!lastStatus?.ok;
+
+    if (!silent) {
+      applyStatus(
+        lastStatus || { ok: false, state: 'warn', label: 'SAS PROD · refreshing…' },
+        'requesting re-auth…'
+      );
     }
-    applyStatus(
-      lastStatus || { ok: false, state: 'warn', label: 'SAS PROD · refreshing…' },
-      'requesting re-auth…'
-    );
 
     try {
       const res = await window.cpAuthFetch(`${API_REFRESH}?force=${force ? '1' : '0'}`, {
@@ -150,39 +180,49 @@
       const data = await res.json().catch(() => ({}));
       const status = data.status || data;
       const triggerMsg = data.trigger?.message || data.trigger?.error || null;
-      applyStatus(
-        {
-          ok: !!status.ok,
-          healthy: status.healthy ?? status.ok,
-          stale: status.stale,
-          state: status.state || (status.ok ? 'live' : 'down'),
-          label: status.label,
-          error: status.error || (!status.ok ? triggerMsg : null),
-          code: status.code,
-          source: status.source,
-          generatedAt: status.generatedAt,
-          ageMinutes: status.ageMinutes,
-          hasCsrf: status.hasCsrf,
-          hasCookie: status.hasCookie,
-          bridge: status.bridge,
-        },
-        triggerMsg && status.ok ? triggerMsg : status.ok ? 'auth refreshed' : null
-      );
+      const next = {
+        ok: !!status.ok,
+        healthy: status.healthy ?? status.ok,
+        stale: status.stale,
+        state: status.state || (status.ok ? 'live' : 'down'),
+        label: status.label,
+        error: status.error || (!status.ok ? triggerMsg : null),
+        code: status.code,
+        source: status.source,
+        generatedAt: status.generatedAt,
+        ageMinutes: status.ageMinutes,
+        hasCsrf: status.hasCsrf,
+        hasCookie: status.hasCookie,
+        bridge: status.bridge,
+      };
+      applyStatus(next, silent ? null : triggerMsg && status.ok ? triggerMsg : status.ok ? 'auth refreshed' : null);
 
-      // Notify pages that may want to re-sync after auth recovers
-      try {
-        window.dispatchEvent(
-          new CustomEvent('cp-sas-auth', {
-            detail: { ok: !!status.ok, status, trigger: data.trigger, pull: data.pull },
-          })
-        );
-      } catch (_) {}
+      lastRefreshAt = Date.now();
+      if (status.ok) lastFailAt = 0;
+      else lastFailAt = Date.now();
 
-      if (window.cpToast) {
-        if (status.ok) window.cpToast(triggerMsg || 'SAS PROD auth is live', 'ok', 4000);
-        else window.cpToast(status.error || triggerMsg || 'SAS auth still offline', 'bad', 7000);
+      // Only nudge pages when auth recovers (down → ok). Quiet warm refreshes stay quiet.
+      const recovered = !prevOk && !!status.ok;
+      if (recovered || !silent) {
+        try {
+          window.dispatchEvent(
+            new CustomEvent('cp-sas-auth', {
+              detail: {
+                ok: !!status.ok,
+                status: next,
+                trigger: data.trigger,
+                pull: data.pull,
+                silent: !!silent,
+                recovered,
+              },
+            })
+          );
+        } catch (_) {}
       }
+
+      return next;
     } catch (err) {
+      lastFailAt = Date.now();
       applyStatus(
         {
           ok: false,
@@ -191,18 +231,24 @@
           label: 'SAS PROD · offline',
           error: err.message || 'Refresh failed',
         },
-        'refresh failed'
+        silent ? null : 'refresh failed'
       );
-      if (window.cpToast) window.cpToast(`Auth refresh failed: ${err.message}`, 'bad', 6000);
+      return null;
     } finally {
       refreshing = false;
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Refresh auth';
+      if (!silent) {
+        setTimeout(() => fetchStatus(), 2000);
       }
-      // Re-probe shortly after so age/source settle
-      setTimeout(() => fetchStatus(), 2000);
     }
+  }
+
+  function scheduleWarmRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => {
+      if (!canAttemptRefresh()) return;
+      // Warm even when live so morning-auth stays current
+      refreshAuth({ silent: true, force: true, reason: 'warm' });
+    }, AUTO_REFRESH_MS);
   }
 
   function startPolling() {
@@ -220,25 +266,39 @@
   }
 
   function boot() {
+    if (bootDone) return;
+    bootDone = true;
     ensureDom();
-    // Wait for auth-gate to expose cpAuthFetch when possible
     const tryStart = () => {
       if (typeof window.cpAuthFetch !== 'function') {
         setTimeout(tryStart, 50);
         return;
       }
-      fetchStatus();
+      fetchStatus().then(() => {
+        // Always warm once shortly after boot (status path may already have triggered)
+        setTimeout(() => {
+          if (canAttemptRefresh() && (!lastRefreshAt || Date.now() - lastRefreshAt > 5000)) {
+            refreshAuth({ silent: true, force: true, reason: 'boot' });
+          }
+        }, 4000);
+      });
       startPolling();
+      scheduleWarmRefresh();
     };
     tryStart();
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) fetchStatus();
+      if (!document.hidden) {
+        fetchStatus();
+        if (canAttemptRefresh() && needsRefresh(lastStatus)) {
+          refreshAuth({ silent: true, force: true, reason: 'visible' });
+        }
+      }
     });
   }
 
-  // Public API for pages
   window.cpSasBeacon = {
-    refresh: () => refreshAuth(true),
+    /** Programmatic force refresh (still silent — no toasts). */
+    refresh: () => refreshAuth({ silent: true, force: true, reason: 'api' }),
     poll: fetchStatus,
     getLast: () => lastStatus,
   };

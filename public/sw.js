@@ -6,7 +6,7 @@
  *
  * Bump CACHE_NAME when shell assets change in a way that must invalidate.
  */
-const CACHE_NAME = 'cp-shell-v1.1.5';
+const CACHE_NAME = 'cp-shell-v1.1.6';
 const PRECACHE = [
   '/',
   '/shiftday.html',

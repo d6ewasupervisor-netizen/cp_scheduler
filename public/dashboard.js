@@ -344,7 +344,7 @@ async function loadActiveWeek({ resync = false, silent = false, force = false } 
     } catch (e) {
       const msg = e.message || '';
       const sessionHint = /sas_session_|No sas-auth session|session stale/i.test(msg)
-        ? ' — use Refresh auth in the top SAS beacon, then Resync from PROD'
+        ? ' — SAS auth is refreshing in the background; try Resync from PROD in a moment'
         : '';
       toast(
         `PROD sync failed — showing last saved schedule. ${msg}${sessionHint}`.trim(),
@@ -573,9 +573,9 @@ async function init() {
       }).catch(() => {});
     }
 
-    // SAS auth recovered → worth a fresh pull
+    // SAS auth recovered (silent beacon) → quiet schedule pull
     window.addEventListener('cp-sas-auth', (ev) => {
-      if (ev?.detail?.ok) {
+      if (ev?.detail?.ok && (ev.detail.recovered || !ev.detail.silent)) {
         state.schedules = {};
         loadActiveWeek({ resync: true, silent: true, force: true }).catch(() => {});
         refreshLiveMonitor();
