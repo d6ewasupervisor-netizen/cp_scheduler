@@ -41,6 +41,13 @@
 
 html, body { margin: 0; padding: 0; }
 
+html.cp-no-overscroll,
+html.cp-no-overscroll body {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -128,9 +135,9 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
 /* ---------- SAS PROD auth beacon (all pages) ---------- */
 
 .sas-beacon {
-  /* Stay in document flow so schedule cards append below — not under — the bar */
-  position: relative;
-  top: auto;
+  /* Sticky stack with topbar; height measured into --sas-beacon-h */
+  position: sticky;
+  top: 0;
   z-index: 50;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -138,10 +145,10 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
 }
 body.has-sas-beacon {
   /* Fallback until JS measures the real bar height */
-  --sas-beacon-h: 48px;
+  --sas-beacon-h: 40px;
 }
 html {
-  scroll-padding-top: calc(var(--sas-beacon-h, 0px) + 4.5rem);
+  scroll-padding-top: calc(var(--sas-beacon-h, 0px) + 3.25rem);
 }
 .sas-beacon-inner {
   display: flex;
@@ -149,8 +156,8 @@ html {
   gap: 0.65rem;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0.45rem 1rem;
-  min-height: 44px;
+  padding: 0.35rem 1rem;
+  min-height: 36px;
 }
 .sas-beacon-dot {
   flex: 0 0 auto;
@@ -1268,26 +1275,82 @@ body.mode-admin .day-col.eligible .day-head::after {
   }
 
   .topbar {
-    padding: 0.65rem max(0.85rem, env(safe-area-inset-left)) 0.65rem max(0.85rem, env(safe-area-inset-right));
+    padding: 0.4rem max(0.75rem, env(safe-area-inset-left)) 0.4rem max(0.75rem, env(safe-area-inset-right));
   }
 
   .topbar-row {
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.5rem;
   }
 
-  .topbar h1 { font-size: 1rem; }
+  .topbar h1 { font-size: 0.95rem; line-height: 1.2; }
+  /* Week is already in the week picker — don't burn a second line in the header */
+  .topbar .subtitle { display: none; }
 
   .user-bar {
-    width: 100%;
+    width: auto;
+    flex: 0 1 auto;
     justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.35rem 0.5rem;
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  /* Keep Refresh + Sign out; hide identity chrome that duplicates body pills */
+  .user-bar .user-email,
+  .user-bar .layer-badge {
+    display: none !important;
+  }
+
+  .user-bar .btn-refresh-page,
+  .user-bar .theme-toggle,
+  .user-bar #btnSignOut,
+  .user-bar #btnSdRefreshTop,
+  .user-bar #btnDashRefresh {
+    min-height: 36px;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.75rem;
   }
 
   .user-email { max-width: min(52vw, 220px); }
 
-  button.subtle { min-height: 44px; padding: 0.45rem 0.65rem; }
+  button.subtle { min-height: 40px; padding: 0.4rem 0.6rem; }
+
+  /* Compact live banner: status only (detail is title/tooltip) */
+  .sas-beacon-inner {
+    min-height: 32px;
+    padding: 0.25rem 0.75rem;
+    gap: 0.4rem;
+  }
+  .sas-beacon-text span {
+    display: none;
+  }
+  .sas-beacon-text strong {
+    font-size: 0.7rem;
+  }
+
+  /* Schedule page: identity pills duplicate the header — drop on phone */
+  body.mode-dashboard .dash-who {
+    display: none;
+  }
+  body.mode-dashboard .dash-page {
+    padding-top: 0.5rem;
+  }
+  body.mode-dashboard .dash-tabs {
+    margin-bottom: 0.55rem;
+  }
+  body.mode-dashboard .dash-tabs button {
+    min-height: 38px;
+    padding: 0.4rem 0.75rem;
+  }
+  body.mode-dashboard .dash-week-row {
+    margin-bottom: 0.55rem;
+  }
+  body.mode-dashboard .dash-week-row select,
+  body.mode-dashboard .dash-week-row button.icon-btn {
+    min-height: 42px;
+  }
 
   .steps-strip {
     font-size: 0.8rem;

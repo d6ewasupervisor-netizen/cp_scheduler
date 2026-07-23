@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  var CP_APP_VERSION = '1.1.7';
+  var CP_APP_VERSION = '1.1.8';
   var CP_VERSION_URL = '/app-version.json';
   var CP_PENDING_VERSION_KEY = 'cpPendingHotfixVersion';
   var CP_SNOOZE_KEY = 'cpHotfixSnoozeUntil';

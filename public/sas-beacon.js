@@ -57,7 +57,7 @@
     const bar = barEl || el('sasBeacon');
     if (!bar) return;
     document.body.classList.add('has-sas-beacon');
-    const h = Math.max(40, Math.ceil(bar.getBoundingClientRect().height) || 48);
+    const h = Math.max(32, Math.ceil(bar.getBoundingClientRect().height) || 36);
     document.documentElement.style.setProperty('--sas-beacon-h', `${h}px`);
   }
 
