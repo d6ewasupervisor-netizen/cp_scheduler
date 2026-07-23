@@ -10,6 +10,7 @@ const {
   listUnmetRequirements,
   canSeal,
   enrichDraftForUi,
+  OPTIONAL_FIXTURE_GROUPS,
 } = require('./visit-flow');
 
 const ROOT = path.join(__dirname, '../../data/visit-drafts');
@@ -144,6 +145,7 @@ function startVisit({
     loadCheck: workLoad ? { status: null, photo: null, updatedAt: null } : null,
     checklist: {},
     categoryPhotos: {},
+    optionalFixtures: {},
     survey: {},
     shiftLog: { outcomes: [], custom: '' },
     stageNotes: {},
@@ -423,6 +425,21 @@ function setShiftLog(repKey, date, actualStore, { outcomes, custom } = {}) {
   });
 }
 
+/**
+ * Opt into / out of optional fixture photo groups (e.g. endcaps-wings).
+ * When selected, those categories gate seal like the always-required ones.
+ */
+function setOptionalFixtures(repKey, date, actualStore, { groupId, selected } = {}) {
+  if (!groupId) throw new Error('groupId required');
+  const known = new Set(OPTIONAL_FIXTURE_GROUPS.map((g) => g.id));
+  if (!known.has(String(groupId))) throw new Error(`Unknown optional fixture group: ${groupId}`);
+  return mutate(repKey, date, actualStore, (draft) => {
+    if (!draft.optionalFixtures) draft.optionalFixtures = {};
+    if (selected) draft.optionalFixtures[groupId] = true;
+    else delete draft.optionalFixtures[groupId];
+  });
+}
+
 /** Universal per-stage note (in-the-moment, shift-scoped). Optional — never gates. */
 function setStageNote(repKey, date, actualStore, { step, text } = {}) {
   if (!step) throw new Error('step required for stage note');
@@ -646,6 +663,7 @@ module.exports = {
   setTimes,
   setMileage,
   setShiftLog,
+  setOptionalFixtures,
   setStageNote,
   setNextVisitNote,
   goToStep,

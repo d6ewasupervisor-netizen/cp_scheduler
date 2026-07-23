@@ -842,6 +842,7 @@ router.get('/shift-day/visit-flow/category-targets', (_req, res) => {
 router.get('/shift-day/visit-flow/after-coach', (_req, res) => {
   res.json({
     coach: visitFlow.AFTER_PHOTO_COACH,
+    optionalGroups: visitFlow.OPTIONAL_FIXTURE_GROUPS,
     classifyEnabled: photoClassifier.isClassifyEnabled(),
     model: photoClassifier.geminiModel(),
     signup: 'https://aistudio.google.com/apikey',
@@ -1178,6 +1179,17 @@ router.post(
     visitDraftStore.setShiftLog(repKey, date, actualStore, {
       outcomes: body.outcomes,
       custom: body.custom,
+    })
+  )
+);
+
+router.post(
+  '/shift-day/visit/optional-fixtures',
+  shiftDayScope,
+  draftMutationHandler((repKey, date, actualStore, body) =>
+    visitDraftStore.setOptionalFixtures(repKey, date, actualStore, {
+      groupId: body.groupId,
+      selected: !!body.selected,
     })
   )
 );

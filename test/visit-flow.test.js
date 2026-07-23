@@ -76,6 +76,15 @@ describe('buildStepSequence (branch logic)', () => {
       assert.ok(ids.has(cat.id), `missing coach for ${cat.id}`);
     }
   });
+
+  it('endcaps and wing-panels are optional fixture targets', () => {
+    const endcaps = visitFlow.CATEGORY_PHOTO_TARGETS.find((c) => c.id === 'endcaps');
+    const wings = visitFlow.CATEGORY_PHOTO_TARGETS.find((c) => c.id === 'wing-panels');
+    assert.equal(endcaps.optional, true);
+    assert.equal(wings.optional, true);
+    assert.equal(endcaps.optionalGroup, visitFlow.OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS);
+    assert.equal(wings.optionalGroup, visitFlow.OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS);
+  });
 });
 
 describe('load-check escalation branch (first-person supervisor voice)', () => {
@@ -236,6 +245,54 @@ describe('free-nav section status + seal requirements (only gate)', () => {
     }
     assert.ok(unmet.some((u) => u.section === 'before_photos' && u.anchor === 'before-photos'));
     assert.ok(unmet.some((u) => u.section === 'survey' && u.anchor.startsWith('survey-')));
+  });
+
+  it('endcaps/wings photos do not gate seal unless the optional section is selected', () => {
+    const requiredOnly = Object.fromEntries(
+      visitFlow
+        .requiredCategoryPhotoTargets({})
+        .map((c) => [c.id, [{ path: c.id }]])
+    );
+    const d = baseDraft({
+      beforePhotos: [{ path: 'b' }],
+      afterPhotos: [{ path: 'a' }],
+      categoryPhotos: requiredOnly,
+      survey: {
+        q1: 'yes',
+        q2: 'Yes',
+        q3: 'Fully stocked',
+        q5: 'yes',
+        q7: 'Yes',
+        q9: 'yes',
+        q11: 'ok',
+        q12: 'yes',
+      },
+      visitStop: { actual: '2026-07-08T18:00:00Z' },
+      mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
+      shiftLog: {
+        outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }],
+        custom: '',
+      },
+    });
+    assert.ok(!requiredOnly.endcaps);
+    assert.ok(!requiredOnly['wing-panels']);
+    assert.equal(visitFlow.canSeal(d), true);
+
+    const optedIn = {
+      ...d,
+      optionalFixtures: { [visitFlow.OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS]: true },
+    };
+    const unmet = visitFlow.listUnmetRequirements(optedIn);
+    assert.ok(unmet.some((u) => /End caps/i.test(u.message)));
+    assert.ok(unmet.some((u) => /Wing panels/i.test(u.message)));
+    assert.equal(visitFlow.canSeal(optedIn), false);
+
+    optedIn.categoryPhotos = {
+      ...requiredOnly,
+      endcaps: [{ path: 'e' }],
+      'wing-panels': [{ path: 'w' }],
+    };
+    assert.equal(visitFlow.canSeal(optedIn), true);
   });
 
   it('load escalation (no_escalated) counts as a valid load outcome', () => {

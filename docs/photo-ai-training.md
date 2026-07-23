@@ -60,9 +60,9 @@ For each category, upload **≥3** clear Fred Meyer examples (5 is better):
 
 | Category id | What to photograph |
 |-------------|--------------------|
-| `endcaps` | Full end-cap fixtures |
+| `endcaps` | Full end-cap fixtures *(optional — only when rep opts into End caps / wings)* |
 | `clipstrips` | Hanging clip strips with product |
-| `wing-panels` | Wing panels beside end caps |
+| `wing-panels` | Wing panels beside end caps *(optional — same End caps / wings opt-in)* |
 | `cat-litter-pan-liners` | Litter pan liner packs/bags on shelf or strip |
 | `butcher-block-rack` | Butcher Block treat rack (full fixture) |
 | `cp-serviced-section` | Finished Pet Care aisle / 4ft sections |

@@ -15,10 +15,23 @@ const homeMatrix = require('../../data/d8_home_to_store.json');
 
 /* ---------- Category photo targets (Part B Step 4, all visit types) ---------- */
 
+/** Opt-in group: endcaps + wings are only required when the rep selects this section. */
+const OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS = 'endcaps-wings';
+
 const CATEGORY_PHOTO_TARGETS = [
-  { id: 'endcaps', label: 'End caps' },
+  {
+    id: 'endcaps',
+    label: 'End caps',
+    optional: true,
+    optionalGroup: OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+  },
   { id: 'clipstrips', label: 'Clip strips' },
-  { id: 'wing-panels', label: 'Wing panels' },
+  {
+    id: 'wing-panels',
+    label: 'Wing panels',
+    optional: true,
+    optionalGroup: OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+  },
   { id: 'cat-litter-pan-liners', label: 'Cat litter pan liners' },
   { id: 'butcher-block-rack', label: 'Butcher Block rack' },
   { id: 'cp-serviced-section', label: 'Each CP-serviced section' },
@@ -27,15 +40,69 @@ const CATEGORY_PHOTO_TARGETS = [
 /**
  * Coach copy shown during AFTER burst capture. Reps photograph these fixtures
  * in one pass; Gemini sorts them into category/survey slots on the backend.
+ * End caps / wings are optional — only required after the rep opts in.
  */
 const AFTER_PHOTO_COACH = [
-  { id: 'endcaps', label: 'End caps', tip: 'Shoot each end cap you serviced — full fixture, not just a close-up of one SKU.' },
-  { id: 'clipstrips', label: 'Clip strips', tip: 'Hang / strip close enough to read the product, with the strip still visible.' },
-  { id: 'wing-panels', label: 'Wing panels', tip: 'Frame the wing beside the end cap so the panel shape is obvious.' },
-  { id: 'cat-litter-pan-liners', label: 'Cat litter pan liners', tip: 'Show the liner bags/packs on the shelf or clip (packaging readable).' },
-  { id: 'butcher-block-rack', label: 'Butcher Block rack', tip: 'Full rack view — wood/metal butcher-block fixture with treats.' },
-  { id: 'cp-serviced-section', label: 'CP-serviced sections', tip: 'Two 4ft sections per shot of the finished Pet Care aisle you worked.' },
+  {
+    id: 'endcaps',
+    label: 'End caps',
+    tip: 'Shoot each end cap you serviced — full fixture, not just a close-up of one SKU.',
+    optional: true,
+    optionalGroup: OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+  },
+  {
+    id: 'clipstrips',
+    label: 'Clip strips',
+    tip: 'Hang / strip close enough to read the product, with the strip still visible.',
+  },
+  {
+    id: 'wing-panels',
+    label: 'Wing panels',
+    tip: 'Frame the wing beside the end cap so the panel shape is obvious.',
+    optional: true,
+    optionalGroup: OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+  },
+  {
+    id: 'cat-litter-pan-liners',
+    label: 'Cat litter pan liners',
+    tip: 'Show the liner bags/packs on the shelf or clip (packaging readable).',
+  },
+  {
+    id: 'butcher-block-rack',
+    label: 'Butcher Block rack',
+    tip: 'Full rack view — wood/metal butcher-block fixture with treats.',
+  },
+  {
+    id: 'cp-serviced-section',
+    label: 'CP-serviced sections',
+    tip: 'Two 4ft sections per shot of the finished Pet Care aisle you worked.',
+  },
 ];
+
+const OPTIONAL_FIXTURE_GROUPS = [
+  {
+    id: OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+    label: 'End caps / wings',
+    tip: 'Only if you serviced endcaps or wing panels this visit — turn this on, then include them in your after burst.',
+    categoryIds: ['endcaps', 'wing-panels'],
+  },
+];
+
+/** Whether an optional category group is selected on this draft. */
+function isOptionalFixtureGroupSelected(draft, groupId) {
+  return !!(draft?.optionalFixtures && draft.optionalFixtures[groupId]);
+}
+
+/**
+ * Category photo targets that gate seal for this draft.
+ * Always-required categories + any optional ones the rep selected into.
+ */
+function requiredCategoryPhotoTargets(draft) {
+  return CATEGORY_PHOTO_TARGETS.filter((cat) => {
+    if (!cat.optional) return true;
+    return isOptionalFixtureGroupSelected(draft, cat.optionalGroup);
+  });
+}
 
 /* ---------- Step sequence ---------- */
 
@@ -268,7 +335,7 @@ function listUnmetRequirements(draft) {
     }
   }
 
-  for (const cat of CATEGORY_PHOTO_TARGETS) {
+  for (const cat of requiredCategoryPhotoTargets(draft)) {
     if (!(draft.categoryPhotos?.[cat.id] || []).length) {
       unmet.push({
         section: STEP.AFTER_PHOTOS,
@@ -628,6 +695,10 @@ module.exports = {
   STEP,
   CATEGORY_PHOTO_TARGETS,
   AFTER_PHOTO_COACH,
+  OPTIONAL_FIXTURE_GROUPS,
+  OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
+  isOptionalFixtureGroupSelected,
+  requiredCategoryPhotoTargets,
   LOAD_FOUND,
   SECTION_STATUS,
   SECTION_LABELS,

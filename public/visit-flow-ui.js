@@ -43,8 +43,8 @@ const STEP_HINTS = {
   category_photos: 'Category sorting is automatic — take clear after photos of each fixture instead.',
   survey: 'Answer the service survey. Some questions appear based on earlier answers.',
   after_photos:
-    'Finished work? Photograph everything in one burst: aisle sections, end caps, clip strips, wing panels, litter liners, and Butcher Block. The app sorts them for the survey — you just shoot.',
-  time: 'Set actual start/stop times and compute your mileage leg.',
+    'Finished work? Photograph the aisle, clip strips, litter liners, and Butcher Block in one burst. End caps / wings are optional — turn that section on only if you serviced them. The app sorts photos for the survey.',
+  time: 'Set actual start/stop times and Calculate Mileage — Home To Store, Store To Store, or Store To Home.',
   shift_log: 'Log what happened on this shift — pick everything that applies, add any variances, and leave a note for the next visit.',
   review: 'Fix any unmet items, then seal the visit.',
 };
@@ -67,6 +67,31 @@ const STATUS_LABELS = {
   complete: 'Complete',
   needs_attention: 'Needs attention',
 };
+
+/** PROD field-app travel-type labels (dropdown / table headers). */
+const TRAVEL_TYPE_LABELS = {
+  'home-to-store': 'Home To Store',
+  'store-to-store': 'Store To Store',
+  'store-to-home': 'Store To Home',
+  'same-store': 'Same Store',
+  unresolved: 'Mileage not found',
+};
+
+function formatTravelEndpoint(ep) {
+  if (ep == null || ep === '') return '—';
+  if (String(ep).toLowerCase() === 'home') return 'Home';
+  return `Store ${ep}`;
+}
+
+/** Rep-facing mileage line — mirrors PROD travel types, never says "leg". */
+function formatMileageTravel(travel) {
+  if (!travel) return 'Not calculated yet.';
+  const type = TRAVEL_TYPE_LABELS[travel.source] || 'Travel';
+  const miles = travel.miles == null ? 'miles not found' : `${travel.miles} mi`;
+  const route = `${formatTravelEndpoint(travel.from)} → ${formatTravelEndpoint(travel.to)}`;
+  const base = `${type} · ${miles} · ${route}`;
+  return travel.warning ? `${base} — ${travel.warning}` : base;
+}
 
 /** Mirrors src/lib/visit-flow.js surveyVisibility so the UI can react live
  *  to answers without a round trip per keystroke. */
@@ -793,7 +818,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     p.textContent =
       kind === 'before'
         ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. Open the camera once and take every before shot without leaving.'
-        : 'One after burst covers everything. Shoot the finished aisle plus each fixture below — the app places photos into the survey for you.';
+        : 'One after burst covers the required fixtures. Shoot the finished aisle plus each item below — the app places photos into the survey for you.';
     body.appendChild(p);
     const extra = { target: kind };
     const guide = document.createElement('p');
@@ -802,7 +827,58 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     body.appendChild(guide);
 
     if (kind === 'after') {
-      const coach = vf.afterCoach?.coach || vf.categoryTargets || [];
+      const selectedGroups = vf.draft.optionalFixtures || {};
+      const optionalGroups =
+        vf.afterCoach?.optionalGroups ||
+        [
+          {
+            id: 'endcaps-wings',
+            label: 'End caps / wings',
+            tip: 'Only if you serviced endcaps or wing panels this visit.',
+            categoryIds: ['endcaps', 'wing-panels'],
+          },
+        ];
+
+      for (const group of optionalGroups) {
+        const opt = document.createElement('label');
+        opt.className = 'vf-optional-fixture';
+        opt.innerHTML = `
+          <input type="checkbox" data-optional-group="${escapeHtml(group.id)}" ${
+            selectedGroups[group.id] ? 'checked' : ''
+          } />
+          <span>
+            <strong>Include ${escapeHtml(group.label)}</strong>
+            <span class="overlay-meta"> — optional. ${escapeHtml(group.tip || '')}</span>
+          </span>`;
+        body.appendChild(opt);
+        opt.querySelector('input')?.addEventListener('change', async (e) => {
+          const on = !!e.target.checked;
+          try {
+            await autosave(() =>
+              apiCall('/shift-day/visit/optional-fixtures', {
+                method: 'POST',
+                body: JSON.stringify({
+                  repKey: getRepKey(),
+                  date: vf.draft.date,
+                  actualStore: vf.draft.actualStore,
+                  groupId: group.id,
+                  selected: on,
+                }),
+              })
+            );
+            renderSidebar();
+            updateFinishButton();
+            renderBeforeAfter('after');
+          } catch {
+            e.target.checked = !on;
+          }
+        });
+      }
+
+      const coach = (vf.afterCoach?.coach || vf.categoryTargets || []).filter((c) => {
+        if (!c.optional) return true;
+        return !!selectedGroups[c.optionalGroup || 'endcaps-wings'];
+      });
       const list = document.createElement('div');
       list.className = 'vf-after-coach';
       list.id = 'after-photos-coach';
@@ -827,8 +903,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (sorted && Object.keys(sorted).length) {
         const status = document.createElement('p');
         status.className = 'overlay-meta vf-classify-status';
-        const filled = Object.entries(sorted).filter(([, seq]) => seq != null).length;
-        status.textContent = `Auto-sorted ${filled} of ${(vf.categoryTargets || []).length} fixture types from your afters.`;
+        const requiredIds = new Set(coach.map((c) => c.id));
+        const filled = Object.entries(sorted).filter(
+          ([id, seq]) => seq != null && requiredIds.has(id)
+        ).length;
+        status.textContent = `Auto-sorted ${filled} of ${coach.length} required fixture types from your afters.`;
         body.appendChild(status);
       }
     }
@@ -1119,20 +1198,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
           <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
         </label>
-        <button type="button" id="vfCalcMileage" class="primary">Compute mileage leg</button>
+        <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
         <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
-        <label class="field">Note (if the leg looks wrong — don't recalculate, just note it)
+        <label class="field">Note (if the mileage looks wrong — don't recalculate, just note it)
           <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
         </label>
       </div>`;
 
-    const renderLeg = () => {
-      const leg = vf.draft.mileage?.leg;
-      $('time-mileage').textContent = leg
-        ? `${leg.from} → ${leg.to}: ${leg.miles == null ? 'unresolved' : leg.miles + ' mi'} (${leg.source})${leg.warning ? ' — ' + leg.warning : ''}`
-        : 'Not computed yet.';
+    const renderMileage = () => {
+      $('time-mileage').textContent = formatMileageTravel(vf.draft.mileage?.leg);
     };
-    renderLeg();
+    renderMileage();
 
     async function saveStart(iso) {
       await autosave(() =>
@@ -1197,7 +1273,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           body: JSON.stringify({ repKey: getRepKey(), date: vf.draft.date, actualStore: vf.draft.actualStore }),
         })
       ).then(() => {
-        renderLeg();
+        renderMileage();
         renderSidebar();
       })
     );
@@ -1272,7 +1348,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         ${uploadLine}
         <div><dt>Start</dt><dd>${d.visitStart.actual || '—'}</dd></div>
         <div><dt>Stop</dt><dd>${d.visitStop.actual || '—'}</dd></div>
-        <div><dt>Mileage</dt><dd>${d.mileage?.leg ? `${d.mileage.leg.from} → ${d.mileage.leg.to} (${d.mileage.leg.miles ?? '—'} mi)` : '—'}</dd></div>
+        <div><dt>Mileage</dt><dd>${d.mileage?.leg ? formatMileageTravel(d.mileage.leg) : '—'}</dd></div>
       </dl>
       ${unmetHtml}
       <p class="overlay-meta">Every section stays editable until you seal. Use the sidebar to jump anywhere — nothing is locked. Photo captures upload in the background; Finish stays off until all uploads succeed.</p>`;
