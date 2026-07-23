@@ -74,10 +74,11 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-app.listen(PORT, () => {
+// Bind 0.0.0.0 so Railway's edge proxy can reach the process (not only loopback).
+app.listen(PORT, '0.0.0.0', () => {
   // Load photo-delivery at boot for config visibility only — does not scan visits or send.
   const photoEnabled = isPhotoDeliveryEnabled();
-  console.log(`cp_scheduler listening on http://127.0.0.1:${PORT}`);
+  console.log(`cp_scheduler listening on http://0.0.0.0:${PORT}`);
   console.log(
     `[photo-delivery] module loaded · PHOTO_DELIVERY_ENABLED=${photoEnabled ? '1' : '0'} · PHOTO_SENDER_FROM=${photoSenderFrom()} · trigger=event-driven (no boot send)`
   );
