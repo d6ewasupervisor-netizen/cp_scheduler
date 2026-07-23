@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, before, after } = require('node:test');
+const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
@@ -259,6 +259,7 @@ describe('category photos assigned from after library', () => {
 
 describe('mileage: previousCompletedStoreForDay (mid-day leg selection)', () => {
   const date = '2026-07-14';
+  beforeEach(cleanup);
 
   it('returns null when nothing else has been started yet today', () => {
     store.startVisit({
