@@ -11,10 +11,13 @@
  */
 
 const STORAGE_KEY = 'cp_prod_sync_meta_v1';
-/** Don't auto-hit PROD more than once per week per this window (session). */
-const SESSION_TTL_MS = 8 * 60 * 1000; // 8 minutes
+/**
+ * Don't auto-hit PROD more than once per week inside this browser window.
+ * Aligned with hourly background warmth so Shift Day ↔ Schedule nav stays instant.
+ */
+const SESSION_TTL_MS = 55 * 60 * 1000; // 55 minutes
 /** Server lastSyncedAt older than this → worth a quiet auto pull. */
-const STALE_MS = 20 * 60 * 1000; // 20 minutes
+const STALE_MS = 60 * 60 * 1000; // 1 hour
 
 function readMeta() {
   try {

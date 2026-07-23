@@ -14,6 +14,19 @@ import {
 import { initAppShell } from '/ux/app-shell.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
 import { needsProdSync, markProdSynced } from '/ux/prod-sync.js';
+import {
+  getCachedSchedule,
+  putCachedSchedule,
+  getCachedWeeks,
+  putCachedWeeks,
+  getCachedReps,
+  putCachedReps,
+  getCachedDrafts,
+  putCachedDrafts,
+  startScheduleWarmth,
+  registerAppServiceWorker,
+  preloadFieldData,
+} from '/ux/schedule-cache.js';
 
 const state = {
   user: null,
@@ -216,21 +229,38 @@ function renderSchedule() {
 async function ensureSchedule(repKey) {
   const week = currentWeek();
   if (!week) return;
-  const cacheKey = `${repKey}:${week.start}`;
   if (state.schedules[repKey]?._weekStart === week.start) return;
 
-  const data = await api(
-    `/shift-day/schedule?rep=${encodeURIComponent(repKey)}&weekStart=${encodeURIComponent(week.start)}`
-  );
-  state.schedules[repKey] = { ...data, _weekStart: week.start };
+  // Paint from IndexedDB immediately when memory is cold (tab switch).
+  const idb = await getCachedSchedule(repKey, week.start);
+  if (idb) {
+    state.schedules[repKey] = { ...idb, _weekStart: week.start };
+    const idbDrafts = await getCachedDrafts(repKey);
+    if (idbDrafts) {
+      const map = {};
+      for (const d of idbDrafts) map[draftKey(d.date, d.actualStore)] = d;
+      state.drafts[repKey] = map;
+    }
+  }
+
+  try {
+    const data = await api(
+      `/shift-day/schedule?rep=${encodeURIComponent(repKey)}&weekStart=${encodeURIComponent(week.start)}`
+    );
+    state.schedules[repKey] = { ...data, _weekStart: week.start };
+    await putCachedSchedule(repKey, week.start, data);
+  } catch (err) {
+    if (!state.schedules[repKey]) throw err;
+  }
 
   try {
     const drafts = await api(`/shift-day/visit/mine?rep=${encodeURIComponent(repKey)}`);
     const map = {};
     for (const d of drafts || []) map[draftKey(d.date, d.actualStore)] = d;
     state.drafts[repKey] = map;
+    await putCachedDrafts(repKey, drafts || []);
   } catch {
-    state.drafts[repKey] = {};
+    if (!state.drafts[repKey]) state.drafts[repKey] = {};
   }
 }
 
@@ -439,8 +469,27 @@ async function init() {
   initAppShell({ isAdmin: !!state.user.isAdmin, active: 'dashboard', bottomNav: true });
 
   try {
-    state.reps = await api('/shift-day/reps');
-    state.weeks = await api('/shift-day/weeks');
+    const cachedReps = await getCachedReps();
+    const cachedWeeks = await getCachedWeeks();
+    if (cachedReps?.length) state.reps = cachedReps;
+    if (cachedWeeks?.length) {
+      state.weeks = cachedWeeks;
+      state.weekIndex = defaultWeekIndex(state.weeks);
+    }
+
+    try {
+      state.reps = await api('/shift-day/reps');
+      await putCachedReps(state.reps);
+    } catch (err) {
+      if (!state.reps?.length) throw err;
+    }
+    try {
+      state.weeks = await api('/shift-day/weeks');
+      await putCachedWeeks(state.weeks);
+    } catch (err) {
+      if (!state.weeks?.length) throw err;
+      toast('Using cached weeks (network slow)', 'warn', 2800);
+    }
     state.weekIndex = defaultWeekIndex(state.weeks);
 
     const params = new URLSearchParams(location.search);
@@ -497,6 +546,32 @@ async function init() {
     // Load cached week first; PROD only if stale / missing / first session open
     await loadActiveWeek({ resync: 'auto', silent: true });
     startLiveMonitorPoll();
+
+    startScheduleWarmth({
+      api,
+      getRepKey: () => state.activeRepKey,
+      getWeekStart: () => currentWeek()?.start || null,
+      onUpdated: ({ schedule, drafts }) => {
+        const week = currentWeek();
+        const repKey = state.activeRepKey;
+        if (!week || !repKey || !schedule) return;
+        state.schedules[repKey] = { ...schedule, _weekStart: week.start };
+        if (drafts) {
+          const map = {};
+          for (const d of drafts) map[draftKey(d.date, d.actualStore)] = d;
+          state.drafts[repKey] = map;
+        }
+        renderSchedule();
+      },
+    });
+    registerAppServiceWorker();
+    if (state.activeRepKey) {
+      preloadFieldData({
+        api,
+        repKey: state.activeRepKey,
+        weekStart: currentWeek()?.start,
+      }).catch(() => {});
+    }
 
     // SAS auth recovered → worth a fresh pull
     window.addEventListener('cp-sas-auth', (ev) => {

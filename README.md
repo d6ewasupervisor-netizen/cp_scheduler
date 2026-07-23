@@ -72,6 +72,10 @@ Uses `Procfile` (`web: node src/server.js`). Set `PORT` automatically on Railway
 
 Open tabs poll `/app-version.json` every 2 minutes and auto-reload when you ship a new build (same idea as the EOD app). When releasing UI changes, bump **both** `public/app-version.json` and `CP_APP_VERSION` in `public/hotfix.js` in the same commit. Details: [`docs/hotfix.md`](docs/hotfix.md).
 
+### Field schedule cache / preload
+
+Shift Day and Schedule paint from IndexedDB first, then quiet-refresh. Auto PROD pulls are ~hourly; a shell service worker caches app assets for faster return visits. Buffering cat still flashes (~480ms min). Details: [`docs/schedule-cache.md`](docs/schedule-cache.md).
+
 ### Auth (shared with eod-api / The Dump Bin)
 
 Uses the same magic-link session JWT and Postgres `allowed_emails` table as **eod-api**. Sign-in and access requests go through eod-api; cp_scheduler verifies the session locally.

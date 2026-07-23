@@ -2,18 +2,22 @@
  * Global buffering overlay — shows the cat asset when the UI is unusable.
  * Reference-counted so nested ops don't dismiss early.
  * Debounces short flashes (~280ms) unless force: true.
+ * Once shown, stays up at least MIN_VISIBLE_MS (fun cat flash even on cache hits).
  * Night → bufferingcat.gif · Light → buffering_light.gif
  */
 
 const DEBOUNCE_MS = 280;
+const MIN_VISIBLE_MS = 480;
 const ASSET_DARK = '/assets/bufferingcat.gif';
 const ASSET_LIGHT = '/assets/buffering_light.gif';
 
 let depth = 0;
 let showTimer = null;
+let hideTimer = null;
 let overlayEl = null;
 let labelEl = null;
 let imgEl = null;
+let shownAt = 0;
 
 function resolvedTheme() {
   return document.documentElement?.dataset?.theme === 'light' ? 'light' : 'dark';
@@ -53,19 +57,44 @@ function ensureOverlay() {
 }
 
 function paintOpen(label) {
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
   const el = ensureOverlay();
   syncAssetSrc();
   if (labelEl) labelEl.textContent = label || 'Buffering…';
+  const wasHidden = el.hidden;
   el.hidden = false;
   el.setAttribute('aria-busy', 'true');
   document.documentElement.classList.add('cp-busy');
+  if (wasHidden) shownAt = Date.now();
 }
 
-function paintClose() {
+function paintCloseNow() {
   if (!overlayEl) return;
   overlayEl.hidden = true;
   overlayEl.setAttribute('aria-busy', 'false');
   document.documentElement.classList.remove('cp-busy');
+  shownAt = 0;
+}
+
+function paintClose() {
+  if (!overlayEl || overlayEl.hidden) {
+    paintCloseNow();
+    return;
+  }
+  const elapsed = shownAt ? Date.now() - shownAt : MIN_VISIBLE_MS;
+  const remain = Math.max(0, MIN_VISIBLE_MS - elapsed);
+  if (remain <= 0) {
+    paintCloseNow();
+    return;
+  }
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    hideTimer = null;
+    if (depth === 0) paintCloseNow();
+  }, remain);
 }
 
 /**
@@ -84,7 +113,7 @@ export function beginBusy(label = 'Buffering…', opts = {}) {
     paintOpen(label);
     return;
   }
-  if (depth === 1 && !showTimer) {
+  if (depth === 1 && !showTimer && overlayEl?.hidden !== false) {
     showTimer = setTimeout(() => {
       showTimer = null;
       if (depth > 0) paintOpen(labelEl?.textContent || label);
@@ -98,6 +127,8 @@ export function endBusy() {
   if (showTimer) {
     clearTimeout(showTimer);
     showTimer = null;
+    // Never opened — no min flash needed
+    return;
   }
   paintClose();
 }

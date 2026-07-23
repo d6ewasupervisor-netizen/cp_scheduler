@@ -1,12 +1,18 @@
 /**
- * IndexedDB offline safety net for visit photos (and optional draft patches).
- * Photos are written here before network upload so a refresh can't lose them.
+ * IndexedDB offline safety net:
+ *  - visit photos / draft patches (upload resilience)
+ *  - schedule weeks / shifts / drafts / match (instant Shift Day ↔ Schedule)
  */
 
 const DB_NAME = 'cp_offline_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PHOTOS = 'photos';
 const STORE_PATCHES = 'patches';
+const STORE_SCHEDULES = 'schedules';
+const STORE_WEEKS = 'weeks';
+const STORE_REPS = 'reps';
+const STORE_DRAFTS = 'drafts';
+const STORE_MATCH = 'match';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -26,6 +32,21 @@ function openDb() {
         const s = db.createObjectStore(STORE_PATCHES, { keyPath: 'id' });
         s.createIndex('byVisit', 'visitKey', { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORE_SCHEDULES)) {
+        db.createObjectStore(STORE_SCHEDULES, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_WEEKS)) {
+        db.createObjectStore(STORE_WEEKS, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_REPS)) {
+        db.createObjectStore(STORE_REPS, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_DRAFTS)) {
+        db.createObjectStore(STORE_DRAFTS, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_MATCH)) {
+        db.createObjectStore(STORE_MATCH, { keyPath: 'key' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error('IDB open failed'));
@@ -36,12 +57,43 @@ function visitKey(repKey, date, actualStore) {
   return `${repKey}|${date}|${actualStore}`;
 }
 
+function scheduleKey(repKey, weekStart) {
+  return `${repKey}|${weekStart}`;
+}
+
 function txDone(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('tx aborted'));
   });
+}
+
+async function idbGet(storeName, key) {
+  const db = await openDb();
+  try {
+    const tx = db.transaction(storeName, 'readonly');
+    const req = tx.objectStore(storeName).get(key);
+    const row = await new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    await txDone(tx);
+    return row;
+  } finally {
+    db.close();
+  }
+}
+
+async function idbPut(storeName, row) {
+  const db = await openDb();
+  try {
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.objectStore(storeName).put(row);
+    await txDone(tx);
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -172,4 +224,96 @@ export async function listDraftPatches(forVisit = null) {
   return rows.filter((r) => r.visitKey === vk);
 }
 
-export { visitKey };
+/* ---------- Schedule / weeks / drafts cache (field speed) ---------- */
+
+export async function putCachedSchedule(repKey, weekStart, payload) {
+  if (!repKey || !weekStart || !payload) return;
+  await idbPut(STORE_SCHEDULES, {
+    key: scheduleKey(repKey, weekStart),
+    repKey,
+    weekStart,
+    payload,
+    cachedAt: Date.now(),
+  });
+}
+
+export async function getCachedSchedule(repKey, weekStart) {
+  if (!repKey || !weekStart) return null;
+  try {
+    const row = await idbGet(STORE_SCHEDULES, scheduleKey(repKey, weekStart));
+    return row?.payload || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCachedWeeks(weeks) {
+  if (!Array.isArray(weeks)) return;
+  await idbPut(STORE_WEEKS, { key: 'all', weeks, cachedAt: Date.now() });
+}
+
+export async function getCachedWeeks() {
+  try {
+    const row = await idbGet(STORE_WEEKS, 'all');
+    return row?.weeks || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCachedReps(reps) {
+  if (!Array.isArray(reps)) return;
+  await idbPut(STORE_REPS, { key: 'all', reps, cachedAt: Date.now() });
+}
+
+export async function getCachedReps() {
+  try {
+    const row = await idbGet(STORE_REPS, 'all');
+    return row?.reps || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCachedDrafts(repKey, drafts) {
+  if (!repKey) return;
+  await idbPut(STORE_DRAFTS, {
+    key: String(repKey),
+    repKey,
+    drafts: Array.isArray(drafts) ? drafts : [],
+    cachedAt: Date.now(),
+  });
+}
+
+export async function getCachedDrafts(repKey) {
+  if (!repKey) return null;
+  try {
+    const row = await idbGet(STORE_DRAFTS, String(repKey));
+    return row?.drafts || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCachedMatch(repKey, weekStart, byShift) {
+  if (!repKey || !weekStart) return;
+  await idbPut(STORE_MATCH, {
+    key: scheduleKey(repKey, weekStart),
+    repKey,
+    weekStart,
+    byShift: byShift || {},
+    cachedAt: Date.now(),
+  });
+}
+
+export async function getCachedMatch(repKey, weekStart) {
+  if (!repKey || !weekStart) return null;
+  try {
+    const row = await idbGet(STORE_MATCH, scheduleKey(repKey, weekStart));
+    return row?.byShift || null;
+  } catch {
+    return null;
+  }
+}
+
+export { visitKey, scheduleKey };

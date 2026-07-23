@@ -85,7 +85,7 @@ app.use(
   express.static(PUBLIC_DIR, {
     setHeaders(res, filePath) {
       const base = path.basename(filePath).toLowerCase();
-      if (base === 'app-version.json' || base.endsWith('.html')) {
+      if (base === 'app-version.json' || base === 'sw.js' || base.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
       } else if (/\.(js|css)$/i.test(base)) {

@@ -21,6 +21,19 @@ import { initAppShell } from '/ux/app-shell.js';
 import { mountThemeToggle } from '/ux/theme.js';
 import { beginBusy, endBusy } from '/ux/buffering.js';
 import { needsProdSync, markProdSynced } from '/ux/prod-sync.js';
+import {
+  getCachedSchedule,
+  putCachedSchedule,
+  getCachedWeeks,
+  putCachedWeeks,
+  getCachedDrafts,
+  putCachedDrafts,
+  getCachedMatch,
+  putCachedMatch,
+  startScheduleWarmth,
+  registerAppServiceWorker,
+  preloadFieldData,
+} from '/ux/schedule-cache.js';
 
 const state = {
   user: null,
@@ -308,24 +321,61 @@ async function moveSelected() {
   }
 }
 
+function applyDraftList(drafts) {
+  state.draftByShift = {};
+  for (const d of drafts || []) state.draftByShift[draftKey(d.date, d.actualStore)] = d;
+}
+
+function applySchedulePayload(data, week) {
+  if (!data) return;
+  state.rep = data.rep;
+  state.shifts = data.shifts || [];
+  if ($('sdBannerTitle') && data.rep?.name) $('sdBannerTitle').textContent = data.rep.name;
+  if ($('sdBannerMeta')) {
+    $('sdBannerMeta').textContent = `${state.shifts.length} shifts · ${week?.label || ''}`.trim();
+  }
+  if ($('sdSubtitle') && data.rep?.name) $('sdSubtitle').textContent = data.rep.name;
+  const stale = data.matchStale ? ' · MATCH STALE — tap Resync from PROD' : '';
+  const synced = data.lastSyncedAt
+    ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}`
+    : '';
+  if ($('sdWeekStatus')) {
+    $('sdWeekStatus').textContent = data.source
+      ? `Schedule source: ${data.source}${synced}${stale}`
+      : `No schedule for this week yet — tap Resync from PROD${stale}`;
+  }
+  if ($('sdResyncHint')) {
+    $('sdResyncHint').textContent = data.matchStale
+      ? 'Schedule may be out of date — tap Resync from PROD.'
+      : 'Uses the last saved week when fresh. Background refresh checks hourly.';
+  }
+}
+
 async function loadMatch() {
+  const week = currentWeek();
+  if (!week) return;
+  const cached = await getCachedMatch(state.repKey, week.start);
+  if (cached) state.matchByShift = cached;
   try {
     const data = await api(
-      `/shift-day/match-status?rep=${encodeURIComponent(state.repKey)}&weekStart=${currentWeek().start}&supervisorId=${encodeURIComponent(state.supervisorId)}`
+      `/shift-day/match-status?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}&supervisorId=${encodeURIComponent(state.supervisorId)}`
     );
     state.matchByShift = data.byShift || {};
+    await putCachedMatch(state.repKey, week.start, state.matchByShift);
   } catch {
-    state.matchByShift = {};
+    if (!cached) state.matchByShift = {};
   }
 }
 
 async function loadDrafts() {
+  const cached = await getCachedDrafts(state.repKey);
+  if (cached) applyDraftList(cached);
   try {
     const drafts = await api(`/shift-day/visit/mine?rep=${encodeURIComponent(state.repKey)}`);
-    state.draftByShift = {};
-    for (const d of drafts) state.draftByShift[draftKey(d.date, d.actualStore)] = d;
+    applyDraftList(drafts);
+    await putCachedDrafts(state.repKey, drafts || []);
   } catch {
-    state.draftByShift = {};
+    if (!cached) state.draftByShift = {};
   }
 }
 
@@ -397,15 +447,26 @@ async function loadWeek({ resync = false, silent = false, force = false } = {}) 
   $('sdWeekDates').textContent = `${shortDate(week.start)} – ${shortDate(week.end)}`;
   $('sdWeekSelect').value = String(state.weekIndex);
 
-  // Peek local schedule first so auto can see matchStale / lastSyncedAt without a PROD hit
-  let peek = null;
+  // Instant paint from IndexedDB so tab switches don't wait on the network.
+  const idbSchedule = await getCachedSchedule(state.repKey, week.start);
+  if (idbSchedule) {
+    applySchedulePayload(idbSchedule, week);
+    const idbDrafts = await getCachedDrafts(state.repKey);
+    if (idbDrafts) applyDraftList(idbDrafts);
+    const idbMatch = await getCachedMatch(state.repKey, week.start);
+    if (idbMatch) state.matchByShift = idbMatch;
+    renderCalendar();
+  }
+
+  // Peek server schedule (fast local API) so auto can see matchStale / lastSyncedAt
+  let peek = idbSchedule;
   if (resync === 'auto' && !force) {
     try {
       peek = await api(
         `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
       );
     } catch {
-      peek = null;
+      peek = idbSchedule;
     }
   }
 
@@ -438,31 +499,26 @@ async function loadWeek({ resync = false, silent = false, force = false } = {}) 
     }
   }
 
-  const data =
-    peek ||
-    (await api(
-      `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
-    ));
+  let data = peek;
+  if (!data) {
+    try {
+      data = await api(
+        `/shift-day/schedule?rep=${encodeURIComponent(state.repKey)}&weekStart=${week.start}`
+      );
+    } catch (err) {
+      if (idbSchedule) {
+        data = idbSchedule;
+        toast('Showing cached schedule (offline or slow network)', 'warn', 3500);
+      } else {
+        throw err;
+      }
+    }
+  }
   // Fresh enough without a new PROD pull — still mark session so sibling pages skip
   if (!doSync && data?.lastSyncedAt) markProdSynced(week.start);
 
-  state.rep = data.rep;
-  state.shifts = data.shifts || [];
-  $('sdBannerTitle').textContent = data.rep.name;
-  $('sdBannerMeta').textContent = `${state.shifts.length} shifts · ${week.label}`;
-  $('sdSubtitle').textContent = data.rep.name;
-  const stale = data.matchStale ? ' · MATCH STALE — tap Resync from PROD' : '';
-  const synced = data.lastSyncedAt
-    ? ` · last sync ${new Date(data.lastSyncedAt).toLocaleString()}`
-    : '';
-  $('sdWeekStatus').textContent = data.source
-    ? `Schedule source: ${data.source}${synced}${stale}`
-    : `No schedule for this week yet — tap Resync from PROD${stale}`;
-  if ($('sdResyncHint')) {
-    $('sdResyncHint').textContent = data.matchStale
-      ? 'Schedule may be out of date — tap Resync from PROD.'
-      : 'Uses the last saved week when fresh. Resync only when PROD changed or status looks wrong.';
-  }
+  applySchedulePayload(data, week);
+  await putCachedSchedule(state.repKey, week.start, data);
 
   await loadMatch();
   await loadDrafts();
@@ -570,7 +626,19 @@ async function init() {
   $('sdApp').hidden = false;
   $('sdSticky').hidden = false;
 
-  state.weeks = await api('/shift-day/weeks');
+  // Prefer IDB weeks for instant week chrome; refresh from network.
+  const cachedWeeks = await getCachedWeeks();
+  if (cachedWeeks?.length) {
+    state.weeks = cachedWeeks;
+    state.weekIndex = defaultWeekIndex(state.weeks);
+  }
+  try {
+    state.weeks = await api('/shift-day/weeks');
+    await putCachedWeeks(state.weeks);
+  } catch (err) {
+    if (!state.weeks?.length) throw err;
+    toast('Using cached weeks (network slow)', 'warn', 2800);
+  }
   state.weekIndex = defaultWeekIndex(state.weeks);
   const params = new URLSearchParams(location.search);
   const qWeek = params.get('weekStart');
@@ -759,6 +827,22 @@ async function init() {
 
   // Cached week when fresh; PROD only if stale / missing / first session open
   await loadWeek({ resync: 'auto', silent: true });
+
+  // Hourly quiet refresh + shell SW for faster return visits
+  startScheduleWarmth({
+    api,
+    getRepKey: () => state.repKey,
+    getWeekStart: () => currentWeek()?.start || null,
+    onUpdated: ({ schedule, drafts }) => {
+      const week = currentWeek();
+      if (!week || !schedule) return;
+      applySchedulePayload(schedule, week);
+      if (drafts) applyDraftList(drafts);
+      renderCalendar();
+    },
+  });
+  registerAppServiceWorker();
+  preloadFieldData({ api, repKey: state.repKey, weekStart: currentWeek()?.start }).catch(() => {});
 
   // SAS auth recovered → force a fresh pull
   window.addEventListener('cp-sas-auth', (ev) => {

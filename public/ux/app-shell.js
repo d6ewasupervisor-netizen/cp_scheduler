@@ -92,7 +92,13 @@ export function mountChromeThemeToggle() {
 }
 
 /**
- * @param {{ isAdmin?: boolean, active?: string, bottomNav?: boolean, navGuard?: object }} opts
+ * @param {{
+ *   isAdmin?: boolean,
+ *   active?: string,
+ *   bottomNav?: boolean,
+ *   navGuard?: object,
+ *   preload?: { repKey?: string, weekStart?: string|null, api?: Function }|false,
+ * }} opts
  */
 export function initAppShell(opts = {}) {
   initTheme();
@@ -104,6 +110,25 @@ export function initAppShell(opts = {}) {
     });
   }
   initNavGuard(opts.navGuard || {});
+
+  // Fire-and-forget: warm IndexedDB + register shell SW so the next tab is instant.
+  if (opts.preload !== false) {
+    import('/ux/schedule-cache.js')
+      .then((m) => {
+        m.registerAppServiceWorker();
+        const repKey = opts.preload?.repKey;
+        const api = opts.preload?.api;
+        if (repKey && api) {
+          return m.preloadFieldData({
+            api,
+            repKey,
+            weekStart: opts.preload?.weekStart || null,
+          });
+        }
+        return null;
+      })
+      .catch(() => {});
+  }
 }
 
 export { initTheme, mountThemeToggle, TABS, detectActive };
