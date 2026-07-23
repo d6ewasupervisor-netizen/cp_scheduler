@@ -1670,4 +1670,83 @@ router.post('/shift-day/photo-delivery/resend-failed', requireAdmin, async (req,
   }
 });
 
+/* ---------- 24-hour photo share boards (admin only, tracked) ---------- */
+
+const photoShareStore = require('../lib/photo-share-store');
+
+function shareUrlFor(req, token) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.get('host');
+  return `${proto}://${host}/share.html?t=${encodeURIComponent(token)}`;
+}
+
+function shareForUi(req, share) {
+  return {
+    token: share.token,
+    url: shareUrlFor(req, share.token),
+    repKey: share.repKey,
+    date: share.date,
+    actualStore: share.actualStore,
+    createdBy: share.createdBy,
+    createdAt: share.createdAt,
+    expiresAt: share.expiresAt,
+    revokedAt: share.revokedAt,
+    active: photoShareStore.isActive(share),
+    viewCount: share.viewCount || 0,
+    lastViewedAt: share.lastViewedAt || null,
+  };
+}
+
+/**
+ * POST /shift-day/visit/share — create (or return the existing active)
+ * 24-hour public photo board link for one visit. Body: { repKey, date, actualStore }
+ */
+router.post('/shift-day/visit/share', requireAdmin, (req, res) => {
+  const { repKey, date, actualStore } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  const draft = visitDraftStore.getDraft(repKey, date, actualStore);
+  if (!draft) return res.status(404).json({ error: 'Visit draft not found' });
+  try {
+    const share = photoShareStore.createShare({
+      repKey,
+      date,
+      actualStore,
+      createdBy: req.user?.email || null,
+    });
+    res.json({ ok: true, share: shareForUi(req, share) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /shift-day/visit/shares — all share links + view tracking.
+ * Optional filters: ?rep=&date=&store=
+ */
+router.get('/shift-day/visit/shares', requireAdmin, (req, res) => {
+  const shares = photoShareStore.listShares({
+    repKey: req.query.rep || null,
+    date: req.query.date || null,
+    actualStore: req.query.store != null && req.query.store !== '' ? req.query.store : null,
+  });
+  res.json({
+    ok: true,
+    shares: shares.map((s) => ({
+      ...shareForUi(req, s),
+      views: (s.views || []).slice(-25).reverse(),
+    })),
+  });
+});
+
+/** POST /shift-day/visit/share/revoke — turn a link off early. Body: { token } */
+router.post('/shift-day/visit/share/revoke', requireAdmin, (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'token required' });
+  const share = photoShareStore.revokeShare(token);
+  if (!share) return res.status(404).json({ error: 'Share not found' });
+  res.json({ ok: true, share: shareForUi(req, share) });
+});
+
 module.exports = router;

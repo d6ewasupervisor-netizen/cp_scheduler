@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f16">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Visit Photos — Central Pet</title>
+  <style>
+    :root {
+      --bg: #0b0f16;
+      --surface: #121926;
+      --surface-2: #1a2432;
+      --border: #223047;
+      --text: #e8edf5;
+      --muted: #9aa3b2;
+      --accent: #4f8ef7;
+      --warn: #e8b33d;
+      --bad: #f0655a;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 3rem; }
+    header { padding: 0.4rem 0 0.8rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    h1 { margin: 0 0 0.2rem; font-size: 1.25rem; }
+    .meta { color: var(--muted); font-size: 0.85rem; }
+    .expiry {
+      display: inline-block;
+      margin-top: 0.45rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--warn);
+    }
+    h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.6rem;
+    }
+    .grid a {
+      display: block;
+      aspect-ratio: 1;
+      border-radius: 0.55rem;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface-2) center/cover no-repeat;
+      position: relative;
+    }
+    .grid a span {
+      position: absolute;
+      left: 0.3rem;
+      bottom: 0.3rem;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 0.68rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.35rem;
+    }
+    .state { padding: 2.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.95rem; }
+    .state.error { color: var(--bad); }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.75rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 id="title">Visit photos</h1>
+      <div class="meta" id="meta">Loading…</div>
+      <div class="expiry" id="expiry" hidden></div>
+    </header>
+    <div id="content"><div class="state">Loading photos…</div></div>
+    <footer>This link expires 24 hours after it was created. Retail Odyssey · Central Pet.</footer>
+  </div>
+  <script>
+    (async () => {
+      const token = new URLSearchParams(location.search).get('t') || '';
+      const content = document.getElementById('content');
+      if (!token) {
+        content.innerHTML = '<div class="state error">Missing share token.</div>';
+        return;
+      }
+      let data;
+      try {
+        const res = await fetch('/api/share/' + encodeURIComponent(token));
+        data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+      } catch (err) {
+        content.innerHTML = '<div class="state error">' + (err.message || 'Could not load photos.') + '</div>';
+        return;
+      }
+
+      document.getElementById('title').textContent = 'Store ' + data.store + ' — visit photos';
+      const day = new Date(data.date + 'T12:00:00').toLocaleDateString(undefined, {
+        weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
+      });
+      document.getElementById('meta').textContent = day + ' · ' + data.photoCount + ' photo(s)';
+
+      const expiryEl = document.getElementById('expiry');
+      expiryEl.hidden = false;
+      const tick = () => {
+        const ms = new Date(data.expiresAt).getTime() - Date.now();
+        if (ms <= 0) {
+          expiryEl.textContent = 'This link has expired.';
+          return;
+        }
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        expiryEl.textContent = 'Link expires in ' + (h ? h + 'h ' : '') + m + 'm';
+        setTimeout(tick, 30000);
+      };
+      tick();
+
+      if (!data.groups?.length) {
+        content.innerHTML = '<div class="state">No photos on this visit yet.</div>';
+        return;
+      }
+      content.innerHTML = data.groups
+        .map((g) =>
+          '<h2>' + g.label + ' (' + g.photos.length + ')</h2><div class="grid">' +
+          g.photos
+            .map(
+              (p) =>
+                '<a href="' + p.url + '" target="_blank" rel="noopener" style="background-image:url(\'' +
+                p.url + '\')"><span>#' + p.seq + '</span></a>'
+            )
+            .join('') +
+          '</div>'
+        )
+        .join('');
+    })();
+  </script>
+</body>
+</html>

@@ -134,7 +134,26 @@ function evalCondition(cond, answers) {
   return true;
 }
 
-export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
+/** Sections of the single scroll page — sidebar links + status dots. */
+const VISIT_SECTIONS = [
+  { id: 'shift-start', label: 'Start of shift' },
+  { id: 'before-photos', label: 'Before photos' },
+  { id: 'survey-section', label: 'Questions' },
+  { id: 'after-photos', label: 'After photos' },
+  { id: 'time-section', label: 'Confirm time & mileage' },
+];
+
+/** Map an unmet-requirement anchor to its page section id. */
+function sectionForAnchor(anchor) {
+  if (!anchor) return 'time-section';
+  if (anchor === 'shift-start') return 'shift-start';
+  if (anchor === 'before-photos') return 'before-photos';
+  if (anchor.startsWith('survey-')) return 'survey-section';
+  if (anchor.startsWith('after-photos')) return 'after-photos';
+  return 'time-section'; // time-stop, time-mileage, time
+}
+
+export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmin = () => false }) {
   const vf = {
     shift: null,
     draft: null,
@@ -450,6 +469,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         <div class="vf-live-top">
           <span id="vfLiveTitle" class="vf-live-title">Camera</span>
           <span id="vfLiveCount" class="vf-live-count">0 captured</span>
+          <span class="vf-live-tools">
+            <button type="button" class="vf-live-tool" id="vfLiveTorch" aria-label="Flashlight" hidden>🔦</button>
+            <button type="button" class="vf-live-tool" id="vfLiveSwitch" aria-label="Switch camera" hidden>⟲</button>
+          </span>
         </div>
         <button type="button" class="vf-live-photo-toggle" id="vfLivePhotoToggle" aria-expanded="false">Photos (0)</button>
         <div class="vf-live-photo-drawer" id="vfLivePhotoDrawer">
@@ -483,6 +506,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (wasAfter) await classifyAfterPhotosQuiet();
     });
     overlay.querySelector('#vfLiveShutter').addEventListener('click', () => captureLiveFrame());
+    overlay.querySelector('#vfLiveSwitch')?.addEventListener('click', () => switchLiveCamera());
+    overlay.querySelector('#vfLiveTorch')?.addEventListener('click', () => toggleLiveTorch());
     overlay.querySelector('#vfLivePhotoToggle')?.addEventListener('click', () => toggleLivePhotoDrawer());
     overlay.querySelector('#vfLiveZoomRange')?.addEventListener('input', (e) =>
       applyLiveZoom(Number(e.target.value))
@@ -670,6 +695,126 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     }
   }
 
+  /**
+   * Start (or restart) the live stream on a specific device.
+   * No artificial caps: asks for the sensor's max resolution and exposes the
+   * hardware's full zoom range, torch, and every lens the device has.
+   */
+  async function startLiveStream({ deviceId = null } = {}) {
+    const cam = vf.liveCam;
+    if (!cam) return;
+
+    // Stop any existing tracks before opening the next lens.
+    if (cam.stream) {
+      try {
+        cam.stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const videoConstraints = {
+      width: { ideal: 4096 },
+      height: { ideal: 2160 },
+    };
+    if (deviceId) {
+      videoConstraints.deviceId = { exact: deviceId };
+    } else {
+      videoConstraints.facingMode = { ideal: 'environment' };
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: videoConstraints,
+    });
+    const track = stream.getVideoTracks()[0];
+
+    let hardwareMin = 1;
+    let hardwareMax = LIVE_CAMERA_ZOOM_MAX;
+    let hardwareCapable = false;
+    let torchCapable = false;
+    try {
+      const caps = track.getCapabilities?.();
+      if (caps?.zoom) {
+        hardwareCapable = true;
+        hardwareMin = caps.zoom.min ?? 1;
+        hardwareMax = caps.zoom.max ?? LIVE_CAMERA_ZOOM_MAX;
+      }
+      torchCapable = !!caps?.torch;
+    } catch {
+      /* digital preview/capture fallback */
+    }
+
+    cam.stream = stream;
+    cam.track = track;
+    cam.deviceId = track.getSettings?.().deviceId || deviceId || null;
+    cam.hardwareMin = hardwareMin;
+    cam.hardwareMax = hardwareMax;
+    cam.hardwareCapable = hardwareCapable;
+    cam.torchCapable = torchCapable;
+    cam.torchOn = false;
+    // Full range: digital 0.5× wide floor, hardware max ceiling (tele lenses go past 4×).
+    cam.zoomMin = Math.min(LIVE_CAMERA_ZOOM_MIN, hardwareMin);
+    cam.zoomMax = Math.max(LIVE_CAMERA_ZOOM_MAX, hardwareMax);
+    cam.zoom = Math.min(Math.max(cam.zoom ?? LIVE_CAMERA_ZOOM_DEFAULT, cam.zoomMin), cam.zoomMax);
+
+    const video = document.getElementById('vfLiveVideo');
+    video.srcObject = stream;
+    try {
+      await video.play();
+    } catch {
+      /* autoplay policies — still usually works after gesture */
+    }
+
+    // Labels only populate after permission — refresh the lens list now.
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      cam.devices = devices.filter((d) => d.kind === 'videoinput' && d.deviceId);
+    } catch {
+      cam.devices = [];
+    }
+
+    const switchBtn = document.getElementById('vfLiveSwitch');
+    if (switchBtn) switchBtn.hidden = (cam.devices?.length || 0) < 2;
+    const torchBtn = document.getElementById('vfLiveTorch');
+    if (torchBtn) {
+      torchBtn.hidden = !torchCapable;
+      torchBtn.classList.remove('on');
+    }
+
+    setupLiveCameraZoom();
+    await applyLiveZoom(cam.zoom);
+  }
+
+  /** Cycle to the device's next lens/camera — captured photos keep flowing to the same visit. */
+  async function switchLiveCamera() {
+    const cam = vf.liveCam;
+    if (!cam || !(cam.devices?.length > 1)) return;
+    const idx = cam.devices.findIndex((d) => d.deviceId === cam.deviceId);
+    const next = cam.devices[(idx + 1) % cam.devices.length];
+    try {
+      await startLiveStream({ deviceId: next.deviceId });
+      updateLiveCameraChrome();
+      const label = next.label || `Camera ${((idx + 1) % cam.devices.length) + 1}`;
+      toast(label, 'ok', 1800);
+    } catch (err) {
+      toast(`Could not switch camera: ${err.message || err.name}`, 'bad', 3500);
+    }
+  }
+
+  async function toggleLiveTorch() {
+    const cam = vf.liveCam;
+    if (!cam?.torchCapable || !cam.track?.applyConstraints) return;
+    const on = !cam.torchOn;
+    try {
+      await cam.track.applyConstraints({ advanced: [{ torch: on }] });
+      cam.torchOn = on;
+      document.getElementById('vfLiveTorch')?.classList.toggle('on', on);
+    } catch {
+      toast('Flashlight not available on this lens', 'warn', 2500);
+    }
+  }
+
   async function openLiveCamera(kind) {
     if (!vf.draft) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -681,65 +826,37 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     const overlay = ensureLiveCameraDom();
     try {
       const wideDeviceId = await pickWideRearCameraDeviceId();
-      const videoConstraints = {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ zoom: LIVE_CAMERA_ZOOM_DEFAULT }],
-      };
-      if (wideDeviceId) videoConstraints.deviceId = { ideal: wideDeviceId };
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: videoConstraints,
-      });
-      const track = stream.getVideoTracks()[0];
-      let hardwareMin = 1;
-      let hardwareMax = LIVE_CAMERA_ZOOM_MAX;
-      let hardwareCapable = false;
-      try {
-        const caps = track.getCapabilities?.();
-        if (caps?.zoom) {
-          hardwareCapable = true;
-          hardwareMin = caps.zoom.min ?? 1;
-          hardwareMax = caps.zoom.max ?? LIVE_CAMERA_ZOOM_MAX;
-        }
-      } catch {
-        /* digital preview/capture fallback */
-      }
-      const zoomMin = Math.min(LIVE_CAMERA_ZOOM_MIN, hardwareMin);
-      const zoomMax = Math.max(LIVE_CAMERA_ZOOM_MAX, hardwareMax);
-      const zoom = Math.max(zoomMin, LIVE_CAMERA_ZOOM_DEFAULT);
-      const extra = { target: kind };
       vf.liveCam = {
         kind,
-        stream,
-        track,
+        stream: null,
+        track: null,
         count: 0,
-        extra,
-        zoomMin,
-        zoomMax,
-        zoom,
-        hardwareMin,
-        hardwareMax,
-        hardwareCapable,
+        extra: { target: kind },
+        devices: [],
+        deviceId: null,
+        zoomMin: LIVE_CAMERA_ZOOM_MIN,
+        zoomMax: LIVE_CAMERA_ZOOM_MAX,
+        zoom: LIVE_CAMERA_ZOOM_DEFAULT,
+        hardwareMin: 1,
+        hardwareMax: LIVE_CAMERA_ZOOM_MAX,
+        hardwareCapable: false,
+        torchCapable: false,
+        torchOn: false,
         photoDrawerOpen: false,
       };
-      const video = document.getElementById('vfLiveVideo');
-      video.srcObject = stream;
       try {
-        await video.play();
+        await startLiveStream({ deviceId: wideDeviceId });
       } catch {
-        /* autoplay policies — still usually works after gesture */
+        // Stale/blocked device id — fall back to the default environment camera.
+        await startLiveStream({ deviceId: null });
       }
       const thumbs = document.getElementById('vfLiveThumbs');
       if (thumbs) thumbs.innerHTML = '';
       toggleLivePhotoDrawer(false);
-      setupLiveCameraZoom();
-      await applyLiveZoom(zoom);
       updateLiveCameraChrome();
       overlay.hidden = false;
     } catch (err) {
+      stopLiveCamera({ rerender: false });
       vf.liveCam = null;
       toast(
         `Could not open camera: ${err.message || err.name || 'permission denied'}. Use the file capture button instead.`,
@@ -1018,12 +1135,40 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (anchorId) sec.id = anchorId;
     const head = document.createElement('h2');
     head.className = 'vf-block-head';
-    head.textContent = title;
+    const isSection = VISIT_SECTIONS.some((s) => s.id === anchorId);
+    if (isSection) {
+      const status = sectionDotStatuses()[anchorId] || 'todo';
+      const dot = document.createElement('span');
+      dot.className = 'vf-status-dot';
+      dot.dataset.section = anchorId;
+      dot.dataset.status = status;
+      head.appendChild(dot);
+    }
+    head.appendChild(document.createTextNode(title));
     sec.appendChild(head);
     return sec;
   }
 
   function appendSurveyInlinePhoto(wrap, q) {
+    // Q2 (Central Pet order in store?) — offer a load photo right on the answer.
+    if (q.id === 'q2') {
+      const ans = vf.draft.survey?.q2;
+      if (ans !== 'Yes') return;
+      const photo = vf.draft.loadCheck?.photo;
+      const extra = { target: 'load', status: 'yes' };
+      wrap.appendChild(
+        photoCaptureBlock({
+          label: 'Photo of the order / load (optional — retaking replaces it)',
+          photos: photo ? [photo] : [],
+          minRequired: 0,
+          anchorId: 'survey-q2-photo',
+          pending: photoQueue.pendingFor(extra),
+          extra,
+          onCapture: (file) => queuePhoto(file, extra),
+        })
+      );
+      return;
+    }
     const spec = SURVEY_INLINE_PHOTOS[q.id];
     if (!spec) return;
     const ans = vf.draft.survey?.[q.id];
@@ -1628,9 +1773,102 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   /* ---------- Sidebar + shell ---------- */
 
+  /** Per-section done/todo from the draft's unmet list (green = complete). */
+  function sectionDotStatuses() {
+    const unmet = vf.draft?.unmetRequirements || [];
+    const open = new Set(unmet.map((u) => sectionForAnchor(u.anchor)));
+    return Object.fromEntries(VISIT_SECTIONS.map((s) => [s.id, open.has(s.id) ? 'todo' : 'done']));
+  }
+
+  function statusDotHtml(status) {
+    const label = status === 'done' ? 'Complete' : 'Not done yet';
+    return `<span class="vf-status-dot" data-status="${status}" title="${label}" aria-label="${label}"></span>`;
+  }
+
+  /** Refresh every status dot in place (sidebar + block headers) — cheap. */
+  function updateSectionDots() {
+    if (!vf.draft) return;
+    const statuses = sectionDotStatuses();
+    for (const s of VISIT_SECTIONS) {
+      document
+        .querySelectorAll(`.vf-status-dot[data-section="${s.id}"]`)
+        .forEach((el) => el.setAttribute('data-status', statuses[s.id]));
+    }
+  }
+
+  function renderSidebarSections() {
+    const host = $('vfSidebarSections');
+    if (!host || !vf.draft) return;
+    const statuses = sectionDotStatuses();
+    host.innerHTML = VISIT_SECTIONS.map(
+      (s) => `
+      <button type="button" class="vf-nav-item vf-section-link" data-anchor="${s.id}">
+        <span class="vf-nav-label"><span class="vf-status-dot" data-section="${s.id}" data-status="${statuses[s.id]}"></span>${s.label}</span>
+      </button>`
+    ).join('');
+    host.querySelectorAll('.vf-section-link').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        closeSidebarDrawer();
+        goToSection('visit', btn.dataset.anchor);
+      });
+    });
+  }
+
+  function updateShareButton() {
+    const btn = $('vfShareVisit');
+    if (!btn) return;
+    const show = !!vf.draft && isAdmin();
+    btn.hidden = !show;
+    if (!show || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', async () => {
+      if (!vf.draft) return;
+      btn.disabled = true;
+      try {
+        const data = await apiCall('/shift-day/visit/share', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+          }),
+        });
+        const share = data.share;
+        let copied = false;
+        try {
+          await navigator.clipboard.writeText(share.url);
+          copied = true;
+        } catch {
+          /* clipboard blocked — show the link instead */
+        }
+        const hours = Math.max(1, Math.round((new Date(share.expiresAt) - Date.now()) / 3600000));
+        toast(
+          copied
+            ? `Share link copied — anyone with it can view photos for ~${hours}h (${share.viewCount} view(s) so far)`
+            : `Share link ready (~${hours}h): ${share.url}`,
+          'ok',
+          copied ? 6000 : 12000
+        );
+        if (navigator.share && !copied) {
+          try {
+            await navigator.share({ title: `Store ${vf.draft.actualStore} visit photos`, url: share.url });
+          } catch {
+            /* user cancelled */
+          }
+        }
+      } catch (err) {
+        toast(`Could not create share link: ${err.message}`, 'bad', 5000);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
   function renderSidebar() {
     updateFinishButton();
     updateSidebarMeta();
+    renderSidebarSections();
+    updateShareButton();
   }
 
   function updateSidebarMeta() {
@@ -1683,6 +1921,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function updateFinishButton() {
+    updateSectionDots();
     const btn = $('vfFinish');
     if (!btn || !vf.draft) return;
     btn.hidden = false;
@@ -2095,6 +2334,16 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   $('vfBackToSchedule')?.addEventListener('click', () => requestClose());
   $('vfClose')?.addEventListener('click', () => requestClose());
   $('vfSidebarToggle')?.addEventListener('click', toggleSidebarDrawer);
+
+  // Tap anywhere off the open sidebar drawer → collapse it.
+  document.addEventListener('pointerdown', (e) => {
+    const ws = workspaceEl();
+    if (!ws || ws.hidden || !ws.classList.contains('vf-sidebar-open')) return;
+    const sidebar = $('vfSidebar');
+    const toggle = $('vfSidebarToggle');
+    if (sidebar?.contains(e.target) || toggle?.contains(e.target)) return;
+    closeSidebarDrawer();
+  });
 
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => {

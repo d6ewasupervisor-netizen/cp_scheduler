@@ -271,7 +271,8 @@ label.field {
   letter-spacing: 0.04em;
 }
 
-select, input[type="email"], input[type="text"] {
+select, input[type="email"], input[type="text"], input[type="number"],
+input[type="date"], input[type="time"], input[type="datetime-local"] {
   font-family: var(--font);
   font-size: 0.95rem;
   color: var(--text);
@@ -282,6 +283,23 @@ select, input[type="email"], input[type="text"] {
   min-height: 44px;
 }
 select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Native pickers (datetime/date/time) follow the app theme instead of white chrome. */
+input[type="date"], input[type="time"], input[type="datetime-local"] {
+  color-scheme: dark;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+html[data-theme="light"] input[type="date"],
+html[data-theme="light"] input[type="time"],
+html[data-theme="light"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0.75;
+  cursor: pointer;
+}
 
 /* ---------- Layout shells ---------- */
 
@@ -1781,6 +1799,31 @@ body.mode-admin .day-col.eligible .day-head::after {
   font-weight: 600;
 }
 
+/* Green/red completion light — sidebar links + section headers on the page. */
+.vf-status-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  margin-right: 0.45rem;
+  vertical-align: baseline;
+  background: var(--bad);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad) 25%, transparent);
+  flex-shrink: 0;
+}
+.vf-status-dot[data-status="done"] {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.vf-nav-label { display: inline-flex; align-items: center; }
+
+.vf-sidebar-share {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+  margin-bottom: 0.4rem;
+}
+
 /* Mobile: collapsible drawer */
 .vf-sidebar-toggle { display: inline-flex; }
 
@@ -2543,6 +2586,31 @@ body.visit-workspace-open {
 }
 .vf-live-title { font-weight: 700; font-size: 0.95rem; }
 .vf-live-count { font-size: 0.85rem; opacity: 0.9; }
+
+.vf-live-tools {
+  display: inline-flex;
+  gap: 0.4rem;
+  pointer-events: auto;
+}
+.vf-live-tool {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.3rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 1.15rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vf-live-tool.on {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #000;
+}
 .vf-live-hint {
   position: absolute;
   left: 0;

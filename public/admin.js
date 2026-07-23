@@ -523,6 +523,16 @@ async function loadVisitDrafts() {
       host.innerHTML = '<div class="mw-row">No visit drafts yet.</div>';
       return;
     }
+    let sharesByDraft = {};
+    try {
+      const shareData = await api('/shift-day/visit/shares');
+      for (const s of shareData.shares || []) {
+        const key = `${s.repKey}|${s.date}|${s.actualStore}`;
+        if (!sharesByDraft[key] || s.active) sharesByDraft[key] = s;
+      }
+    } catch {
+      sharesByDraft = {};
+    }
     host.innerHTML = drafts
       .map((d) => {
         const tag = d.status === 'ready_for_prod' ? 'tag-ambiguous' : 'tag-unmatched';
@@ -532,9 +542,67 @@ async function loadVisitDrafts() {
         const resendBtn = failed
           ? ` <button type="button" class="subtle btn-resend-photos" data-rep="${escapeHtml(d.repKey)}" data-date="${escapeHtml(d.date)}" data-store="${escapeHtml(String(d.actualStore))}">Re-send failed</button>`
           : '';
-        return `<div class="mw-row"><span class="${tag}">${statusLabel}</span> ${escapeHtml(d.repKey)} · ${escapeHtml(d.date)} · store ${escapeHtml(String(d.actualStore))} · step ${escapeHtml(d.currentStep)} · updated ${new Date(d.updatedAt).toLocaleString()} · <span class="${pd.tag}">${escapeHtml(pd.text)}</span>${resendBtn}</div>`;
+        const shareKey = `${d.repKey}|${d.date}|${d.actualStore}`;
+        const share = sharesByDraft[shareKey];
+        const shareInfo = share?.active
+          ? ` <span class="tag-ambiguous" title="Expires ${new Date(share.expiresAt).toLocaleString()}">shared · ${share.viewCount} view(s)${share.lastViewedAt ? ` · last ${new Date(share.lastViewedAt).toLocaleString()}` : ''}</span>
+             <button type="button" class="subtle btn-copy-share" data-url="${escapeHtml(share.url)}">Copy link</button>
+             <button type="button" class="subtle btn-revoke-share" data-token="${escapeHtml(share.token)}">Turn off</button>`
+          : ` <button type="button" class="subtle btn-share-visit" data-rep="${escapeHtml(d.repKey)}" data-date="${escapeHtml(d.date)}" data-store="${escapeHtml(String(d.actualStore))}">Share photos (24h)</button>`;
+        return `<div class="mw-row"><span class="${tag}">${statusLabel}</span> ${escapeHtml(d.repKey)} · ${escapeHtml(d.date)} · store ${escapeHtml(String(d.actualStore))} · step ${escapeHtml(d.currentStep)} · updated ${new Date(d.updatedAt).toLocaleString()} · <span class="${pd.tag}">${escapeHtml(pd.text)}</span>${resendBtn}${shareInfo}</div>`;
       })
       .join('');
+    host.querySelectorAll('.btn-share-visit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const data = await api('/shift-day/visit/share', {
+            method: 'POST',
+            body: JSON.stringify({
+              repKey: btn.dataset.rep,
+              date: btn.dataset.date,
+              actualStore: btn.dataset.store,
+            }),
+          });
+          try {
+            await navigator.clipboard.writeText(data.share.url);
+            toast('Share link created and copied — good for 24 hours', 'ok', 5000);
+          } catch {
+            toast(`Share link (24h): ${data.share.url}`, 'ok', 12000);
+          }
+          await loadVisitDrafts();
+        } catch (err) {
+          toast(`Share failed: ${err.message}`, 'bad', 5000);
+          btn.disabled = false;
+        }
+      });
+    });
+    host.querySelectorAll('.btn-copy-share').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.url);
+          toast('Share link copied', 'ok', 2500);
+        } catch {
+          toast(btn.dataset.url, 'ok', 12000);
+        }
+      });
+    });
+    host.querySelectorAll('.btn-revoke-share').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await api('/shift-day/visit/share/revoke', {
+            method: 'POST',
+            body: JSON.stringify({ token: btn.dataset.token }),
+          });
+          toast('Share link turned off', 'ok', 3000);
+          await loadVisitDrafts();
+        } catch (err) {
+          toast(`Could not turn off: ${err.message}`, 'bad', 5000);
+          btn.disabled = false;
+        }
+      });
+    });
     host.querySelectorAll('.btn-resend-photos').forEach((btn) => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;

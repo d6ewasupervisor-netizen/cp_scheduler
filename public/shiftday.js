@@ -44,6 +44,7 @@ function draftKey(date, actualStore) {
 const visitFlow = createVisitFlowController({
   $,
   getRepKey: () => state.repKey,
+  isAdmin: () => !!state.user?.isAdmin,
   onDraftChanged: (draft) => {
     state.draftByShift[draftKey(draft.date, draft.actualStore)] = draft;
     renderCalendar();

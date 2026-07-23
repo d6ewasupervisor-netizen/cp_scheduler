@@ -6,6 +6,7 @@ const { initDb } = require('./db');
 const { requireAuth, requireAdmin } = require('./auth-middleware');
 const authRoutes = require('./routes/auth');
 const schedulerRoutes = require('./routes/scheduler');
+const shareRoutes = require('./routes/share');
 const shiftEventLog = require('./lib/shift-event-log');
 const {
   isPhotoDeliveryEnabled,
@@ -54,6 +55,9 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 
+// Public 24-hour photo share boards — token-gated, no sign-in.
+app.use('/api/share', shareRoutes);
+
 app.use('/api/central-pet', requireAuth, schedulerRoutes);
 
 app.use(express.static(path.join(__dirname, '../public')));
@@ -68,6 +72,10 @@ app.get('/shiftday.html', (_req, res) => {
 
 app.get('/photo-training.html', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/photo-training.html'));
+});
+
+app.get('/share.html', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../public/share.html'));
 });
 
 app.get('*', (_req, res) => {
