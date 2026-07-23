@@ -182,8 +182,17 @@ const SURVEY_PHOTO_SOURCE = {
 
 function isImageRequiredForAnswer(prodQuestion, answerText) {
   const choice = (prodQuestion.choices || []).find((c) => c.text === answerText);
-  if (choice) return !!choice.is_image_required;
-  return !!prodQuestion.answer_image_required;
+  if (choice?.is_image_required) return true;
+  // Prod survey-complete still enforces question-level answer_image_required for
+  // some non-yes/no answers even when the choice flag is false (e.g. "Did not stock").
+  if (prodQuestion.answer_image_required) {
+    const t = String(choice?.text || answerText || '')
+      .trim()
+      .toLowerCase();
+    if (t === 'no' || t === 'false') return false;
+    return true;
+  }
+  return false;
 }
 
 /* ---------- Mileage leg -> travel_records fragment ---------- */
