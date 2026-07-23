@@ -410,7 +410,7 @@ function listUnmetRequirements(draft) {
     unmet.push({
       section: STEP.VISIT,
       anchor: 'time-mileage',
-      message: 'Tap Calculate Mileage',
+      message: 'Set start time and travel boxes so mileage can fill in',
     });
   }
 

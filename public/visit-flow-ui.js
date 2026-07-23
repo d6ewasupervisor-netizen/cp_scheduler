@@ -53,7 +53,7 @@ const STEP_HINTS = {
     'Photograph the Pet Supplies aisle when you arrive. Two 4ft sections per photo. Open the camera once and take every before shot.',
   survey: 'Answer these the same way you would in SAS. When a question needs a photo, take it right below that answer.',
   after_photos: 'Photograph the finished Pet Supplies aisle when you are done. Two 4ft sections per photo.',
-  time: 'Set your stop time and calculate mileage to finish.',
+  time: 'Set your stop time — mileage fills in automatically from your start time and travel selections.',
 };
 
 const STEP_LABELS = {
@@ -1699,6 +1699,74 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     );
   }
 
+  let mileageAutoTimer = null;
+  let mileageAutoInFlight = null;
+
+  /**
+   * Auto-fill mileage from start/stop times + travel checkboxes + matrix miles.
+   * Debounced so checkbox toggles don't stampede the API.
+   */
+  function scheduleAutoMileage(travelOverride = null) {
+    if (mileageAutoTimer) clearTimeout(mileageAutoTimer);
+    mileageAutoTimer = setTimeout(() => {
+      mileageAutoTimer = null;
+      autoCalculateMileage(travelOverride).catch(() => {});
+    }, 280);
+  }
+
+  async function autoCalculateMileage(travelOverride = null) {
+    if (!vf.draft) return;
+    const travel =
+      travelOverride ||
+      vf.draft.mileageTravel ||
+      vf.draft.suggestedMileageTravel ||
+      null;
+    if (!travel) return;
+    const anyTravel = !!(travel.homeToStore || travel.storeToStore || travel.storeToHome);
+    if (!anyTravel) return;
+    if (!vf.draft.visitStart?.actual) return;
+    // Store→home needs a stop time for the outbound window.
+    if (travel.storeToHome && !vf.draft.visitStop?.actual) return;
+
+    if (mileageAutoInFlight) {
+      try {
+        await mileageAutoInFlight;
+      } catch {
+        /* prior failed — continue */
+      }
+    }
+
+    mileageAutoInFlight = (async () => {
+      await autosave(() =>
+        apiCall('/shift-day/visit/mileage', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+            homeToStore: !!travel.homeToStore,
+            storeToStore: !!travel.storeToStore,
+            storeToHome: !!travel.storeToHome,
+          }),
+        })
+      );
+      updateFinishButton();
+      const el = $('time-mileage');
+      if (el) {
+        el.textContent = formatMileageTravels(vf.draft.mileage);
+        el.style.whiteSpace = 'pre-line';
+      }
+      const unmet = document.querySelector('#time-section .vf-time-unmet');
+      if (unmet && vf.draft.mileage?.leg) unmet.remove();
+    })();
+
+    try {
+      await mileageAutoInFlight;
+    } finally {
+      mileageAutoInFlight = null;
+    }
+  }
+
   function renderShiftStartBlock(body) {
     const d = vf.draft;
     const sec = visitBlock('Start of shift', 'shift-start');
@@ -1780,6 +1848,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         })
       );
       updateFinishButton();
+      scheduleAutoMileage();
     }
     card.querySelector('#vfStartTop')?.addEventListener('change', (e) =>
       saveStartTop(new Date(e.target.value).toISOString())
@@ -2167,8 +2236,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
           <span>Store to Home</span>
         </label>
       </div>
-      <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
       <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
+      <p class="overlay-meta" id="vfMileageAutoHint" style="margin:0">Mileage updates automatically from your start time and the travel boxes above.</p>
       <label class="field">Note if mileage looks wrong
         <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
       </label>`;
@@ -2207,6 +2276,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         })
       );
       updateFinishButton();
+      scheduleAutoMileage(travelSel);
     }
 
     async function saveStop(iso) {
@@ -2222,6 +2292,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         })
       );
       updateFinishButton();
+      scheduleAutoMileage(readTravelChecks());
     }
 
     card.querySelector('#vfStop')?.addEventListener('change', (e) =>
@@ -2238,24 +2309,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         saveTravelChecks().catch((err) => toast(err.message || 'Could not save travel', 'bad'));
       });
     });
-    card.querySelector('#vfCalcMileage')?.addEventListener('click', () =>
-      autosave(() =>
-        apiCall('/shift-day/visit/mileage', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-            ...readTravelChecks(),
-          }),
-        })
-      ).then(() => {
-        renderMileage();
-        updateFinishButton();
-        sec.querySelector('.vf-time-unmet')?.remove();
-        renderTimeUnmet(sec);
-      })
-    );
     card.querySelector('#vfMileageNote')?.addEventListener('blur', (e) =>
       autosave(() =>
         apiCall('/shift-day/visit/mileage', {
@@ -2270,6 +2323,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         })
       )
     );
+
+    // Fill miles as soon as the time section is on screen (if start + travel are ready).
+    scheduleAutoMileage(readTravelChecks());
   }
 
   function renderVisitPage() {
