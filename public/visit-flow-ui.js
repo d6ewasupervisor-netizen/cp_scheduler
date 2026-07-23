@@ -512,7 +512,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     });
     overlay.querySelector('#vfLiveDone').addEventListener('click', async () => {
       const n = vf.liveCam?.count || 0;
-      const wasAfter = vf.liveCam?.kind === 'after';
+      const wasAfter = vf.liveCam?.extra?.target === 'after' || vf.liveCam?.kind === 'after';
       stopLiveCamera({ rerender: true });
       toast(n ? `Saved ${n} photo(s)` : 'Camera closed', 'ok', 2200);
       if (wasAfter) await classifyAfterPhotosQuiet();
@@ -777,7 +777,18 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     const q = photoQueue.snapshot();
     if (titleEl) {
       titleEl.textContent =
-        cam.kind === 'before' ? 'Before photos' : cam.kind === 'after' ? 'After photos' : 'Camera';
+        cam.title ||
+        (cam.kind === 'before'
+          ? 'Before photos'
+          : cam.kind === 'after'
+            ? 'After photos'
+            : cam.kind === 'load'
+              ? 'Load / order photo'
+              : cam.kind === 'category'
+                ? 'Category photo'
+                : cam.kind === 'checklist'
+                  ? 'Checklist photo'
+                  : 'Take photos');
     }
     if (countEl) {
       countEl.textContent = `${cam.count} captured${q.inFlight ? ` · ${q.inFlight} uploading` : ''}`;
@@ -963,12 +974,21 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     }
   }
 
-  async function openLiveCamera(kind) {
+  async function openLiveCamera(opts = {}) {
     if (!vf.draft) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      toast('Live camera not supported on this device — use the file capture button', 'warn', 4500);
+      toast('Live camera not supported on this device — use Add from files / gallery', 'warn', 4500);
       return;
     }
+    // Accept legacy string kind ('before'|'after') or { kind, extra, title }.
+    const options =
+      typeof opts === 'string'
+        ? { kind: opts, extra: { target: opts }, title: null }
+        : opts || {};
+    const kind = options.kind || options.extra?.target || 'photo';
+    const extra = options.extra && Object.keys(options.extra).length ? { ...options.extra } : { target: kind };
+    const title = options.title || null;
+
     stopBurst();
     stopLiveCamera({ rerender: false });
     const overlay = ensureLiveCameraDom();
@@ -989,10 +1009,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       }
       vf.liveCam = {
         kind,
+        title,
+        camKey: burstKey(extra),
         stream: null,
         track: null,
         count: 0,
-        extra: { target: kind },
+        extra,
         devices: [],
         deviceId: null,
         lenses,
@@ -1032,7 +1054,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       stopLiveCamera({ rerender: false });
       vf.liveCam = null;
       toast(
-        `Could not open camera: ${err.message || err.name || 'permission denied'}. Use the file capture button instead.`,
+        `Could not open camera: ${err.message || err.name || 'permission denied'}. Use Add from files / gallery instead.`,
         'bad',
         6000
       );
@@ -1341,8 +1363,13 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     if (failedCount) countLabel += ` · ${failedCount} failed`;
     if (minRequired) countLabel += ` (min ${minRequired})`;
     const bKey = burstKey(extra);
-    const bursting = vf.burst?.key === bKey;
-    const liveOpen = vf.liveCam && liveKind && vf.liveCam.kind === liveKind;
+    // Every photo section gets live camera + gallery. liveKind is optional
+    // chrome hint; the real routing is always `extra`.
+    const camKind = liveKind || extra.target || 'photo';
+    const liveOpen =
+      vf.liveCam &&
+      (vf.liveCam.camKey === bKey ||
+        (vf.liveCam.kind === camKind && burstKey(vf.liveCam.extra || {}) === bKey));
 
     const showRemove = vf.photoEditMode && onRemove;
     const serverThumbs = (photos || [])
@@ -1372,13 +1399,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       })
       .join('');
 
-    const liveBtn =
-      liveKind != null
-        ? `<button type="button" class="primary vf-live-open-btn">${
-            liveOpen ? 'Camera open…' : 'Open camera (keep open)'
-          }</button>`
-        : '';
-
     wrap.innerHTML = `
       <div class="vf-photo-head">
         <strong>${label}</strong>
@@ -1386,10 +1406,10 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       </div>
       <div class="vf-photo-grid">${serverThumbs}${pendingThumbs}</div>
       <div class="vf-photo-actions">
-        ${liveBtn}
-        <button type="button" class="vf-photo-files-btn ${liveKind ? 'subtle' : 'primary'}">
-          ${liveKind ? 'Add from files / gallery' : bursting ? 'Add more from gallery' : 'Add from files / gallery'}
-        </button>
+        <button type="button" class="primary vf-live-open-btn">${
+          liveOpen ? 'Camera open…' : 'Take photo'
+        }</button>
+        <button type="button" class="subtle vf-photo-files-btn">Add from files / gallery</button>
         <input type="file" accept="image/*,.heic,.heif" multiple hidden class="vf-photo-file-input">
         ${
           onRemove
@@ -1399,13 +1419,17 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
             : ''
         }
       </div>
-      <p class="vf-photo-hint overlay-meta">${
-        liveKind
-          ? 'Camera = take new shots now. <strong>Add from files / gallery</strong> = pull photos already on this phone or tablet (Recents first). Press and hold the first photo, tap more, then Done — then confirm with <strong>Add to shift</strong>.'
-          : 'Tap <strong>Add from files / gallery</strong>, press and hold the first recent photo, tap the rest, then Done. Confirm with <strong>Add to shift</strong>.'
-      }</p>`;
+      <p class="vf-photo-hint overlay-meta">
+        <strong>Take photo</strong> = open the live camera. <strong>Add from files / gallery</strong> = pick photos already on this device (Recents first). Press and hold the first photo, tap more, then Done — then confirm with <strong>Add to shift</strong>.
+      </p>`;
 
-    wrap.querySelector('.vf-live-open-btn')?.addEventListener('click', () => openLiveCamera(liveKind));
+    wrap.querySelector('.vf-live-open-btn')?.addEventListener('click', () =>
+      openLiveCamera({
+        kind: camKind,
+        extra,
+        title: label,
+      })
+    );
 
     const input = wrap.querySelector('.vf-photo-file-input');
     const filesBtn = wrap.querySelector('.vf-photo-files-btn');
