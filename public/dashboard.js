@@ -309,12 +309,41 @@ async function pullDashWeekFromProd({ silent = false } = {}) {
       dashSyncInFlight = null;
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Resync from PROD';
+        btn.textContent = 'Resync schedule only';
       }
     }
   })();
 
   return dashSyncInFlight;
+}
+
+/**
+ * Warm SAS auth (silent) and force-pull this week from PROD.
+ */
+async function refreshConnectionAndSchedule() {
+  const buttons = ['btnDashRefresh', 'btnDashRefreshActions']
+    .map((id) => $(id))
+    .filter(Boolean);
+  for (const btn of buttons) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+  }
+  try {
+    try {
+      await window.cpSasBeacon?.refresh?.();
+    } catch {
+      /* optional */
+    }
+    await loadActiveWeek({ resync: true, silent: false, force: true });
+    toast('Schedule refreshed from PROD', 'ok', 3000);
+  } catch (err) {
+    toast(err.message || 'Refresh failed', 'bad', 6000);
+  } finally {
+    for (const btn of buttons) {
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  }
 }
 
 /**
@@ -532,6 +561,12 @@ async function init() {
       }
     };
 
+    $('btnDashRefresh')?.addEventListener('click', () => {
+      refreshConnectionAndSchedule().catch(() => {});
+    });
+    $('btnDashRefreshActions')?.addEventListener('click', () => {
+      refreshConnectionAndSchedule().catch(() => {});
+    });
     $('btnDashResync')?.addEventListener('click', async () => {
       try {
         await loadActiveWeek({ resync: true, silent: false, force: true });

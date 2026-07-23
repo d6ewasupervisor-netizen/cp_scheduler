@@ -539,8 +539,10 @@ async function resyncFromProd() {
  * Pull the week from PROD (auth warms itself via sas-beacon in the background).
  */
 async function refreshConnectionAndSchedule() {
-  const btn = $('btnSdRefresh');
-  if (btn) {
+  const buttons = ['btnSdRefresh', 'btnSdRefreshTop']
+    .map((id) => $(id))
+    .filter(Boolean);
+  for (const btn of buttons) {
     btn.disabled = true;
     btn.textContent = 'Refreshing…';
   }
@@ -558,7 +560,7 @@ async function refreshConnectionAndSchedule() {
     toast(err.message || 'Refresh failed', 'bad', 6000);
   } finally {
     endBusy();
-    if (btn) {
+    for (const btn of buttons) {
       btn.disabled = false;
       btn.textContent = 'Refresh';
     }
@@ -648,6 +650,7 @@ async function init() {
     }
   };
   $('btnSdRefresh')?.addEventListener('click', () => refreshConnectionAndSchedule());
+  $('btnSdRefreshTop')?.addEventListener('click', () => refreshConnectionAndSchedule());
   $('btnSdResyncProd')?.addEventListener('click', () => resyncFromProd());
   $('sdOverlayClose').onclick = closeDetail;
   $('sdOverlay').addEventListener('click', (e) => {

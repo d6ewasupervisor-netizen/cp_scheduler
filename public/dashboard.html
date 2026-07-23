@@ -252,6 +252,7 @@
       <div class="user-bar" id="userBar" hidden>
         <span class="layer-badge" id="layerBadge">…</span>
         <span class="user-email" id="userEmail"></span>
+        <button type="button" id="btnDashRefresh" class="subtle btn-refresh-page" title="Refresh SAS PROD connection and pull latest schedule">Refresh</button>
         <button type="button" id="btnSignOut" class="subtle">Sign out</button>
       </div>
     </div>
@@ -282,7 +283,8 @@
       </section>
 
       <div class="dash-actions">
-        <button type="button" id="btnDashResync" class="primary">Resync from PROD</button>
+        <button type="button" id="btnDashRefreshActions" class="primary" title="Refresh SAS PROD connection and pull latest schedule">Refresh</button>
+        <button type="button" id="btnDashResync" class="subtle">Resync schedule only</button>
         <a class="primary" id="linkFullShiftDay" href="/shiftday.html">Open full Shift Day</a>
         <a id="linkPlanning" href="/" hidden>Planning Desk</a>
       </div>

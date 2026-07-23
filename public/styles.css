@@ -31,6 +31,8 @@
   --radius-sm: 8px;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --sticky-h: 64px;
+  /* Measured by sas-beacon.js; keeps topbar/content below the live banner */
+  --sas-beacon-h: 0px;
 
   --font: Carlito, Calibri, "Segoe UI", system-ui, -apple-system, sans-serif;
 }
@@ -58,7 +60,8 @@ button { font-family: var(--font); }
 
 .topbar {
   position: sticky;
-  top: 0;
+  /* Sit under the SAS live banner when present (see --sas-beacon-h) */
+  top: var(--sas-beacon-h, 0px);
   z-index: 40;
   background: rgba(11, 15, 22, 0.92);
   backdrop-filter: blur(8px);
@@ -89,10 +92,18 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
   font-size: 0.8rem;
   color: var(--muted);
   min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 /* Author display:flex otherwise overrides the HTML hidden attribute. */
 .user-bar[hidden] {
   display: none !important;
+}
+.user-bar .btn-refresh-page {
+  min-height: 36px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 .user-email {
   max-width: 180px;
@@ -117,12 +128,20 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
 /* ---------- SAS PROD auth beacon (all pages) ---------- */
 
 .sas-beacon {
-  position: sticky;
-  top: 0;
-  z-index: 500;
+  /* Stay in document flow so schedule cards append below — not under — the bar */
+  position: relative;
+  top: auto;
+  z-index: 50;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+body.has-sas-beacon {
+  /* Fallback until JS measures the real bar height */
+  --sas-beacon-h: 48px;
+}
+html {
+  scroll-padding-top: calc(var(--sas-beacon-h, 0px) + 4.5rem);
 }
 .sas-beacon-inner {
   display: flex;
@@ -2218,7 +2237,8 @@ body.has-bottom-nav {
 }
 
 body.visit-workspace-open .cp-bottom-nav,
-body.visit-workspace-open .topbar {
+body.visit-workspace-open .topbar,
+body.visit-workspace-open .sas-beacon {
   display: none !important;
 }
 

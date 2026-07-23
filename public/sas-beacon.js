@@ -48,7 +48,17 @@
     if (body.firstChild) body.insertBefore(bar, body.firstChild);
     else body.appendChild(bar);
     body.classList.add('has-sas-beacon');
+    syncBeaconLayout(bar);
     return bar;
+  }
+
+  /** Keep --sas-beacon-h in sync so sticky topbar / scroll-padding sit below the banner. */
+  function syncBeaconLayout(barEl) {
+    const bar = barEl || el('sasBeacon');
+    if (!bar) return;
+    document.body.classList.add('has-sas-beacon');
+    const h = Math.max(40, Math.ceil(bar.getBoundingClientRect().height) || 48);
+    document.documentElement.style.setProperty('--sas-beacon-h', `${h}px`);
   }
 
   function ageLabel(mins) {
@@ -92,6 +102,7 @@
     if (extraDetail) bits.unshift(extraDetail);
     detail.textContent = bits.join(' · ') || '—';
     detail.title = status?.error || detail.textContent;
+    syncBeaconLayout(bar);
   }
 
   function needsRefresh(status) {
@@ -294,6 +305,14 @@
         }
       }
     });
+    window.addEventListener('resize', () => syncBeaconLayout());
+    if (typeof ResizeObserver === 'function') {
+      const bar = el('sasBeacon');
+      if (bar) {
+        const ro = new ResizeObserver(() => syncBeaconLayout(bar));
+        ro.observe(bar);
+      }
+    }
   }
 
   window.cpSasBeacon = {
