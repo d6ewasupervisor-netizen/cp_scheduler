@@ -90,6 +90,10 @@ body.mode-rep   .topbar { border-top: 3px solid var(--ok); }
   color: var(--muted);
   min-width: 0;
 }
+/* Author display:flex otherwise overrides the HTML hidden attribute. */
+.user-bar[hidden] {
+  display: none !important;
+}
 .user-email {
   max-width: 180px;
   overflow: hidden;

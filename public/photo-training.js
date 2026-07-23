@@ -1,6 +1,6 @@
 // Admin training session for after-photo → category sorting (Gemini few-shot).
 
-import { toast } from '/shared.js';
+import { toast, loadMe, signOut } from '/shared.js';
 
 const API = '/api/central-pet';
 
@@ -47,7 +47,6 @@ function render() {
   `;
   $('trainMessage').textContent = readiness.message || state.envHint || '';
 
-  const shortIds = new Set((readiness.shortCategories || []).map((c) => c.id));
   const byCat = new Map(cats.map((c) => [c.id, []]));
   for (const ex of examples) {
     if (!byCat.has(ex.categoryId)) byCat.set(ex.categoryId, []);
@@ -142,15 +141,28 @@ function render() {
 }
 
 async function boot() {
-  await window.cpAuthReady;
-  const session = window.cpSession;
-  if (!session?.email) return;
-  $('userBar').hidden = false;
-  if (session.layer !== 'admin') {
+  try {
+    await window.cpAuth?.bootPromise;
+  } catch {
+    /* auth-gate redirects on failure */
+  }
+
+  let me;
+  try {
+    me = await loadMe();
+  } catch (err) {
+    $('trainMessage').textContent = err.message || 'Sign in required';
+    return;
+  }
+
+  $('userBar')?.removeAttribute('hidden');
+  $('btnSignOut')?.addEventListener('click', () => signOut());
+
+  if (me.layer !== 'admin' && !me.isAdmin) {
     $('trainMessage').textContent = 'Admin only — open Planning Desk with an admin account.';
     return;
   }
-  $('btnSignOut')?.addEventListener('click', () => window.cpSignOut?.());
+
   try {
     await load();
   } catch (err) {
