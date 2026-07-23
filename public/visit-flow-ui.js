@@ -1388,6 +1388,46 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
     body.appendChild(sec);
   }
 
+  /** Q11 (additional feedback) must always identify the store, e.g. "This is for store 53." */
+  function storeFeedbackLine() {
+    const store = vf.draft?.actualStore;
+    if (store == null || store === '') return '';
+    return `This is for store ${store}.`;
+  }
+
+  /** Prepend the store line to feedback text when it's missing (idempotent). */
+  function withStoreFeedbackLine(text) {
+    const line = storeFeedbackLine();
+    if (!line) return String(text || '');
+    const current = String(text || '');
+    const store = String(vf.draft.actualStore).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`this is for store\\s*#?\\s*${store}\\b`, 'i').test(current)) return current;
+    return current.trim() ? `${line} ${current}` : line;
+  }
+
+  /** Ensure the saved Q11 answer carries the store line — runs on every visit open. */
+  async function ensureQ11StoreLine() {
+    if (!vf.draft) return;
+    const current = vf.draft.survey?.q11 || '';
+    const wanted = withStoreFeedbackLine(current);
+    if (wanted === current) return;
+    try {
+      await autosave(() =>
+        apiCall('/shift-day/visit/survey', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+            answers: { q11: wanted },
+          }),
+        })
+      );
+    } catch {
+      /* offline — blur guard will re-apply when the rep touches the field */
+    }
+  }
+
   function renderSurveyBlock(body) {
     const sec = visitBlock('Questions', 'survey-section');
     const helper = document.createElement('p');
@@ -1435,9 +1475,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       } else {
         const textarea = document.createElement('textarea');
         textarea.rows = 2;
-        textarea.value = answers[q.id] || '';
-        textarea.addEventListener('blur', () =>
-          autosave(() =>
+        textarea.value = q.id === 'q11' ? withStoreFeedbackLine(answers[q.id]) : answers[q.id] || '';
+        textarea.addEventListener('blur', () => {
+          // Q11 always keeps its "This is for store N." line, even after edits.
+          if (q.id === 'q11') textarea.value = withStoreFeedbackLine(textarea.value);
+          return autosave(() =>
             apiCall('/shift-day/visit/survey', {
               method: 'POST',
               body: JSON.stringify({
@@ -1449,8 +1491,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
             })
           ).then(() => {
             updateFinishButton();
-          })
-        );
+          });
+        });
         wrap.appendChild(textarea);
       }
       appendSurveyInlinePhoto(wrap, q);
@@ -2349,6 +2391,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
         });
       }
     }, 'Opening visit…', { force: true });
+    // Every shift's additional-feedback answer identifies its store up front.
+    await ensureQ11StoreLine();
     onDraftChanged?.(vf.draft);
     updateSidebarMeta();
     setVisitShellOpen(true);
