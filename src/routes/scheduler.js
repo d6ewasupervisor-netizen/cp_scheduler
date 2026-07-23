@@ -1285,29 +1285,56 @@ router.post(
   )
 );
 
+router.post('/shift-day/visit/mileage-travel', shiftDayScope, (req, res) => {
+  const { repKey, date, actualStore, homeToStore, storeToStore, storeToHome } = req.body || {};
+  if (!repKey || !date || actualStore == null) {
+    return res.status(400).json({ error: 'repKey, date, actualStore required' });
+  }
+  try {
+    const updated = visitDraftStore.setMileageTravel(repKey, date, actualStore, {
+      homeToStore,
+      storeToStore,
+      storeToHome,
+    });
+    res.json(visitDraftStore.enrichDraftForUi(updated));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/shift-day/visit/mileage', shiftDayScope, (req, res) => {
-  const { repKey, date, actualStore, repNote } = req.body || {};
+  const { repKey, date, actualStore, repNote, homeToStore, storeToStore, storeToHome } = req.body || {};
   if (!repKey || !date || actualStore == null) {
     return res.status(400).json({ error: 'repKey, date, actualStore required' });
   }
   const shiftRep = shiftRepByKey(repKey);
   if (!shiftRep) return res.status(404).json({ error: 'Unknown Shift Day rep' });
-  const draft = visitDraftStore.getDraft(repKey, date, actualStore);
+  let draft = visitDraftStore.getDraft(repKey, date, actualStore);
   if (!draft) return res.status(404).json({ error: 'Draft not found' });
   try {
+    // Persist checkbox selections when the client sends them with Calculate.
+    if (homeToStore != null || storeToStore != null || storeToHome != null) {
+      draft = visitDraftStore.setMileageTravel(repKey, date, actualStore, {
+        homeToStore: homeToStore != null ? homeToStore : draft.mileageTravel?.homeToStore,
+        storeToStore: storeToStore != null ? storeToStore : draft.mileageTravel?.storeToStore,
+        storeToHome: storeToHome != null ? storeToHome : draft.mileageTravel?.storeToHome,
+      });
+    }
+    const enriched = visitDraftStore.enrichDraftForUi(draft);
+    const travelSelections = enriched.mileageTravel;
+
     // Prior store by when visits were actually started today (not schedule/PROD order).
     const previousVisit = visitDraftStore.previousCompletedVisitForDay(repKey, date, {
       excludeActualStore: actualStore,
       beforeIso: draft.visitStart?.actual || null,
     });
     const previousCompletedStore = previousVisit ? previousVisit.actualStore : null;
-    // Last-stop after a prior store seals BOTH inbound S→S and outbound S→H
-    // (kompass-netcap HAR 2026-07-21 visit 27092124).
     const legs = visitFlow.computeMileageLegs({
       workdayGivenId: shiftRep.workdayGivenId,
       actualStore,
       previousCompletedStore,
-      isLastStopOfDay: !!draft.isLastStopOfDay,
+      isLastStopOfDay: !!travelSelections?.storeToHome,
+      travelSelections,
       previousStopIso: previousVisit?.visitStop || previousVisit?.visitStart || null,
       visitStartIso: draft.visitStart?.actual || null,
       visitStopIso: draft.visitStop?.actual || null,

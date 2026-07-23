@@ -405,7 +405,106 @@ function setTimes(repKey, date, actualStore, { startActual, startNote, stopActua
     if (startActual !== undefined) draft.visitStart.source = 'manual';
     if (stopActual !== undefined) draft.visitStop.actual = stopActual;
     if (stopNote !== undefined) draft.visitStop.note = stopNote;
-    if (isLastStopOfDay !== undefined) draft.isLastStopOfDay = !!isLastStopOfDay;
+    if (isLastStopOfDay !== undefined) {
+      draft.isLastStopOfDay = !!isLastStopOfDay;
+      // Keep travel checkboxes in sync with last-stop when that flag is the only input.
+      if (!draft.mileageTravel) draft.mileageTravel = normalizeMileageTravel(null);
+      draft.mileageTravel.storeToHome = !!isLastStopOfDay;
+      draft.mileageTravel.userSet = true;
+    }
+  });
+}
+
+/**
+ * Suggest H→S / S→S / S→H from actual run order + remaining schedule stores today.
+ */
+function suggestMileageTravel(repKey, date, actualStore, draft = null) {
+  const d = draft || readDraftFile(repKey, date, actualStore);
+  const previous = previousCompletedVisitForDay(repKey, date, {
+    excludeActualStore: actualStore,
+    beforeIso: d?.visitStart?.actual || null,
+  });
+  const isFirst = previous == null;
+
+  let isLast = !!d?.isLastStopOfDay;
+  try {
+    const shiftDayStore = require('./shift-day-store');
+    const weekStart = d?.weekStart || null;
+    if (weekStart) {
+      const shifts = shiftDayStore.getShiftsForRep(weekStart, repKey) || [];
+      const dayShifts = shifts.filter((s) => String(s.date) === String(date));
+      if (dayShifts.length) {
+        const drafts = listDraftsForRep(repKey).filter((x) => x.date === date);
+        const done = new Set(
+          drafts
+            .filter(
+              (x) =>
+                Number(x.actualStore) !== Number(actualStore) &&
+                (x.status === 'ready_for_prod' ||
+                  x.status === 'transmitted' ||
+                  x.status === 'transmitting' ||
+                  !!x.visitStop?.actual)
+            )
+            .map((x) => Number(x.actualStore))
+        );
+        const remaining = dayShifts.filter((s) => {
+          const store = Number(s.actualStore);
+          if (store === Number(actualStore)) return false;
+          if (done.has(store)) return false;
+          const vs = String(s.visitStatus || '')
+            .toLowerCase()
+            .replace(/_/g, '-');
+          if (vs === 'completed' || vs === 'complete') return false;
+          return true;
+        });
+        isLast = remaining.length === 0;
+      }
+    }
+  } catch {
+    /* schedule optional */
+  }
+
+  return {
+    homeToStore: isFirst,
+    storeToStore: !isFirst,
+    storeToHome: isLast,
+    isFirst,
+    isLast,
+  };
+}
+
+function normalizeMileageTravel(raw, suggested = null) {
+  const base = suggested || { homeToStore: true, storeToStore: false, storeToHome: false };
+  if (!raw || typeof raw !== 'object') {
+    return {
+      homeToStore: !!base.homeToStore,
+      storeToStore: !!base.storeToStore,
+      storeToHome: !!base.storeToHome,
+      userSet: false,
+    };
+  }
+  return {
+    homeToStore: raw.homeToStore != null ? !!raw.homeToStore : !!base.homeToStore,
+    storeToStore: raw.storeToStore != null ? !!raw.storeToStore : !!base.storeToStore,
+    storeToHome: raw.storeToHome != null ? !!raw.storeToHome : !!base.storeToHome,
+    userSet: !!raw.userSet,
+  };
+}
+
+function setMileageTravel(repKey, date, actualStore, travel = {}) {
+  return mutate(repKey, date, actualStore, (draft) => {
+    const suggested = suggestMileageTravel(repKey, date, actualStore, draft);
+    const next = normalizeMileageTravel(
+      {
+        homeToStore: travel.homeToStore,
+        storeToStore: travel.storeToStore,
+        storeToHome: travel.storeToHome,
+        userSet: true,
+      },
+      suggested
+    );
+    draft.mileageTravel = next;
+    draft.isLastStopOfDay = !!next.storeToHome;
   });
 }
 
@@ -422,6 +521,22 @@ function setMileage(repKey, date, actualStore, { leg, legs, repNote } = {}) {
     }
     if (repNote !== undefined) draft.mileage.repNote = repNote;
   });
+}
+
+/** Enrich for UI: attach suggested + resolved travel checkboxes. */
+function enrichDraftForUiWithTravel(draft) {
+  if (!draft) return draft;
+  const base = enrichDraftForUi(draft);
+  const suggested = suggestMileageTravel(draft.repKey, draft.date, draft.actualStore, draft);
+  const mileageTravel = draft.mileageTravel?.userSet
+    ? normalizeMileageTravel(draft.mileageTravel, suggested)
+    : normalizeMileageTravel(null, suggested);
+  return {
+    ...base,
+    suggestedMileageTravel: suggested,
+    mileageTravel,
+    isLastStopOfDay: !!mileageTravel.storeToHome,
+  };
 }
 
 /**
@@ -710,6 +825,8 @@ module.exports = {
   setSurveyAnswer,
   setSurveyAnswers,
   setTimes,
+  setMileageTravel,
+  suggestMileageTravel,
   setMileage,
   setShiftLog,
   setOptionalFixtures,
@@ -726,6 +843,6 @@ module.exports = {
   setPhotoDelivery,
   listUnmetRequirements,
   canSeal,
-  enrichDraftForUi,
+  enrichDraftForUi: enrichDraftForUiWithTravel,
   STEP,
 };

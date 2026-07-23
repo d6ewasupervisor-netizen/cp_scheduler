@@ -573,6 +573,108 @@ function stampMileageLegTimes(legs, { previousStopIso = null, visitStartIso = nu
 }
 
 /**
+ * Build legs from explicit travel checkboxes (rep-facing Home/Store/Home).
+ * @param {object} rep - home matrix rep row
+ * @param {object} opts
+ */
+function legsFromTravelSelections(rep, {
+  actualStore,
+  previousCompletedStore = null,
+  travelSelections,
+  previousStopIso = null,
+  visitStartIso = null,
+  visitStopIso = null,
+}) {
+  const sel = travelSelections || {};
+  const wantH2S = !!sel.homeToStore;
+  const wantS2S = !!sel.storeToStore;
+  const wantS2H = !!sel.storeToHome;
+  const legs = [];
+
+  if (wantH2S) {
+    const miles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
+      ? rep.miles[String(actualStore)]
+      : null;
+    legs.push({
+      from: 'home',
+      to: String(actualStore),
+      miles,
+      source: 'home-to-store',
+      warning:
+        miles == null
+          ? `No Home To Store mileage on file for Store ${actualStore} — note the miles below`
+          : null,
+    });
+  }
+
+  if (wantS2S) {
+    if (previousCompletedStore != null && Number(previousCompletedStore) !== Number(actualStore)) {
+      const key = `${previousCompletedStore}-${actualStore}`;
+      const miles = Object.prototype.hasOwnProperty.call(storeMatrix.matrix, key)
+        ? storeMatrix.matrix[key]
+        : null;
+      legs.push({
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles,
+        source: 'store-to-store',
+        warning:
+          miles == null
+            ? `No Store To Store mileage on file for Store ${previousCompletedStore} → Store ${actualStore} — note the miles below`
+            : null,
+      });
+    } else if (previousCompletedStore != null) {
+      legs.push({
+        from: String(previousCompletedStore),
+        to: String(actualStore),
+        miles: 0,
+        source: 'same-store',
+        warning: null,
+      });
+    } else {
+      legs.push({
+        from: null,
+        to: String(actualStore),
+        miles: null,
+        source: 'store-to-store',
+        warning:
+          'Store To Store is selected, but no earlier store was started today — uncheck it or start the prior visit first',
+      });
+    }
+  }
+
+  if (wantS2H) {
+    const homeMiles = Object.prototype.hasOwnProperty.call(rep.miles, String(actualStore))
+      ? rep.miles[String(actualStore)]
+      : null;
+    legs.push({
+      from: String(actualStore),
+      to: 'home',
+      miles: homeMiles,
+      source: 'store-to-home',
+      warning:
+        homeMiles == null
+          ? `No Store To Home mileage on file for Store ${actualStore} — note the miles below`
+          : null,
+    });
+  }
+
+  if (!legs.length) {
+    return [
+      {
+        from: null,
+        to: null,
+        miles: null,
+        source: 'unresolved',
+        warning: 'Select at least one travel type (Home to Store, Store to Store, and/or Store to Home)',
+      },
+    ];
+  }
+
+  return stampMileageLegTimes(legs, { previousStopIso, visitStartIso, visitStopIso });
+}
+
+/**
  * @returns {Array<{from:string, to:string, miles:number|null, source:string, warning:string|null, startTime?:string, endTime?:string}>}
  */
 function computeMileageLegs({
@@ -580,6 +682,7 @@ function computeMileageLegs({
   actualStore,
   previousCompletedStore = null,
   isLastStopOfDay = false,
+  travelSelections = null,
   previousStopIso = null,
   visitStartIso = null,
   visitStopIso = null,
@@ -596,6 +699,17 @@ function computeMileageLegs({
           'Your Home To Store mileage is not set up yet — ask your supervisor, or note the miles below',
       },
     ];
+  }
+
+  if (travelSelections) {
+    return legsFromTravelSelections(rep, {
+      actualStore,
+      previousCompletedStore,
+      travelSelections,
+      previousStopIso,
+      visitStartIso,
+      visitStopIso,
+    });
   }
 
   const legs = [];

@@ -2142,6 +2142,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
 
     const card = document.createElement('div');
     card.className = 'vf-time-card';
+    const travel = vf.draft.mileageTravel || vf.draft.suggestedMileageTravel || {};
     card.innerHTML = `
       <label class="field" id="time-stop">Stop time
         <input type="datetime-local" id="vfStop" value="${toLocalInput(vf.draft.visitStop.actual)}">
@@ -2149,12 +2150,23 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       <div class="vf-btn-row" style="margin:.35rem 0 .6rem">
         <button type="button" id="vfNowStop" class="subtle">Set stop to now</button>
       </div>
-      <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
-        <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
-      </label>
-      <p class="overlay-meta" style="margin:.35rem 0 0">
-        Mileage follows the order you <strong>started</strong> stores today (not the week calendar). First stop = home→store; later stops = store→store; check Last stop for store→home.
-      </p>
+      <div class="vf-mileage-travel" id="time-mileage-travel">
+        <p class="vf-mileage-tip">If this is your first store, make sure that <strong>Home to Store</strong> is selected.</p>
+        <p class="vf-mileage-tip">If this is also your last store, make sure to select <strong>Store to Home</strong>.</p>
+        <p class="vf-mileage-tip">If this is one of many visits, make sure that <strong>Store to Store</strong> is selected.</p>
+        <label class="vf-travel-check">
+          <input type="checkbox" id="vfTravelH2S" ${travel.homeToStore ? 'checked' : ''}>
+          <span>Home to Store</span>
+        </label>
+        <label class="vf-travel-check">
+          <input type="checkbox" id="vfTravelS2S" ${travel.storeToStore ? 'checked' : ''}>
+          <span>Store to Store</span>
+        </label>
+        <label class="vf-travel-check">
+          <input type="checkbox" id="vfTravelS2H" ${travel.storeToHome ? 'checked' : ''}>
+          <span>Store to Home</span>
+        </label>
+      </div>
       <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
       <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
       <label class="field">Note if mileage looks wrong
@@ -2172,6 +2184,30 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       el.style.whiteSpace = 'pre-line';
     };
     renderMileage();
+
+    function readTravelChecks() {
+      return {
+        homeToStore: !!card.querySelector('#vfTravelH2S')?.checked,
+        storeToStore: !!card.querySelector('#vfTravelS2S')?.checked,
+        storeToHome: !!card.querySelector('#vfTravelS2H')?.checked,
+      };
+    }
+
+    async function saveTravelChecks() {
+      const travelSel = readTravelChecks();
+      await autosave(() =>
+        apiCall('/shift-day/visit/mileage-travel', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+            ...travelSel,
+          }),
+        })
+      );
+      updateFinishButton();
+    }
 
     async function saveStop(iso) {
       await autosave(() =>
@@ -2197,24 +2233,21 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       if (input) input.value = toLocalInput(now.toISOString());
       saveStop(now.toISOString());
     });
-    card.querySelector('#vfLastStop')?.addEventListener('change', (e) =>
+    ['#vfTravelH2S', '#vfTravelS2S', '#vfTravelS2H'].forEach((sel) => {
+      card.querySelector(sel)?.addEventListener('change', () => {
+        saveTravelChecks().catch((err) => toast(err.message || 'Could not save travel', 'bad'));
+      });
+    });
+    card.querySelector('#vfCalcMileage')?.addEventListener('click', () =>
       autosave(() =>
-        apiCall('/shift-day/visit/time', {
+        apiCall('/shift-day/visit/mileage', {
           method: 'POST',
           body: JSON.stringify({
             repKey: getRepKey(),
             date: vf.draft.date,
             actualStore: vf.draft.actualStore,
-            isLastStopOfDay: e.target.checked,
+            ...readTravelChecks(),
           }),
-        })
-      ).then(updateFinishButton)
-    );
-    card.querySelector('#vfCalcMileage')?.addEventListener('click', () =>
-      autosave(() =>
-        apiCall('/shift-day/visit/mileage', {
-          method: 'POST',
-          body: JSON.stringify({ repKey: getRepKey(), date: vf.draft.date, actualStore: vf.draft.actualStore }),
         })
       ).then(() => {
         renderMileage();
@@ -2232,6 +2265,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
             date: vf.draft.date,
             actualStore: vf.draft.actualStore,
             repNote: e.target.value,
+            ...readTravelChecks(),
           }),
         })
       )
