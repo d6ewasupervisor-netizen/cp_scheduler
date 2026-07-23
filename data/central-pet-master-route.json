@@ -1,8 +1,11 @@
 {
-  "versionDate": "2026-05-22",
+  "versionDate": "2026-07-22",
   "sourceFile": "MASTER ROUTE 05-22-2026 (1).xlsx",
   "sheet": "BY STORE",
   "rowCount": 46,
+  "storeCadenceNotes": {
+    "682": "One delivery per week (Thursday). Tuesday = write order only (picks Wednesday, delivers Thursday). Friday = work Thursday's load only — do not write an order on Friday."
+  },
   "rows": [
     {
       "sc": "CP",
@@ -600,11 +603,12 @@
       "storeNum": 682,
       "district": 8,
       "serviceDay": "Tue",
-      "action": "WRITE ORDER/SERVICE",
+      "action": "WRITE ORDER",
       "pickDay": "Wed",
       "deliveryDay": "Thu",
       "routeNum": "402-020",
-      "carriers": "Central Truck"
+      "carriers": "Central Truck",
+      "cadence": "One delivery/week — write order only (load arrives Thu for Friday work)"
     },
     {
       "sc": "RO",
@@ -614,11 +618,12 @@
       "storeNum": 682,
       "district": 8,
       "serviceDay": "Fri",
-      "action": "WORK LOAD/SERVICE",
+      "action": "WORK LOAD",
       "pickDay": null,
       "deliveryDay": null,
       "routeNum": null,
-      "carriers": null
+      "carriers": null,
+      "cadence": "Work Thursday delivery only — do not write order"
     },
     {
       "sc": "RO",
