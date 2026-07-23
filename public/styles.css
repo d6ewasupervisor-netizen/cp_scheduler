@@ -1661,6 +1661,43 @@ body.mode-admin .day-col.eligible .day-head::after {
   padding-bottom: 0.5rem;
 }
 
+.vf-visit-intro {
+  margin: 0 0 0.25rem;
+  font-size: 0.88rem;
+}
+
+.vf-visit-block {
+  padding: 0.85rem 0 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.vf-visit-block:last-child {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+
+.vf-block-head {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.vf-time-card-compact {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.vf-survey-q .vf-photo-block {
+  margin-top: 0.55rem;
+  padding: 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+
 .vf-nav {
   display: flex;
   align-items: center;
@@ -2355,13 +2392,24 @@ body.visit-workspace-open {
   min-height: 0;
   position: relative;
 }
+.vf-live-video-stage {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  min-height: 0;
+}
 .vf-live-video {
   flex: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #111;
+  background: transparent;
   min-height: 0;
+  will-change: transform;
 }
 .vf-live-zoom {
   position: absolute;
@@ -2370,10 +2418,19 @@ body.visit-workspace-open {
   bottom: 6.5rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   padding: 0.45rem 0.85rem;
   pointer-events: auto;
   z-index: 2;
+}
+.vf-live-zoom-label {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
 }
 .vf-live-zoom-btn {
   flex: 0 0 auto;

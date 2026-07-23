@@ -4,39 +4,27 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const visitFlow = require('../src/lib/visit-flow');
 
-describe('buildStepSequence (mobile four-step flow)', () => {
-  it('always returns before → survey → after → time regardless of load/order flags', () => {
-    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }), [
-      'before_photos',
-      'survey',
-      'after_photos',
-      'time',
-    ]);
-    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }), [
-      'before_photos',
-      'survey',
-      'after_photos',
-      'time',
-    ]);
+describe('buildStepSequence (single-page visit flow)', () => {
+  it('always returns a single visit step regardless of load/order flags', () => {
+    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }), ['visit']);
+    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }), ['visit']);
     assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('load_check'));
     assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('shift_log'));
     assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('review'));
   });
 
-  it('nextStep/prevStep walk the sequence and return null at the ends', () => {
+  it('nextStep/prevStep on the single step returns null', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
-    assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'survey');
-    assert.equal(visitFlow.nextStep(steps, 'survey'), 'after_photos');
-    assert.equal(visitFlow.prevStep(steps, 'survey'), 'before_photos');
-    assert.equal(visitFlow.prevStep(steps, 'before_photos'), null);
-    assert.equal(visitFlow.nextStep(steps, 'time'), null);
+    assert.equal(visitFlow.nextStep(steps, 'visit'), null);
+    assert.equal(visitFlow.prevStep(steps, 'visit'), null);
   });
 
-  it('normalizeCurrentStep maps legacy steps onto the four-step flow', () => {
+  it('normalizeCurrentStep maps legacy steps onto visit', () => {
     const steps = visitFlow.buildStepSequence({});
-    assert.equal(visitFlow.normalizeCurrentStep('load_check', steps), 'survey');
-    assert.equal(visitFlow.normalizeCurrentStep('review', steps), 'time');
-    assert.equal(visitFlow.normalizeCurrentStep('category_photos', steps), 'after_photos');
+    assert.equal(visitFlow.normalizeCurrentStep('load_check', steps), 'visit');
+    assert.equal(visitFlow.normalizeCurrentStep('review', steps), 'visit');
+    assert.equal(visitFlow.normalizeCurrentStep('category_photos', steps), 'visit');
+    assert.equal(visitFlow.normalizeCurrentStep('before_photos', steps), 'visit');
   });
 
   it('AFTER_PHOTO_COACH covers every category target', () => {
@@ -201,7 +189,7 @@ describe('free-nav section status + finish requirements', () => {
       workLoad: false,
       writeOrder: false,
       steps: visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }),
-      currentStep: 'survey',
+      currentStep: 'visit',
       beforePhotos: [],
       afterPhotos: [],
       loadCheck: null,
@@ -225,15 +213,61 @@ describe('free-nav section status + finish requirements', () => {
       assert.ok(u.anchor);
       assert.ok(u.message);
     }
-    assert.ok(unmet.some((u) => u.section === 'before_photos' && u.anchor === 'before-photos'));
-    assert.ok(unmet.some((u) => u.section === 'survey' && u.anchor.startsWith('survey-')));
+    assert.ok(unmet.some((u) => u.section === 'visit' && u.anchor === 'before-photos'));
+    assert.ok(unmet.some((u) => u.section === 'visit' && u.anchor.startsWith('survey-')));
+  });
+
+  it('category photos gate finish only when survey answers require them', () => {
+    const d = baseDraft({
+      beforePhotos: [{ path: 'b' }],
+      afterPhotos: [{ path: 'a' }],
+      categoryPhotos: {},
+      survey: {
+        q2: 'Yes',
+        q3: 'Did not stock',
+        q4: 'no load',
+        q5: 'no',
+        q6: 'not applicable',
+        q7: 'No',
+        q8: 'not applicable',
+        q9: 'no',
+        q10: 'not applicable',
+        q11: 'ok',
+      },
+      visitStop: { actual: '2026-07-08T18:00:00Z' },
+      mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
+    });
+    assert.equal(visitFlow.canSeal(d), true);
+
+    const needsPhotos = baseDraft({
+      beforePhotos: [{ path: 'b' }],
+      afterPhotos: [{ path: 'a' }],
+      categoryPhotos: {},
+      survey: {
+        q2: 'Yes',
+        q3: 'Fully stocked',
+        q5: 'yes',
+        q7: 'Yes',
+        q9: 'yes',
+        q11: 'ok',
+      },
+      visitStop: { actual: '2026-07-08T18:00:00Z' },
+      mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
+    });
+    assert.equal(visitFlow.canSeal(needsPhotos), false);
+    assert.ok(visitFlow.listUnmetRequirements(needsPhotos).some((u) => /Clip strips/i.test(u.message)));
   });
 
   it('endcaps/wings photos do not gate finish unless the optional section is selected', () => {
     const requiredOnly = Object.fromEntries(
-      visitFlow
-        .requiredCategoryPhotoTargets({})
-        .map((c) => [c.id, [{ path: c.id }]])
+      visitFlow.requiredSurveyCategoryPhotos({
+        survey: {
+          q3: 'Fully stocked',
+          q5: 'yes',
+          q7: 'Yes',
+          q9: 'yes',
+        },
+      }).map((r) => [r.categoryId, [{ path: r.categoryId }]])
     );
     const d = baseDraft({
       beforePhotos: [{ path: 'b' }],
@@ -280,7 +314,16 @@ describe('free-nav section status + finish requirements', () => {
       beforePhotos: [{ path: 'b' }],
       afterPhotos: [{ path: 'a' }],
       categoryPhotos: Object.fromEntries(
-        visitFlow.requiredCategoryPhotoTargets({}).map((c) => [c.id, [{ path: c.id }]])
+        visitFlow
+          .requiredSurveyCategoryPhotos({
+            survey: {
+              q3: 'Fully stocked',
+              q5: 'yes',
+              q7: 'Yes',
+              q9: 'yes',
+            },
+          })
+          .map((r) => [r.categoryId, [{ path: r.categoryId }]])
       ),
       survey: {
         q2: 'Yes',
@@ -301,17 +344,12 @@ describe('free-nav section status + finish requirements', () => {
     assert.ok(!visitFlow.listUnmetRequirements(d).some((u) => u.section === 'shift_log'));
   });
 
-  it('sidebar statuses never gate — incomplete sections report chips only', () => {
-    const d = baseDraft({ currentStep: 'time' });
+  it('sidebar statuses reflect overall visit progress on the single page', () => {
+    const d = baseDraft({ currentStep: 'visit' });
     const statuses = visitFlow.sectionStatuses(d);
-    assert.ok(statuses.every((s) => ['empty', 'in_progress', 'complete', 'needs_attention'].includes(s.status)));
-    const before = statuses.find((s) => s.id === 'before_photos');
-    assert.equal(before.status, 'empty');
-    assert.equal(before.hint, 'BEFORE photos are time-sensitive');
-    assert.deepEqual(
-      statuses.map((s) => s.id),
-      d.steps
-    );
+    assert.equal(statuses.length, 1);
+    assert.equal(statuses[0].id, 'visit');
+    assert.ok(['empty', 'in_progress', 'complete', 'needs_attention'].includes(statuses[0].status));
   });
 
   it('canSeal is false until core requirements are met', () => {

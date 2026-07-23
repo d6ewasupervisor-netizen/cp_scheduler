@@ -19,20 +19,41 @@ import {
 const REP_SURVEY_IDS = new Set(['q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q11']);
 
 const LEGACY_STEP_REDIRECT = {
-  load_check: 'survey',
-  write_order_checklist: 'survey',
-  category_photos: 'after_photos',
-  shift_log: 'time',
-  review: 'time',
+  before_photos: 'visit',
+  survey: 'visit',
+  after_photos: 'visit',
+  time: 'visit',
+  load_check: 'visit',
+  write_order_checklist: 'visit',
+  category_photos: 'visit',
+  shift_log: 'visit',
+  review: 'visit',
 };
 
+/** Inline category photos on survey answers (must match visit-flow.js). */
+const SURVEY_INLINE_PHOTOS = {
+  q3: { categoryId: 'cp-serviced-section', label: 'Photo of stocked section' },
+  q5: { categoryId: 'clipstrips', label: 'Photo of clip strips' },
+  q7: { categoryId: 'cat-litter-pan-liners', label: 'Photo of cat litter top shelf' },
+  q9: { categoryId: 'butcher-block-rack', label: 'Photo of Butcher Block rack' },
+};
+
+function surveyAnswerNeedsCategoryPhoto(questionId, answer) {
+  if (answer == null || answer === '') return false;
+  if (questionId === 'q3') return answer !== 'Did not stock';
+  if (questionId === 'q5') return String(answer).toLowerCase() === 'yes';
+  if (questionId === 'q7') return answer === 'Yes';
+  if (questionId === 'q9') return String(answer).toLowerCase() === 'yes';
+  return false;
+}
+
 const STEP_HINTS = {
+  visit: 'Work top to bottom — start time, before photos, questions (with photos as needed), after photos, then confirm stop time and mileage.',
   before_photos:
     'Photograph the Pet Supplies aisle when you arrive. Two 4ft sections per photo. Open the camera once and take every before shot.',
-  survey: 'Answer these the same way you would in SAS.',
-  after_photos:
-    'Photograph the finished aisle plus clip strips, cat litter top shelf, and Butcher Block. The app places photos for you.',
-  time: 'Set your start and stop times, then calculate mileage.',
+  survey: 'Answer these the same way you would in SAS. When a question needs a photo, take it right below that answer.',
+  after_photos: 'Photograph the finished Pet Supplies aisle when you are done. Two 4ft sections per photo.',
+  time: 'Set your stop time and calculate mileage to finish.',
 };
 
 const STEP_LABELS = {
@@ -48,6 +69,11 @@ const STEP_LABELS = {
 };
 
 const API = '/api/central-pet';
+
+/** Live camera zoom: 0.5× = wide, 1× = normal, 4× = tight crop / hardware tele. */
+const LIVE_CAMERA_ZOOM_MIN = 0.5;
+const LIVE_CAMERA_ZOOM_MAX = 4;
+const LIVE_CAMERA_ZOOM_DEFAULT = LIVE_CAMERA_ZOOM_MIN;
 
 async function apiCall(path, opts = {}) {
   const res = await window.cpAuthFetch(`${API}${path}`, {
@@ -170,14 +196,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (vf.draft) {
         // Prefer light thumb refresh when still on a photo-heavy section
         const step = vf.draft.currentStep;
-        if (
-          step === 'before_photos' ||
-          step === 'after_photos' ||
-          step === 'category_photos' ||
-          step === 'load_check' ||
-          step === 'write_order_checklist' ||
-          step === 'review'
-        ) {
+        if (step === 'visit' || step === 'before_photos' || step === 'after_photos') {
           // When an upload finishes, merge draft from latest successful result
           const lastDone = [...photoQueue.items].reverse().find((i) => i.status === 'done' && i.result);
           if (lastDone?.result) {
@@ -405,6 +424,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (video) {
       try {
         video.srcObject = null;
+        video.style.transform = '';
+        video.style.transformOrigin = '';
       } catch {
         /* ignore */
       }
@@ -421,7 +442,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     overlay.hidden = true;
     overlay.innerHTML = `
       <div class="vf-live-camera-inner">
-        <video id="vfLiveVideo" class="vf-live-video" playsinline autoplay muted></video>
+        <div class="vf-live-video-stage">
+          <video id="vfLiveVideo" class="vf-live-video" playsinline autoplay muted></video>
+        </div>
         <canvas id="vfLiveCanvas" class="vf-live-canvas" hidden></canvas>
         <div class="vf-live-top">
           <span id="vfLiveTitle" class="vf-live-title">Camera</span>
@@ -434,7 +457,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         </div>
         <div class="vf-live-zoom" id="vfLiveZoomBar">
           <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomOut" aria-label="Zoom out">−</button>
-          <input type="range" class="vf-live-zoom-range" id="vfLiveZoomRange" min="1" max="3" step="0.05" value="1">
+          <input type="range" class="vf-live-zoom-range" id="vfLiveZoomRange" min="0.5" max="4" step="0.05" value="0.5">
+          <span id="vfLiveZoomLabel" class="vf-live-zoom-label" aria-live="polite">0.5×</span>
           <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomIn" aria-label="Zoom in">+</button>
         </div>
         <div class="vf-live-controls">
@@ -462,9 +486,58 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     overlay.querySelector('#vfLiveZoomRange')?.addEventListener('input', (e) =>
       applyLiveZoom(Number(e.target.value))
     );
-    overlay.querySelector('#vfLiveZoomOut')?.addEventListener('click', () => nudgeLiveZoom(-0.15));
-    overlay.querySelector('#vfLiveZoomIn')?.addEventListener('click', () => nudgeLiveZoom(0.15));
+    overlay.querySelector('#vfLiveZoomOut')?.addEventListener('click', () => nudgeLiveZoom(-0.1));
+    overlay.querySelector('#vfLiveZoomIn')?.addEventListener('click', () => nudgeLiveZoom(0.1));
     return overlay;
+  }
+
+  function formatLiveZoomLabel(zoom) {
+    const z = Number(zoom);
+    if (!Number.isFinite(z)) return '1×';
+    const text = z >= 1 ? z.toFixed(z >= 10 ? 0 : 1) : z.toFixed(1);
+    return `${text.replace(/\.0$/, '')}×`;
+  }
+
+  /** Prefer ultrawide / wide rear camera when the device exposes multiple lenses. */
+  async function pickWideRearCameraDeviceId() {
+    if (!navigator.mediaDevices?.enumerateDevices) return null;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videos = devices.filter((d) => d.kind === 'videoinput' && d.deviceId);
+      const labelOf = (d) => String(d.label || '').toLowerCase();
+      const isRear = (d) => /back|rear|environment|trás|arrière/i.test(labelOf(d));
+      const isUltraWide = (d) => /ultra\s*wide|ultrawide|0\.5|wide.?angle|grand.?angle/i.test(labelOf(d));
+      const ultra = videos.find((d) => isRear(d) && isUltraWide(d));
+      if (ultra) return ultra.deviceId;
+      const rear = videos.find((d) => isRear(d));
+      return rear?.deviceId || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function updateLiveVideoPreview() {
+    const cam = vf.liveCam;
+    const video = document.getElementById('vfLiveVideo');
+    if (!cam || !video) return;
+    const hardwareDrivesPreview = cam.hardwareCapable && cam.zoom >= cam.hardwareMin - 0.001;
+    if (hardwareDrivesPreview) {
+      video.style.transform = '';
+      video.style.transformOrigin = '';
+      return;
+    }
+    video.style.transformOrigin = 'center center';
+    video.style.transform = `scale(${cam.zoom})`;
+  }
+
+  function updateLiveZoomChrome() {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const range = document.getElementById('vfLiveZoomRange');
+    const label = document.getElementById('vfLiveZoomLabel');
+    if (range) range.value = String(cam.zoom);
+    if (label) label.textContent = formatLiveZoomLabel(cam.zoom);
+    updateLiveVideoPreview();
   }
 
   function toggleLivePhotoDrawer(forceOpen) {
@@ -484,23 +557,23 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (!cam) return;
     const clamped = Math.min(cam.zoomMax, Math.max(cam.zoomMin, value));
     cam.zoom = clamped;
-    if (!cam.hardwareZoom) cam.digitalZoom = clamped;
-    const range = document.getElementById('vfLiveZoomRange');
-    if (range) range.value = String(clamped);
-    if (cam.hardwareZoom && cam.track?.applyConstraints) {
-      try {
-        await cam.track.applyConstraints({ advanced: [{ zoom: clamped }] });
-      } catch {
-        cam.hardwareZoom = false;
-        cam.digitalZoom = clamped;
-      }
+    updateLiveZoomChrome();
+
+    if (!cam.hardwareCapable || !cam.track?.applyConstraints) return;
+
+    const hwTarget = Math.max(cam.hardwareMin, clamped);
+    try {
+      await cam.track.applyConstraints({ advanced: [{ zoom: hwTarget }] });
+    } catch {
+      cam.hardwareCapable = false;
+      updateLiveVideoPreview();
     }
   }
 
   function nudgeLiveZoom(delta) {
     const cam = vf.liveCam;
     if (!cam) return;
-    applyLiveZoom((cam.hardwareZoom ? cam.zoom : cam.digitalZoom) + delta);
+    applyLiveZoom(cam.zoom + delta);
   }
 
   function setupLiveCameraZoom() {
@@ -512,8 +585,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     bar.hidden = false;
     range.min = String(cam.zoomMin);
     range.max = String(cam.zoomMax);
-    range.step = cam.hardwareZoom ? '0.1' : '0.05';
-    range.value = String(cam.hardwareZoom ? cam.zoom : cam.digitalZoom);
+    range.step = '0.05';
+    updateLiveZoomChrome();
   }
 
   function updateLiveCameraChrome() {
@@ -545,15 +618,32 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       toast('Camera not ready yet — wait a moment', 'warn', 2500);
       return;
     }
-    const zoomLevel = cam.hardwareZoom ? cam.zoom : cam.digitalZoom || 1;
-    const cropW = w / zoomLevel;
-    const cropH = h / zoomLevel;
-    const sx = (w - cropW) / 2;
-    const sy = (h - cropH) / 2;
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, w, h);
+    const z = cam.zoom;
+    const useHardwareCapture = cam.hardwareCapable && z >= cam.hardwareMin - 0.001;
+    if (useHardwareCapture || z > 1 + 0.001) {
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (useHardwareCapture || z <= 1) {
+        ctx.drawImage(video, 0, 0, w, h);
+      } else {
+        const cropW = w / z;
+        const cropH = h / z;
+        const sx = (w - cropW) / 2;
+        const sy = (h - cropH) / 2;
+        ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, w, h);
+      }
+    } else {
+      // Digital wide (e.g. 0.5×): match letterboxed preview when hardware can't go below 1×.
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+      const drawW = w * z;
+      const drawH = h * z;
+      ctx.drawImage(video, 0, 0, w, h, (w - drawW) / 2, (h - drawH) / 2, drawW, drawH);
+    }
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
     if (!blob) {
       toast('Could not capture frame', 'bad', 3000);
@@ -589,30 +679,36 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     stopLiveCamera({ rerender: false });
     const overlay = ensureLiveCameraDom();
     try {
+      const wideDeviceId = await pickWideRearCameraDeviceId();
+      const videoConstraints = {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ zoom: LIVE_CAMERA_ZOOM_DEFAULT }],
+      };
+      if (wideDeviceId) videoConstraints.deviceId = { ideal: wideDeviceId };
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 3840 },
-          height: { ideal: 2160 },
-        },
+        video: videoConstraints,
       });
       const track = stream.getVideoTracks()[0];
-      let zoomMin = 1;
-      let zoomMax = 3;
-      let zoom = 1;
-      let hardwareZoom = false;
+      let hardwareMin = 1;
+      let hardwareMax = LIVE_CAMERA_ZOOM_MAX;
+      let hardwareCapable = false;
       try {
         const caps = track.getCapabilities?.();
         if (caps?.zoom) {
-          hardwareZoom = true;
-          zoomMin = caps.zoom.min ?? 1;
-          zoomMax = caps.zoom.max ?? Math.max(caps.zoom.min ?? 1, 3);
-          zoom = track.getSettings?.().zoom ?? caps.zoom.min ?? 1;
+          hardwareCapable = true;
+          hardwareMin = caps.zoom.min ?? 1;
+          hardwareMax = caps.zoom.max ?? LIVE_CAMERA_ZOOM_MAX;
         }
       } catch {
-        /* digital zoom fallback */
+        /* digital preview/capture fallback */
       }
+      const zoomMin = Math.min(LIVE_CAMERA_ZOOM_MIN, hardwareMin);
+      const zoomMax = Math.max(LIVE_CAMERA_ZOOM_MAX, hardwareMax);
+      const zoom = Math.max(zoomMin, LIVE_CAMERA_ZOOM_DEFAULT);
       const extra = { target: kind };
       vf.liveCam = {
         kind,
@@ -623,8 +719,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         zoomMin,
         zoomMax,
         zoom,
-        digitalZoom: hardwareZoom ? 1 : 1,
-        hardwareZoom,
+        hardwareMin,
+        hardwareMax,
+        hardwareCapable,
         photoDrawerOpen: false,
       };
       const video = document.getElementById('vfLiveVideo');
@@ -638,6 +735,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (thumbs) thumbs.innerHTML = '';
       toggleLivePhotoDrawer(false);
       setupLiveCameraZoom();
+      await applyLiveZoom(zoom);
       updateLiveCameraChrome();
       overlay.hidden = false;
     } catch (err) {
@@ -913,23 +1011,319 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   /* ---------- Section renderers ---------- */
 
-  function nextStepInSequence() {
-    if (!vf.draft?.steps) return null;
-    const steps = vf.draft.steps;
-    const idx = steps.indexOf(vf.draft.currentStep);
-    if (idx === -1 || idx >= steps.length - 1) return null;
-    return steps[idx + 1];
+  function visitBlock(title, anchorId) {
+    const sec = document.createElement('section');
+    sec.className = 'vf-visit-block';
+    if (anchorId) sec.id = anchorId;
+    const head = document.createElement('h2');
+    head.className = 'vf-block-head';
+    head.textContent = title;
+    sec.appendChild(head);
+    return sec;
   }
 
-  function appendStepContinue(body) {
-    const next = nextStepInSequence();
-    if (!next || vf.draft.currentStep === 'time') return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'primary vf-step-continue';
-    btn.textContent = 'Continue';
-    btn.addEventListener('click', () => goToSection(next));
-    body.appendChild(btn);
+  function appendSurveyInlinePhoto(wrap, q) {
+    const spec = SURVEY_INLINE_PHOTOS[q.id];
+    if (!spec) return;
+    const ans = vf.draft.survey?.[q.id];
+    if (!surveyAnswerNeedsCategoryPhoto(q.id, ans)) return;
+    const photos = vf.draft.categoryPhotos?.[spec.categoryId] || [];
+    const extra = { target: 'category', categoryId: spec.categoryId };
+    wrap.appendChild(
+      photoCaptureBlock({
+        label: spec.label,
+        photos,
+        minRequired: 1,
+        anchorId: `survey-${q.id}-photo`,
+        pending: photoQueue.pendingFor(extra),
+        extra,
+        onCapture: (file) => queuePhoto(file, extra),
+        onRemove: (seq) => removePhoto('category', seq, { categoryId: spec.categoryId }),
+      })
+    );
+  }
+
+  function renderShiftStartBlock(body) {
+    const d = vf.draft;
+    const sec = visitBlock('Start of shift', 'shift-start');
+    const day = d.date
+      ? new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'short',
+          day: 'numeric',
+        })
+      : '';
+    const meta = document.createElement('p');
+    meta.className = 'overlay-meta';
+    meta.textContent = day ? `${day} · Store ${d.actualStore}` : `Store ${d.actualStore}`;
+    sec.appendChild(meta);
+
+    if (d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore)) {
+      const b = document.createElement('div');
+      b.className = 'vf-store-redirect';
+      b.innerHTML = `Running as store <strong>${d.actualStore}</strong> — scheduled under <strong>${d.scheduledStore}</strong>`;
+      sec.appendChild(b);
+    }
+
+    if (vf.storeNotes?.length) {
+      const box = document.createElement('div');
+      box.className = 'vf-carryforward';
+      const head = document.createElement('div');
+      head.className = 'vf-carryforward-head';
+      head.textContent = 'Notes from a previous visit to this store';
+      box.appendChild(head);
+      for (const n of vf.storeNotes) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'vf-carryforward-note';
+        const txt = document.createElement('span');
+        txt.className = 'vf-carryforward-text';
+        txt.textContent = n.note;
+        rowEl.appendChild(txt);
+        const done = document.createElement('button');
+        done.type = 'button';
+        done.className = 'subtle';
+        done.textContent = 'Done';
+        done.addEventListener('click', async () => {
+          try {
+            await apiCall(`/shift-day/store-notes/${n.id}/resolve`, {
+              method: 'POST',
+              body: JSON.stringify({}),
+            });
+            vf.storeNotes = vf.storeNotes.filter((x) => String(x.id) !== String(n.id));
+            renderSectionBody();
+          } catch (e) {
+            toast(`Could not resolve: ${e.message}`, 'bad');
+          }
+        });
+        rowEl.appendChild(done);
+        box.appendChild(rowEl);
+      }
+      sec.appendChild(box);
+    }
+
+    const card = document.createElement('div');
+    card.className = 'vf-time-card vf-time-card-compact';
+    card.innerHTML = `
+      <label class="field">When did you start this visit?
+        <input type="datetime-local" id="vfStartTop" value="${toLocalInput(d.visitStart.actual)}">
+      </label>
+      <button type="button" id="vfNowStartTop" class="subtle">Set start to now</button>`;
+    sec.appendChild(card);
+    body.appendChild(sec);
+
+    async function saveStartTop(iso) {
+      await autosave(() =>
+        apiCall('/shift-day/visit/time', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: d.date,
+            actualStore: d.actualStore,
+            startActual: iso,
+          }),
+        })
+      );
+      updateFinishButton();
+    }
+    card.querySelector('#vfStartTop')?.addEventListener('change', (e) =>
+      saveStartTop(new Date(e.target.value).toISOString())
+    );
+    card.querySelector('#vfNowStartTop')?.addEventListener('click', () => {
+      const now = new Date();
+      const input = card.querySelector('#vfStartTop');
+      if (input) input.value = toLocalInput(now.toISOString());
+      saveStartTop(now.toISOString());
+    });
+  }
+
+  function renderBeforePhotosBlock(body) {
+    const sec = visitBlock('Before photos', 'before-photos');
+    const p = document.createElement('p');
+    p.className = 'overlay-meta';
+    p.textContent =
+      'Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.';
+    sec.appendChild(p);
+    const guide = document.createElement('p');
+    guide.className = 'vf-step-guide';
+    guide.textContent = STEP_HINTS.before_photos;
+    sec.appendChild(guide);
+    const extra = { target: 'before' };
+    sec.appendChild(
+      photoCaptureBlock({
+        label: 'Before photos',
+        photos: vf.draft.beforePhotos,
+        minRequired: 1,
+        pending: photoQueue.pendingFor(extra),
+        extra,
+        liveKind: 'before',
+        onCapture: (file) => queuePhoto(file, extra),
+        onRemove: (seq) => removePhoto('before', seq),
+      })
+    );
+    body.appendChild(sec);
+  }
+
+  function renderSurveyBlock(body) {
+    const sec = visitBlock('Questions', 'survey-section');
+    const helper = document.createElement('p');
+    helper.className = 'overlay-meta';
+    helper.textContent = STEP_HINTS.survey;
+    sec.appendChild(helper);
+
+    const visibility = surveyVisibility();
+    const answers = vf.draft.survey || {};
+    for (const q of vf.survey.questions.slice().sort((a, b) => a.order - b.order)) {
+      if (!REP_SURVEY_IDS.has(q.id)) continue;
+      if (!visibility[q.id]) continue;
+      const wrap = document.createElement('div');
+      wrap.className = 'vf-survey-q';
+      wrap.id = `survey-${q.id}`;
+      const label = document.createElement('div');
+      label.className = 'vf-survey-label';
+      label.textContent = q.text;
+      wrap.appendChild(label);
+
+      if (q.type === 'yesno' || q.type === 'single-select') {
+        const row = document.createElement('div');
+        row.className = 'vf-btn-row';
+        for (const opt of q.options) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          if (answers[q.id] === opt) btn.className = 'primary';
+          btn.textContent = opt;
+          btn.addEventListener('click', () =>
+            autosave(() =>
+              apiCall('/shift-day/visit/survey', {
+                method: 'POST',
+                body: JSON.stringify({
+                  repKey: getRepKey(),
+                  date: vf.draft.date,
+                  actualStore: vf.draft.actualStore,
+                  answers: { [q.id]: opt },
+                }),
+              })
+            ).then(renderAll)
+          );
+          row.appendChild(btn);
+        }
+        wrap.appendChild(row);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.rows = 2;
+        textarea.value = answers[q.id] || '';
+        textarea.addEventListener('blur', () =>
+          autosave(() =>
+            apiCall('/shift-day/visit/survey', {
+              method: 'POST',
+              body: JSON.stringify({
+                repKey: getRepKey(),
+                date: vf.draft.date,
+                actualStore: vf.draft.actualStore,
+                answers: { [q.id]: textarea.value },
+              }),
+            })
+          ).then(() => {
+            updateFinishButton();
+          })
+        );
+        wrap.appendChild(textarea);
+      }
+      appendSurveyInlinePhoto(wrap, q);
+      sec.appendChild(wrap);
+    }
+    body.appendChild(sec);
+  }
+
+  function renderAfterPhotosBlock(body) {
+    const sec = visitBlock('After photos', 'after-photos');
+    const p = document.createElement('p');
+    p.className = 'overlay-meta';
+    p.textContent =
+      'Take AFTER photos of the Pet Supplies aisle when you are finished. Two 4ft sections per photo.';
+    sec.appendChild(p);
+    const guide = document.createElement('p');
+    guide.className = 'vf-step-guide';
+    guide.textContent = STEP_HINTS.after_photos;
+    sec.appendChild(guide);
+
+    const selectedGroups = vf.draft.optionalFixtures || {};
+    const optionalGroups = vf.afterCoach?.optionalGroups || [
+      {
+        id: 'endcaps-wings',
+        label: 'End caps / wings',
+        tip: 'Only if you serviced endcaps or wing panels this visit.',
+        categoryIds: ['endcaps', 'wing-panels'],
+      },
+    ];
+
+    for (const group of optionalGroups) {
+      const opt = document.createElement('label');
+      opt.className = 'vf-optional-fixture';
+      opt.innerHTML = `
+        <input type="checkbox" data-optional-group="${escapeHtml(group.id)}" ${
+          selectedGroups[group.id] ? 'checked' : ''
+        } />
+        <span>
+          <strong>Include ${escapeHtml(group.label)}</strong>
+          <span class="overlay-meta"> — optional. ${escapeHtml(group.tip || '')}</span>
+        </span>`;
+      sec.appendChild(opt);
+      opt.querySelector('input')?.addEventListener('change', async (e) => {
+        const on = !!e.target.checked;
+        try {
+          await autosave(() =>
+            apiCall('/shift-day/visit/optional-fixtures', {
+              method: 'POST',
+              body: JSON.stringify({
+                repKey: getRepKey(),
+                date: vf.draft.date,
+                actualStore: vf.draft.actualStore,
+                groupId: group.id,
+                selected: on,
+              }),
+            })
+          );
+          renderAll();
+        } catch {
+          e.target.checked = !on;
+        }
+      });
+    }
+
+    if (selectedGroups['endcaps-wings']) {
+      for (const catId of ['endcaps', 'wing-panels']) {
+        const cat = (vf.categoryTargets || []).find((c) => c.id === catId);
+        const photos = vf.draft.categoryPhotos?.[catId] || [];
+        const extra = { target: 'category', categoryId: catId };
+        sec.appendChild(
+          photoCaptureBlock({
+            label: cat?.label || catId,
+            photos,
+            minRequired: 1,
+            anchorId: `after-photos-${catId}`,
+            pending: photoQueue.pendingFor(extra),
+            extra,
+            onCapture: (file) => queuePhoto(file, extra),
+            onRemove: (seq) => removePhoto('category', seq, { categoryId: catId }),
+          })
+        );
+      }
+    }
+
+    const extra = { target: 'after' };
+    sec.appendChild(
+      photoCaptureBlock({
+        label: 'After photos',
+        photos: vf.draft.afterPhotos,
+        minRequired: 1,
+        pending: photoQueue.pendingFor(extra),
+        extra,
+        liveKind: 'after',
+        onCapture: (file) => queuePhoto(file, extra),
+        onRemove: (seq) => removePhoto('after', seq),
+      })
+    );
+    body.appendChild(sec);
   }
 
   function renderTimeUnmet(body) {
@@ -951,113 +1345,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     body.appendChild(box);
   }
 
-  function renderBeforeAfter(kind) {
-    const body = $('vfBody');
-    body.innerHTML = '';
-    const photos = kind === 'before' ? vf.draft.beforePhotos : vf.draft.afterPhotos;
-    const p = document.createElement('p');
-    p.className = 'overlay-meta';
-    p.textContent =
-      kind === 'before'
-        ? 'Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.'
-        : 'Take AFTER photos when you are finished. Include the aisle plus clip strips, cat litter top shelf, and Butcher Block — the app places them for you.';
-    body.appendChild(p);
-    const guide = document.createElement('p');
-    guide.className = 'vf-step-guide';
-    guide.textContent = STEP_HINTS[kind === 'before' ? 'before_photos' : 'after_photos'];
-    body.appendChild(guide);
-
-    if (kind === 'after') {
-      const selectedGroups = vf.draft.optionalFixtures || {};
-      const optionalGroups =
-        vf.afterCoach?.optionalGroups ||
-        [
-          {
-            id: 'endcaps-wings',
-            label: 'End caps / wings',
-            tip: 'Only if you serviced endcaps or wing panels this visit.',
-            categoryIds: ['endcaps', 'wing-panels'],
-          },
-        ];
-
-      for (const group of optionalGroups) {
-        const opt = document.createElement('label');
-        opt.className = 'vf-optional-fixture';
-        opt.innerHTML = `
-          <input type="checkbox" data-optional-group="${escapeHtml(group.id)}" ${
-            selectedGroups[group.id] ? 'checked' : ''
-          } />
-          <span>
-            <strong>Include ${escapeHtml(group.label)}</strong>
-            <span class="overlay-meta"> — optional. ${escapeHtml(group.tip || '')}</span>
-          </span>`;
-        body.appendChild(opt);
-        opt.querySelector('input')?.addEventListener('change', async (e) => {
-          const on = !!e.target.checked;
-          try {
-            await autosave(() =>
-              apiCall('/shift-day/visit/optional-fixtures', {
-                method: 'POST',
-                body: JSON.stringify({
-                  repKey: getRepKey(),
-                  date: vf.draft.date,
-                  actualStore: vf.draft.actualStore,
-                  groupId: group.id,
-                  selected: on,
-                }),
-              })
-            );
-            renderSidebar();
-            updateFinishButton();
-            renderBeforeAfter('after');
-          } catch {
-            e.target.checked = !on;
-          }
-        });
-      }
-
-      const coach = (vf.afterCoach?.coach || vf.categoryTargets || []).filter((c) => {
-        if (!c.optional) return true;
-        return !!selectedGroups[c.optionalGroup || 'endcaps-wings'];
-      });
-      const list = document.createElement('div');
-      list.className = 'vf-after-coach';
-      list.id = 'after-photos-coach';
-      list.innerHTML = `
-        <div class="vf-photo-head">
-          <strong>Include in your after photos</strong>
-        </div>
-        <ul class="vf-coach-list">
-          ${coach
-            .map(
-              (c) =>
-                `<li><strong>${escapeHtml(c.label)}</strong>${
-                  c.tip ? ` — <span class="overlay-meta">${escapeHtml(c.tip)}</span>` : ''
-                }</li>`
-            )
-            .join('')}
-        </ul>`;
-      body.appendChild(list);
-    }
-
-    const extra = { target: kind };
-    body.appendChild(
-      photoCaptureBlock({
-        label: kind === 'before' ? 'Before photos' : 'After photos',
-        photos,
-        minRequired: 1,
-        anchorId: kind === 'before' ? 'before-photos' : 'after-photos',
-        pending: photoQueue.pendingFor(extra),
-        extra,
-        liveKind: kind,
-        onCapture: (file) => queuePhoto(file, extra),
-        onRemove: (seq) => removePhoto(kind, seq),
-      })
-    );
-    appendStepContinue(body);
-  }
-
-  function renderLoadCheck() {
+  function renderTimeUnmet(body) {
     const body = $('vfBody');
     body.innerHTML = '';
     const status = vf.draft.loadCheck?.status || null;
@@ -1219,86 +1507,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function renderCategoryPhotos() {
-    // Legacy step removed — bounce reps to After Photos + coaching.
-    goToSection('after_photos');
+    goToSection('visit', 'after-photos');
   }
 
   function surveyVisibility() {
     const answers = vf.draft.survey || {};
     return Object.fromEntries(vf.survey.questions.map((q) => [q.id, evalCondition(q.visibleIf, answers)]));
-  }
-
-  function renderSurvey() {
-    const body = $('vfBody');
-    body.innerHTML = '';
-    const head = document.createElement('h2');
-    head.className = 'vf-section-head';
-    head.textContent = 'Questions';
-    body.appendChild(head);
-    const helper = document.createElement('p');
-    helper.className = 'overlay-meta';
-    helper.textContent = STEP_HINTS.survey;
-    body.appendChild(helper);
-
-    const visibility = surveyVisibility();
-    const answers = vf.draft.survey || {};
-    for (const q of vf.survey.questions.slice().sort((a, b) => a.order - b.order)) {
-      if (!REP_SURVEY_IDS.has(q.id)) continue;
-      if (!visibility[q.id]) continue;
-      const wrap = document.createElement('div');
-      wrap.className = 'vf-survey-q';
-      wrap.id = `survey-${q.id}`;
-      const label = document.createElement('div');
-      label.className = 'vf-survey-label';
-      label.textContent = q.text;
-      wrap.appendChild(label);
-
-      if (q.type === 'yesno' || q.type === 'single-select') {
-        const row = document.createElement('div');
-        row.className = 'vf-btn-row';
-        for (const opt of q.options) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          if (answers[q.id] === opt) btn.className = 'primary';
-          btn.textContent = opt;
-          btn.addEventListener('click', () =>
-            autosave(() =>
-              apiCall('/shift-day/visit/survey', {
-                method: 'POST',
-                body: JSON.stringify({
-                  repKey: getRepKey(),
-                  date: vf.draft.date,
-                  actualStore: vf.draft.actualStore,
-                  answers: { [q.id]: opt },
-                }),
-              })
-            ).then(renderAll)
-          );
-          row.appendChild(btn);
-        }
-        wrap.appendChild(row);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.rows = 2;
-        textarea.value = answers[q.id] || '';
-        textarea.addEventListener('blur', () =>
-          autosave(() =>
-            apiCall('/shift-day/visit/survey', {
-              method: 'POST',
-              body: JSON.stringify({
-                repKey: getRepKey(),
-                date: vf.draft.date,
-                actualStore: vf.draft.actualStore,
-                answers: { [q.id]: textarea.value },
-              }),
-            })
-          ).then(renderSidebar)
-        );
-        wrap.appendChild(textarea);
-      }
-      body.appendChild(wrap);
-    }
-    appendStepContinue(body);
   }
 
   function toLocalInput(iso) {
@@ -1309,53 +1523,41 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  function renderTime() {
-    const body = $('vfBody');
-    body.innerHTML = `
-      <p class="vf-step-guide">${STEP_HINTS.time}</p>
-      <div class="vf-time-card">
-        <label class="field" id="time-start">Actual start time
-          <input type="datetime-local" id="vfStart" value="${toLocalInput(vf.draft.visitStart.actual)}">
-        </label>
-        <label class="field" id="time-stop">Stop time
-          <input type="datetime-local" id="vfStop" value="${toLocalInput(vf.draft.visitStop.actual)}">
-        </label>
-        <div class="vf-btn-row" style="margin:.35rem 0 .6rem">
-          <button type="button" id="vfNowStart" class="subtle">Set start to now</button>
-          <button type="button" id="vfNowStop" class="subtle">Set stop to now</button>
-        </div>
-        <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
-          <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
-        </label>
-        <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
-        <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
-        <label class="field">Note if mileage looks wrong
-          <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
-        </label>
-      </div>`;
+  function renderTimeBlock(body) {
+    const sec = visitBlock('Confirm time & mileage', 'time-section');
+    const guide = document.createElement('p');
+    guide.className = 'vf-step-guide';
+    guide.textContent = STEP_HINTS.time;
+    sec.appendChild(guide);
 
-    renderTimeUnmet(body);
+    const card = document.createElement('div');
+    card.className = 'vf-time-card';
+    card.innerHTML = `
+      <label class="field" id="time-stop">Stop time
+        <input type="datetime-local" id="vfStop" value="${toLocalInput(vf.draft.visitStop.actual)}">
+      </label>
+      <div class="vf-btn-row" style="margin:.35rem 0 .6rem">
+        <button type="button" id="vfNowStop" class="subtle">Set stop to now</button>
+      </div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
+        <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
+      </label>
+      <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
+      <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
+      <label class="field">Note if mileage looks wrong
+        <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
+      </label>`;
+    sec.appendChild(card);
+    body.appendChild(sec);
+
+    renderTimeUnmet(sec);
 
     const renderMileage = () => {
-      $('time-mileage').textContent = formatMileageTravel(vf.draft.mileage?.leg);
+      const el = $('time-mileage');
+      if (el) el.textContent = formatMileageTravel(vf.draft.mileage?.leg);
     };
     renderMileage();
 
-    async function saveStart(iso) {
-      await autosave(() =>
-        apiCall('/shift-day/visit/time', {
-          method: 'POST',
-          body: JSON.stringify({
-            repKey: getRepKey(),
-            date: vf.draft.date,
-            actualStore: vf.draft.actualStore,
-            startActual: iso,
-          }),
-        })
-      );
-      renderSidebar();
-      updateFinishButton();
-    }
     async function saveStop(iso) {
       await autosave(() =>
         apiCall('/shift-day/visit/time', {
@@ -1368,23 +1570,19 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           }),
         })
       );
-      renderSidebar();
       updateFinishButton();
     }
 
-    $('vfStart').addEventListener('change', (e) => saveStart(new Date(e.target.value).toISOString()));
-    $('vfStop').addEventListener('change', (e) => saveStop(new Date(e.target.value).toISOString()));
-    $('vfNowStart')?.addEventListener('click', () => {
+    card.querySelector('#vfStop')?.addEventListener('change', (e) =>
+      saveStop(new Date(e.target.value).toISOString())
+    );
+    card.querySelector('#vfNowStop')?.addEventListener('click', () => {
       const now = new Date();
-      $('vfStart').value = toLocalInput(now.toISOString());
-      saveStart(now.toISOString());
-    });
-    $('vfNowStop')?.addEventListener('click', () => {
-      const now = new Date();
-      $('vfStop').value = toLocalInput(now.toISOString());
+      const input = card.querySelector('#vfStop');
+      if (input) input.value = toLocalInput(now.toISOString());
       saveStop(now.toISOString());
     });
-    $('vfLastStop').addEventListener('change', (e) =>
+    card.querySelector('#vfLastStop')?.addEventListener('change', (e) =>
       autosave(() =>
         apiCall('/shift-day/visit/time', {
           method: 'POST',
@@ -1395,9 +1593,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             isLastStopOfDay: e.target.checked,
           }),
         })
-      )
+      ).then(updateFinishButton)
     );
-    $('vfCalcMileage').addEventListener('click', () =>
+    card.querySelector('#vfCalcMileage')?.addEventListener('click', () =>
       autosave(() =>
         apiCall('/shift-day/visit/mileage', {
           method: 'POST',
@@ -1405,15 +1603,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         })
       ).then(() => {
         renderMileage();
-        renderSidebar();
         updateFinishButton();
-        if (vf.draft.currentStep === 'time') {
-          $('vfBody')?.querySelector('.vf-time-unmet')?.remove();
-          renderTimeUnmet($('vfBody'));
-        }
+        sec.querySelector('.vf-time-unmet')?.remove();
+        renderTimeUnmet(sec);
       })
     );
-    $('vfMileageNote').addEventListener('blur', (e) =>
+    card.querySelector('#vfMileageNote')?.addEventListener('blur', (e) =>
       autosave(() =>
         apiCall('/shift-day/visit/mileage', {
           method: 'POST',
@@ -1428,7 +1623,21 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     );
   }
 
-  function renderReview() {
+  function renderVisitPage() {
+    const body = $('vfBody');
+    body.innerHTML = '';
+    const intro = document.createElement('p');
+    intro.className = 'vf-visit-intro overlay-meta';
+    intro.textContent = STEP_HINTS.visit;
+    body.appendChild(intro);
+    renderShiftStartBlock(body);
+    renderBeforePhotosBlock(body);
+    renderSurveyBlock(body);
+    renderAfterPhotosBlock(body);
+    renderTimeBlock(body);
+  }
+
+  function renderLoadCheck() {
     const body = $('vfBody');
     const d = vf.draft;
     const unmet = d.unmetRequirements || [];
@@ -1507,30 +1716,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   /* ---------- Sidebar + shell ---------- */
 
   function renderSidebar() {
-    const nav = $('vfSidebarSections') || $('vfSidebar');
-    const d = vf.draft;
-    const statuses = d.sectionStatuses || d.steps.map((id) => ({ id, label: STEP_LABELS[id], status: 'empty', hint: null }));
-    nav.innerHTML = statuses
-      .map((s) => {
-        const active = s.id === d.currentStep ? 'active' : '';
-        const hint = s.hint
-          ? `<span class="vf-hint-chip" title="${escapeHtml(s.hint)}">${escapeHtml(s.hint)}</span>`
-          : '';
-        return `<button type="button" class="vf-nav-item ${active} status-${s.status}" data-section="${s.id}">
-          <span class="vf-nav-label">${escapeHtml(s.label)}</span>
-          <span class="vf-status-chip status-${s.status}">${STATUS_LABELS[s.status] || s.status}</span>
-          ${hint}
-        </button>`;
-      })
-      .join('');
-
-    nav.querySelectorAll('.vf-nav-item').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        goToSection(btn.dataset.section);
-        closeSidebarDrawer();
-      });
-    });
-
     updateFinishButton();
     updateSidebarMeta();
   }
@@ -1587,8 +1772,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function updateFinishButton() {
     const btn = $('vfFinish');
     if (!btn || !vf.draft) return;
-    const onTime = vf.draft.currentStep === 'time';
-    btn.hidden = !onTime;
+    btn.hidden = false;
     const q = photoQueue.snapshot();
     const uploadsBlocking = q.inFlight > 0 || q.failed > 0;
     const can = !!vf.draft.canSeal && !uploadsBlocking;
@@ -1724,76 +1908,16 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     body.appendChild(wrap);
   }
 
-  /* ---------- Store-context + carry-forward notes banner (top of body) ---------- */
-
-  function renderStoreContext() {
-    const body = $('vfBody');
-    const d = vf.draft;
-    const frag = document.createDocumentFragment();
-
-    const redirected = d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore);
-    if (redirected) {
-      const b = document.createElement('div');
-      b.className = 'vf-store-redirect';
-      b.innerHTML = `Running as store <strong>${d.actualStore}</strong> — scheduled under <strong>${d.scheduledStore}</strong>`;
-      frag.appendChild(b);
-    }
-
-    if (vf.storeNotes?.length) {
-      const box = document.createElement('div');
-      box.className = 'vf-carryforward';
-      const head = document.createElement('div');
-      head.className = 'vf-carryforward-head';
-      head.textContent = 'Notes from a previous visit to this store';
-      box.appendChild(head);
-      for (const n of vf.storeNotes) {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'vf-carryforward-note';
-        const txt = document.createElement('span');
-        txt.className = 'vf-carryforward-text';
-        txt.textContent = n.note;
-        rowEl.appendChild(txt);
-        const done = document.createElement('button');
-        done.type = 'button';
-        done.className = 'subtle';
-        done.textContent = 'Done';
-        done.addEventListener('click', async () => {
-          try {
-            await apiCall(`/shift-day/store-notes/${n.id}/resolve`, {
-              method: 'POST',
-              body: JSON.stringify({}),
-            });
-            vf.storeNotes = vf.storeNotes.filter((x) => String(x.id) !== String(n.id));
-            renderSectionBody();
-          } catch (e) {
-            toast(`Could not resolve: ${e.message}`, 'bad');
-          }
-        });
-        rowEl.appendChild(done);
-        box.appendChild(rowEl);
-      }
-      frag.appendChild(box);
-    }
-
-    if (frag.childNodes.length) body.insertBefore(frag, body.firstChild);
-  }
-
   function renderSectionBody() {
     const d = vf.draft;
     $('vfStoreTitle').textContent = `Store ${d.actualStore}`;
 
-    if (LEGACY_STEP_REDIRECT[d.currentStep]) {
-      goToSection(LEGACY_STEP_REDIRECT[d.currentStep]);
+    if (LEGACY_STEP_REDIRECT[d.currentStep] && d.currentStep !== 'visit') {
+      goToSection('visit');
       return;
     }
 
-    if (d.currentStep === 'before_photos') renderBeforeAfter('before');
-    else if (d.currentStep === 'survey') renderSurvey();
-    else if (d.currentStep === 'after_photos') renderBeforeAfter('after');
-    else if (d.currentStep === 'time') renderTime();
-    else goToSection(d.steps?.[0] || 'before_photos');
-
-    renderStoreContext();
+    renderVisitPage();
 
     if (vf.pendingAnchor) {
       const anchor = vf.pendingAnchor;
@@ -1801,7 +1925,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       requestAnimationFrame(() => {
         const el = document.getElementById(anchor);
         if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           el.classList.add('vf-anchor-flash');
           setTimeout(() => el.classList.remove('vf-anchor-flash'), 1600);
         }
@@ -1846,25 +1970,22 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   async function goToSection(sectionId, anchor = null) {
-    if (!sectionId || !vf.draft) return;
-    if (LEGACY_STEP_REDIRECT[sectionId]) sectionId = LEGACY_STEP_REDIRECT[sectionId];
-    if (!vf.draft.steps.includes(sectionId)) return;
-    vf.pendingAnchor = anchor;
-    if (sectionId === vf.draft.currentStep) {
-      renderAll();
-      return;
+    if (!vf.draft) return;
+    if (sectionId && LEGACY_STEP_REDIRECT[sectionId]) sectionId = LEGACY_STEP_REDIRECT[sectionId];
+    vf.pendingAnchor = anchor || null;
+    if (sectionId && sectionId !== vf.draft.currentStep && vf.draft.steps.includes(sectionId)) {
+      await autosave(() =>
+        apiCall('/shift-day/visit/step', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+            step: sectionId,
+          }),
+        })
+      );
     }
-    await autosave(() =>
-      apiCall('/shift-day/visit/step', {
-        method: 'POST',
-        body: JSON.stringify({
-          repKey: getRepKey(),
-          date: vf.draft.date,
-          actualStore: vf.draft.actualStore,
-          step: sectionId,
-        }),
-      })
-    );
     renderAll();
   }
 
@@ -1881,9 +2002,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     // Sort afters into category buckets before the local canSeal gate
     await classifyAfterPhotosQuiet();
     if (!vf.draft.canSeal) {
-      toast('Finish blocked — see what is still needed on Confirm time', 'bad', 4000);
-      if (vf.draft.currentStep !== 'time') await goToSection('time');
-      else renderSectionBody();
+      toast('Finish blocked — see what is still needed below', 'bad', 4000);
+      renderSectionBody();
       return;
     }
     try {
@@ -1910,8 +2030,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         vf.draft.unmetRequirements = err.unmet;
         vf.draft.canSeal = false;
         toast('Still need a few things before you can finish', 'bad', 4500);
-        if (vf.draft.currentStep !== 'time') await goToSection('time');
-        else renderSectionBody();
+        renderSectionBody();
         updateFinishButton();
       } else {
         throw err;
@@ -1987,28 +2106,16 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           shiftId: shift.id,
         }),
       });
-      // Fresh starts land on Before Photos; resumes keep current section
-      if (
-        vf.draft.currentStep !== 'before_photos' &&
-        vf.draft.steps.includes('before_photos') &&
-        vf.draft.status === 'in_progress'
-      ) {
-        const fresh =
-          !vf.draft.beforePhotos.length &&
-          !vf.draft.afterPhotos.length &&
-          !Object.keys(vf.draft.survey || {}).length &&
-          !(vf.draft.loadCheck && vf.draft.loadCheck.status);
-        if (fresh && vf.draft.currentStep !== 'before_photos') {
-          vf.draft = await apiCall('/shift-day/visit/step', {
-            method: 'POST',
-            body: JSON.stringify({
-              repKey: getRepKey(),
-              date: vf.draft.date,
-              actualStore: vf.draft.actualStore,
-              step: 'before_photos',
-            }),
-          });
-        }
+      if (vf.draft.currentStep !== 'visit' && vf.draft.steps.includes('visit')) {
+        vf.draft = await apiCall('/shift-day/visit/step', {
+          method: 'POST',
+          body: JSON.stringify({
+            repKey: getRepKey(),
+            date: vf.draft.date,
+            actualStore: vf.draft.actualStore,
+            step: 'visit',
+          }),
+        });
       }
     }, 'Opening visit…', { force: true });
     onDraftChanged?.(vf.draft);

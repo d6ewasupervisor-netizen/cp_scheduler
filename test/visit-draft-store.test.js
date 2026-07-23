@@ -61,8 +61,8 @@ describe('startVisit / resume', () => {
     assert.equal(draft.status, 'in_progress');
     assert.equal(draft.actualStore, 215);
     assert.equal(draft.scheduledStore, 391);
-    assert.deepEqual(draft.steps, ['before_photos', 'survey', 'after_photos', 'time']);
-    assert.equal(draft.currentStep, 'before_photos');
+    assert.deepEqual(draft.steps, ['visit']);
+    assert.equal(draft.currentStep, 'visit');
     assert.ok(draft.startedAt);
     assert.equal(draft.visitStart.source, 'start_tap');
   });
@@ -154,9 +154,9 @@ describe('autosave after every discrete action + resume mid-branch', () => {
     d = store.getDraft(REP_A, DATE, S);
     assert.equal(d.survey.q3, 'Fully stocked');
 
-    store.goToStep(REP_A, DATE, S, 'after_photos');
+    store.goToStep(REP_A, DATE, S, 'visit');
     d = store.getDraft(REP_A, DATE, S);
-    assert.equal(d.currentStep, 'after_photos');
+    assert.equal(d.currentStep, 'visit');
 
     // Simulate "kill and reopen the app" — a totally fresh read from disk
     // must reflect every one of the above, resuming exactly mid-branch.
@@ -164,28 +164,28 @@ describe('autosave after every discrete action + resume mid-branch', () => {
     assert.equal(reopened.beforePhotos.length, 1);
     assert.equal(reopened.checklist['ewc-01'].checked, true);
     assert.equal(reopened.survey.q1, 'yes');
-    assert.equal(reopened.currentStep, 'after_photos');
+    assert.equal(reopened.currentStep, 'visit');
   });
 
   it('resumes correctly after simulating an interrupt inside the questions step', () => {
     const date = '2026-07-11';
     store.startVisit({ repKey: REP_A, date, actualStore: 682, writeOrder: false, workLoad: true });
-    store.goToStep(REP_A, date, 682, 'survey');
+    store.goToStep(REP_A, date, 682, 'visit');
     store.setSurveyAnswers(REP_A, date, 682, { q2: 'Yes' });
 
     const resumed = store.getDraft(REP_A, date, 682);
-    assert.equal(resumed.currentStep, 'survey');
+    assert.equal(resumed.currentStep, 'visit');
     assert.equal(resumed.survey.q2, 'Yes');
   });
 
   it('resumes correctly after simulating an interrupt inside the time step', () => {
     const date = '2026-07-12';
     store.startVisit({ repKey: REP_A, date, actualStore: 28, writeOrder: false, workLoad: false });
-    store.goToStep(REP_A, date, 28, 'time');
+    store.goToStep(REP_A, date, 28, 'visit');
     store.setTimes(REP_A, date, 28, { stopActual: '2026-07-12T15:00:00Z', isLastStopOfDay: true });
 
     const resumed = store.getDraft(REP_A, date, 28);
-    assert.equal(resumed.currentStep, 'time');
+    assert.equal(resumed.currentStep, 'visit');
     assert.equal(resumed.visitStop.actual, '2026-07-12T15:00:00Z');
     assert.equal(resumed.isLastStopOfDay, true);
   });
@@ -382,7 +382,7 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
 
     // Kill app / reopen — fresh disk read
     const resumed = store.getDraft(REP_A, date, S);
-    assert.equal(resumed.currentStep, 'time');
+    assert.equal(resumed.currentStep, 'visit');
     assert.equal(resumed.survey.q2, 'Service day only (no new order)');
     assert.equal(resumed.categoryPhotos.endcaps.length, 1);
     assert.equal(resumed.visitStop.actual, `${date}T14:30:00Z`);
@@ -405,12 +405,19 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     assert.ok(Array.isArray(blocked.unmet) && blocked.unmet.length > 0);
 
     const sections = new Set(blocked.unmet.map((u) => u.section));
-    assert.ok(sections.has('before_photos'));
-    assert.ok(sections.has('survey'));
-    assert.ok(sections.has('after_photos'));
-    assert.ok(sections.has('time'));
-    // Missing fixture coverage surfaces on after_photos (AI sort / coaching), not a separate step
-    assert.ok(blocked.unmet.some((u) => u.section === 'after_photos' && /clip strips/i.test(u.message)));
+    assert.ok(sections.has('visit'));
+    assert.ok(blocked.unmet.some((u) => u.anchor === 'before-photos'));
+    assert.ok(blocked.unmet.some((u) => u.anchor === 'after-photos'));
+    assert.ok(blocked.unmet.some((u) => u.anchor === 'time-stop' || u.anchor === 'time-mileage'));
+
+    store.setSurveyAnswers(REP_A, date, S, { q5: 'yes' });
+    blocked = null;
+    try {
+      store.finishVisit(REP_A, date, S);
+    } catch (err) {
+      blocked = err;
+    }
+    assert.ok(blocked.unmet.some((u) => /clip strips/i.test(u.message)));
 
     for (const u of blocked.unmet) {
       assert.ok(u.section && u.anchor && u.message, 'each unmet row needs section+anchor+message for deep links');
@@ -425,17 +432,17 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     assert.equal(sealed.status, 'ready_for_prod');
   });
 
-  it('goToStep allows any section in any order with no completion gate', () => {
+  it('goToStep normalizes any legacy section id to visit', () => {
     const date = '2026-07-24';
     const S = 111;
     store.startVisit({ repKey: REP_A, date, actualStore: S, writeOrder: true, workLoad: true });
-    const order = ['time', 'survey', 'before_photos', 'after_photos'];
+    const order = ['time', 'survey', 'before_photos', 'after_photos', 'visit'];
     for (const step of order) {
       const d = store.goToStep(REP_A, date, S, step);
-      assert.equal(d.currentStep, step);
+      assert.equal(d.currentStep, 'visit');
     }
-    assert.equal(store.goToStep(REP_A, date, S, 'load_check').currentStep, 'survey');
-    assert.equal(store.goToStep(REP_A, date, S, 'review').currentStep, 'time');
+    assert.equal(store.goToStep(REP_A, date, S, 'load_check').currentStep, 'visit');
+    assert.equal(store.goToStep(REP_A, date, S, 'review').currentStep, 'visit');
   });
 });
 
@@ -482,7 +489,7 @@ describe('scope enforcement — reps never see each other\'s drafts', () => {
     const sum = store.summarize(draft);
     assert.equal(sum.beforePhotoCount, 1);
     assert.equal(sum.afterPhotoCount, 0);
-    assert.equal(sum.currentStepLabel, 'Before photos');
+    assert.equal(sum.currentStepLabel, 'Visit');
     assert.ok(sum.updatedAt);
     assert.equal(sum.surveyAnswerCount >= 0, true);
   });

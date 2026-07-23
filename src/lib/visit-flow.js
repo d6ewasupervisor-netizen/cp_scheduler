@@ -107,6 +107,8 @@ function requiredCategoryPhotoTargets(draft) {
 /* ---------- Step sequence ---------- */
 
 const STEP = {
+  /** Single scroll page: start → before → survey → after → time */
+  VISIT: 'visit',
   BEFORE_PHOTOS: 'before_photos',
   LOAD_CHECK: 'load_check',
   WRITE_ORDER_CHECKLIST: 'write_order_checklist',
@@ -122,22 +124,70 @@ const STEP = {
 /** Survey questions shown to reps (Q1/Q12 are the before/after photo steps). */
 const REP_SURVEY_QUESTION_IDS = new Set(['q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q11']);
 
-/** Legacy step ids from older drafts — map to the simplified four-step flow. */
+/** Legacy step ids from older drafts — map to the single-page visit flow. */
 const LEGACY_STEP_REDIRECT = {
-  [STEP.LOAD_CHECK]: STEP.SURVEY,
-  [STEP.WRITE_ORDER_CHECKLIST]: STEP.SURVEY,
-  [STEP.CATEGORY_PHOTOS]: STEP.AFTER_PHOTOS,
-  [STEP.SHIFT_LOG]: STEP.TIME,
-  [STEP.REVIEW]: STEP.TIME,
+  [STEP.BEFORE_PHOTOS]: STEP.VISIT,
+  [STEP.SURVEY]: STEP.VISIT,
+  [STEP.AFTER_PHOTOS]: STEP.VISIT,
+  [STEP.TIME]: STEP.VISIT,
+  [STEP.LOAD_CHECK]: STEP.VISIT,
+  [STEP.WRITE_ORDER_CHECKLIST]: STEP.VISIT,
+  [STEP.CATEGORY_PHOTOS]: STEP.VISIT,
+  [STEP.SHIFT_LOG]: STEP.VISIT,
+  [STEP.REVIEW]: STEP.VISIT,
+};
+
+/** Survey answers that need an inline category photo (matches prod transmit slots). */
+const SURVEY_CATEGORY_PHOTO = {
+  q3: { categoryId: 'cp-serviced-section', label: 'CP-serviced section' },
+  q5: { categoryId: 'clipstrips', label: 'Clip strips' },
+  q7: { categoryId: 'cat-litter-pan-liners', label: 'Cat litter top shelf' },
+  q9: { categoryId: 'butcher-block-rack', label: 'Butcher Block rack' },
 };
 
 /**
  * Build the ordered step sequence for a visit.
- * Mobile flow: before photos → questions → after photos → confirm time.
+ * Mobile flow is one scroll page (see STEP.VISIT).
  * workLoad / writeOrder are ignored (reps work load/order outside the app).
  */
 function buildStepSequence(/* { workLoad, writeOrder } */) {
-  return [STEP.BEFORE_PHOTOS, STEP.SURVEY, STEP.AFTER_PHOTOS, STEP.TIME];
+  return [STEP.VISIT];
+}
+
+/** Whether a survey answer requires an inline category photo for seal. */
+function surveyAnswerNeedsCategoryPhoto(questionId, answer) {
+  if (answer == null || answer === '') return false;
+  if (questionId === 'q3') return answer !== 'Did not stock';
+  if (questionId === 'q5') return String(answer).toLowerCase() === 'yes';
+  if (questionId === 'q7') return answer === 'Yes';
+  if (questionId === 'q9') return String(answer).toLowerCase() === 'yes';
+  return false;
+}
+
+/**
+ * Category photos required for this draft — driven by survey answers (inline
+ * capture) plus optional endcap/wing selections on after photos.
+ */
+function requiredSurveyCategoryPhotos(draft) {
+  if (!draft) return [];
+  const answers = draft.survey || {};
+  const visMap = Object.fromEntries(surveyVisibility(answers).map(({ id, visible }) => [id, visible]));
+  const reqs = [];
+
+  for (const [qId, meta] of Object.entries(SURVEY_CATEGORY_PHOTO)) {
+    if (!visMap[qId]) continue;
+    const ans = answers[qId];
+    if (!surveyAnswerNeedsCategoryPhoto(qId, ans)) continue;
+    reqs.push({ questionId: qId, categoryId: meta.categoryId, label: meta.label });
+  }
+
+  for (const cat of requiredCategoryPhotoTargets(draft)) {
+    if (cat.id === 'endcaps' || cat.id === 'wing-panels') {
+      reqs.push({ questionId: null, categoryId: cat.id, label: cat.label });
+    }
+  }
+
+  return reqs;
 }
 
 function normalizeCurrentStep(currentStep, steps = buildStepSequence({})) {
@@ -277,6 +327,7 @@ const SECTION_STATUS = {
 };
 
 const SECTION_LABELS = {
+  [STEP.VISIT]: 'Visit',
   [STEP.BEFORE_PHOTOS]: 'Before photos',
   [STEP.LOAD_CHECK]: 'Load', // legacy drafts only
   [STEP.WRITE_ORDER_CHECKLIST]: 'Order Checklist', // legacy drafts only
@@ -300,7 +351,7 @@ function listUnmetRequirements(draft) {
 
   if (!draft.beforePhotos?.length) {
     unmet.push({
-      section: STEP.BEFORE_PHOTOS,
+      section: STEP.VISIT,
       anchor: 'before-photos',
       message: 'Take at least one before photo of the Pet Supplies aisle',
     });
@@ -313,7 +364,7 @@ function listUnmetRequirements(draft) {
       if (draft.survey?.[id] == null || draft.survey[id] === '') {
         const q = serviceSurvey.questions.find((x) => x.id === id);
         unmet.push({
-          section: STEP.SURVEY,
+          section: STEP.VISIT,
           anchor: `survey-${id}`,
           message: q ? q.text : `Answer question ${id.toUpperCase()}`,
         });
@@ -321,41 +372,43 @@ function listUnmetRequirements(draft) {
     }
   }
 
+  for (const req of requiredSurveyCategoryPhotos(draft)) {
+    if (!(draft.categoryPhotos?.[req.categoryId] || []).length) {
+      unmet.push({
+        section: STEP.VISIT,
+        anchor: req.questionId ? `survey-${req.questionId}-photo` : `after-photos-${req.categoryId}`,
+        message: req.questionId
+          ? `Take a photo for: ${req.label}`
+          : `Still need a photo of ${req.label}`,
+      });
+    }
+  }
+
   if (!draft.afterPhotos?.length) {
     unmet.push({
-      section: STEP.AFTER_PHOTOS,
+      section: STEP.VISIT,
       anchor: 'after-photos',
       message: 'Take at least one after photo when you are finished',
     });
   }
 
-  for (const cat of requiredCategoryPhotoTargets(draft)) {
-    if (!(draft.categoryPhotos?.[cat.id] || []).length) {
-      unmet.push({
-        section: STEP.AFTER_PHOTOS,
-        anchor: 'after-photos',
-        message: `Still need a photo of ${cat.label}`,
-      });
-    }
-  }
-
   if (!draft.visitStart?.actual) {
     unmet.push({
-      section: STEP.TIME,
-      anchor: 'time-start',
+      section: STEP.VISIT,
+      anchor: 'shift-start',
       message: 'Set your start time',
     });
   }
   if (!draft.visitStop?.actual) {
     unmet.push({
-      section: STEP.TIME,
+      section: STEP.VISIT,
       anchor: 'time-stop',
       message: 'Set your stop time',
     });
   }
   if (!draft.mileage?.leg) {
     unmet.push({
-      section: STEP.TIME,
+      section: STEP.VISIT,
       anchor: 'time-mileage',
       message: 'Tap Calculate Mileage',
     });
@@ -375,44 +428,33 @@ function canSeal(draft) {
  */
 function sectionStatuses(draft) {
   if (!draft?.steps) return [];
-  const unmetBySection = new Map();
-  for (const u of listUnmetRequirements(draft)) {
-    if (!unmetBySection.has(u.section)) unmetBySection.set(u.section, []);
-    unmetBySection.get(u.section).push(u);
+  const unmet = listUnmetRequirements(draft);
+  let status = SECTION_STATUS.EMPTY;
+  if (unmet.length === 0) {
+    status = SECTION_STATUS.COMPLETE;
+  } else if (sectionHasAnyProgress(draft, STEP.VISIT)) {
+    status = SECTION_STATUS.NEEDS_ATTENTION;
   }
-
-  return draft.steps.map((id) => {
-    const unmet = unmetBySection.get(id) || [];
-    let status = SECTION_STATUS.EMPTY;
-    if (unmet.length === 0) {
-      status = SECTION_STATUS.COMPLETE;
-    } else if (sectionHasAnyProgress(draft, id)) {
-      status = SECTION_STATUS.NEEDS_ATTENTION;
-    } else {
-      status = SECTION_STATUS.EMPTY;
-    }
-
-    // Passive guidance only — never a modal/block
-    let hint = null;
-    if (
-      id === STEP.BEFORE_PHOTOS &&
-      status !== SECTION_STATUS.COMPLETE &&
-      draft.currentStep !== STEP.BEFORE_PHOTOS
-    ) {
-      hint = 'BEFORE photos are time-sensitive';
-    }
-
-    return {
-      id,
-      label: SECTION_LABELS[id] || id,
+  return [
+    {
+      id: STEP.VISIT,
+      label: SECTION_LABELS[STEP.VISIT] || STEP.VISIT,
       status,
-      hint,
-    };
-  });
+      hint: null,
+    },
+  ];
 }
 
 function sectionHasAnyProgress(draft, id) {
   switch (id) {
+    case STEP.VISIT:
+      return (
+        (draft.beforePhotos || []).length > 0 ||
+        (draft.afterPhotos || []).length > 0 ||
+        Object.keys(draft.survey || {}).length > 0 ||
+        Object.values(draft.categoryPhotos || {}).some((a) => (a || []).length > 0) ||
+        !!(draft.visitStart?.actual || draft.visitStop?.actual || draft.mileage?.leg)
+      );
     case STEP.BEFORE_PHOTOS:
       return (draft.beforePhotos || []).length > 0;
     case STEP.LOAD_CHECK:
@@ -655,6 +697,9 @@ module.exports = {
   OPTIONAL_FIXTURE_GROUP_ENDCAPS_WINGS,
   isOptionalFixtureGroupSelected,
   requiredCategoryPhotoTargets,
+  SURVEY_CATEGORY_PHOTO,
+  surveyAnswerNeedsCategoryPhoto,
+  requiredSurveyCategoryPhotos,
   LOAD_FOUND,
   SECTION_STATUS,
   SECTION_LABELS,

@@ -65,7 +65,7 @@ function getDraft(repKey, date, actualStore) {
 }
 
 /**
- * Migrate in-progress drafts to the simplified four-step mobile flow.
+ * Migrate in-progress drafts to the single-page visit flow.
  * Drops legacy steps (load, checklist, outcome, review) from navigation.
  */
 function migrateDraftSteps(draft) {
@@ -515,7 +515,7 @@ function finishVisit(repKey, date, actualStore) {
   return mutate(repKey, date, actualStore, (d) => {
     d.status = 'ready_for_prod';
     d.sealedAt = new Date().toISOString();
-    d.currentStep = STEP.TIME;
+    d.currentStep = STEP.VISIT;
   });
 }
 
@@ -529,6 +529,7 @@ function summarize(draft) {
   );
   const checklistChecked = Object.values(draft.checklist || {}).filter((c) => c?.checked).length;
   const STEP_LABELS = {
+    visit: 'Visit',
     before_photos: 'Before photos',
     load_check: 'Load',
     write_order_checklist: 'Order Checklist',
