@@ -260,43 +260,100 @@ describe('category photos assigned from after library', () => {
 describe('mileage: previousCompletedStoreForDay (mid-day leg selection)', () => {
   const date = '2026-07-14';
 
-  it('returns null when nothing completed yet today', () => {
-    store.startVisit({ repKey: REP_A, date, actualStore: 19, writeOrder: false, workLoad: false });
-    const prev = store.previousCompletedStoreForDay(REP_A, date, { excludeActualStore: 19 });
+  it('returns null when nothing else has been started yet today', () => {
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 19,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T09:00:00Z`,
+    });
+    const prev = store.previousCompletedStoreForDay(REP_A, date, {
+      excludeActualStore: 19,
+      beforeIso: `${date}T09:00:00Z`,
+    });
     assert.equal(prev, null);
   });
 
-  it('finds the most recently completed store, excluding the current one', () => {
-    store.startVisit({ repKey: REP_A, date, actualStore: 19, writeOrder: false, workLoad: false });
-    store.setTimes(REP_A, date, 19, { stopActual: '2026-07-14T14:00:00Z' });
+  it('picks the immediate prior store by visit start time (run order)', () => {
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 19,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T10:00:00Z`,
+    });
+    store.setTimes(REP_A, date, 19, { stopActual: `${date}T12:00:00Z` });
 
-    store.startVisit({ repKey: REP_A, date, actualStore: 23, writeOrder: false, workLoad: false });
-    store.setTimes(REP_A, date, 23, { stopActual: '2026-07-14T16:00:00Z' });
-
-    store.startVisit({ repKey: REP_A, date, actualStore: 28, writeOrder: false, workLoad: false });
-
-    const prev = store.previousCompletedStoreForDay(REP_A, date, { excludeActualStore: 28 });
-    assert.equal(prev, 23); // later stopActual wins over 19
-  });
-
-  it('falls back when prior stop is after current start (clock order quirk)', () => {
-    store.startVisit({ repKey: REP_A, date, actualStore: 19, writeOrder: false, workLoad: false });
     store.startVisit({
       repKey: REP_A,
       date,
       actualStore: 23,
       writeOrder: false,
       workLoad: false,
-      startedAt: '2026-07-14T15:00:00Z',
+      startedAt: `${date}T13:00:00Z`,
     });
-    // Prior stop saved after next visit already started
-    store.setTimes(REP_A, date, 19, { stopActual: '2026-07-14T15:30:00Z' });
+    store.setTimes(REP_A, date, 23, { stopActual: `${date}T15:00:00Z` });
 
-    const prev = store.previousCompletedVisitForDay(REP_A, date, {
-      excludeActualStore: 23,
-      beforeIso: '2026-07-14T15:00:00Z',
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 28,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T16:00:00Z`,
     });
-    assert.equal(prev?.actualStore, 19);
+
+    const prev = store.previousCompletedStoreForDay(REP_A, date, {
+      excludeActualStore: 28,
+      beforeIso: `${date}T16:00:00Z`,
+    });
+    assert.equal(prev, 23);
+  });
+
+  it('follows actual start times even when stores were opened out of schedule order', () => {
+    // Opened in app as 28 → 19 → 23, but lead ran 19 first, then 28, then 23.
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 28,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T14:00:00Z`,
+    });
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 19,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T09:00:00Z`,
+    });
+    store.startVisit({
+      repKey: REP_A,
+      date,
+      actualStore: 23,
+      writeOrder: false,
+      workLoad: false,
+      startedAt: `${date}T16:30:00Z`,
+    });
+
+    assert.equal(
+      store.previousCompletedStoreForDay(REP_A, date, {
+        excludeActualStore: 28,
+        beforeIso: `${date}T14:00:00Z`,
+      }),
+      19
+    );
+    assert.equal(
+      store.previousCompletedStoreForDay(REP_A, date, {
+        excludeActualStore: 23,
+        beforeIso: `${date}T16:30:00Z`,
+      }),
+      28
+    );
   });
 });
 

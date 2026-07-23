@@ -594,55 +594,38 @@ function listDraftsForRep(repKey) {
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
 }
 
-function draftSortTime(d) {
-  return d?.visitStop?.actual || d?.visitStart?.actual || '';
+function visitRunTime(d) {
+  // Reality of the day: when the lead started the visit in the app — not schedule/PROD order.
+  return d?.visitStart?.actual || d?.startedAt || d?.visitStop?.actual || '';
 }
 
 /**
- * Prior visit earlier today for store→store mileage.
- * Prefers drafts with a stop time (or sealed), falling back to any started visit
- * when clock order is messy (e.g. next visit started before prior stop was saved).
+ * Prior store by actual run order today (visit start times), not calendar/PROD order.
+ * Leads run stores in whatever order fits the day; store→store must follow that clock order.
+ * Picks the latest other visit whose run time is still before this visit's start.
  * @returns {{ actualStore:number, visitStop:string|null, visitStart:string|null }|null}
  */
 function previousCompletedVisitForDay(repKey, date, { excludeActualStore = null, beforeIso = null } = {}) {
   const others = listDraftsForRep(repKey).filter(
     (d) =>
       d.date === date &&
-      (excludeActualStore == null || Number(d.actualStore) !== Number(excludeActualStore))
+      (excludeActualStore == null || Number(d.actualStore) !== Number(excludeActualStore)) &&
+      !!visitRunTime(d)
   );
 
-  const sealedOrStopped = (d) =>
-    !!(
-      d.visitStop?.actual ||
-      d.status === 'ready_for_prod' ||
-      d.status === 'transmitted' ||
-      d.status === 'transmitting'
-    );
-
-  let candidates = others.filter(sealedOrStopped);
+  let candidates = others;
   if (beforeIso) {
-    const before = candidates.filter((d) => {
-      const t = draftSortTime(d);
-      return t && t < beforeIso;
-    });
-    if (before.length) candidates = before;
+    candidates = others.filter((d) => visitRunTime(d) < beforeIso);
   }
-
-  if (!candidates.length) {
-    candidates = others.filter((d) => d.visitStart?.actual);
-    if (beforeIso) {
-      const before = candidates.filter((d) => d.visitStart.actual < beforeIso);
-      if (before.length) candidates = before;
-    }
-  }
-
   if (!candidates.length) return null;
-  candidates.sort((a, b) => (draftSortTime(a) < draftSortTime(b) ? 1 : -1));
+
+  // Immediate predecessor = most recently started (still before current).
+  candidates.sort((a, b) => (visitRunTime(a) < visitRunTime(b) ? 1 : -1));
   const best = candidates[0];
   return {
     actualStore: Number(best.actualStore),
     visitStop: best.visitStop?.actual || null,
-    visitStart: best.visitStart?.actual || null,
+    visitStart: best.visitStart?.actual || best.startedAt || null,
   };
 }
 

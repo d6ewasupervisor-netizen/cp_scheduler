@@ -1295,6 +1295,7 @@ router.post('/shift-day/visit/mileage', shiftDayScope, (req, res) => {
   const draft = visitDraftStore.getDraft(repKey, date, actualStore);
   if (!draft) return res.status(404).json({ error: 'Draft not found' });
   try {
+    // Prior store by when visits were actually started today (not schedule/PROD order).
     const previousVisit = visitDraftStore.previousCompletedVisitForDay(repKey, date, {
       excludeActualStore: actualStore,
       beforeIso: draft.visitStart?.actual || null,

@@ -1144,7 +1144,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       <div class="vf-lightbox-backdrop" data-lightbox-dismiss="1"></div>
       <div class="vf-lightbox-frame" role="dialog" aria-modal="true" aria-label="Photo preview">
         <button type="button" class="vf-lightbox-x" data-lightbox-dismiss="1" aria-label="Close">×</button>
-        <img class="vf-lightbox-img" alt="Uploaded photo">
+        <div class="vf-lightbox-stage">
+          <img class="vf-lightbox-img" alt="Uploaded photo">
+        </div>
         <div class="vf-lightbox-footer">
           <button type="button" class="subtle vf-lightbox-close" data-lightbox-dismiss="1">Close</button>
         </div>
@@ -2150,6 +2152,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged, isAdmi
       <label class="field" style="flex-direction:row;align-items:center;gap:.5rem">
         <input type="checkbox" id="vfLastStop" ${vf.draft.isLastStopOfDay ? 'checked' : ''}> Last stop of the day
       </label>
+      <p class="overlay-meta" style="margin:.35rem 0 0">
+        Mileage follows the order you <strong>started</strong> stores today (not the week calendar). First stop = home→store; later stops = store→store; check Last stop for store→home.
+      </p>
       <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
       <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
       <label class="field">Note if mileage looks wrong
