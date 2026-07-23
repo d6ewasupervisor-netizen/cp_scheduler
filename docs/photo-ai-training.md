@@ -73,7 +73,7 @@ Tips:
 - Prefer “fixture readable” over extreme close-ups of a single SKU.
 - Optional notes help you later; the model mostly uses the pixels.
 
-Examples live under `data/photo-training/<categoryId>/` + `manifest.json` (Railway volume if you persist `data/`).
+Examples live under `data/visit-drafts/photo-training/<categoryId>/` + `manifest.json` (on Railway this is the durable volume, so uploads survive redeploys). Legacy `data/photo-training/` is migrated automatically if present.
 
 ## API surface
 

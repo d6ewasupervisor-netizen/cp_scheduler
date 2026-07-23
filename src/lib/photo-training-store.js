@@ -2,19 +2,97 @@
 
 /**
  * Labeled example corpus for after-photo → category sorting (Gemini few-shot).
- * Stored under data/photo-training/ — admin uploads only; never written to Auston OneDrive.
+ * Admin uploads only; never written to Auston OneDrive.
+ *
+ * Durable root: data/visit-drafts/photo-training/
+ * On Railway that path is the mounted volume, so examples survive redeploys.
+ * Legacy ephemeral path data/photo-training/ is migrated once if present.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { CATEGORY_PHOTO_TARGETS } = require('./visit-flow');
 
-const ROOT = path.join(__dirname, '../../data/photo-training');
+const REPO_ROOT = path.join(__dirname, '../..');
+const LEGACY_ROOT = path.join(REPO_ROOT, 'data/photo-training');
+const LEGACY_PREFIX = 'data/photo-training/';
+const DURABLE_PREFIX = 'data/visit-drafts/photo-training/';
+
+function resolveTrainingRoot() {
+  if (process.env.PHOTO_TRAINING_ROOT) return process.env.PHOTO_TRAINING_ROOT;
+  // Prefer the Railway volume mount (visit-drafts) everywhere so local + prod match.
+  return path.join(REPO_ROOT, 'data/visit-drafts/photo-training');
+}
+
+const ROOT = resolveTrainingRoot();
 const MANIFEST = path.join(ROOT, 'manifest.json');
 
 const VALID_IDS = new Set(CATEGORY_PHOTO_TARGETS.map((c) => c.id));
 
+let migratedLegacy = false;
+
+function copyRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const name of fs.readdirSync(src)) {
+    const from = path.join(src, name);
+    const to = path.join(dest, name);
+    const st = fs.statSync(from);
+    if (st.isDirectory()) copyRecursive(from, to);
+    else fs.copyFileSync(from, to);
+  }
+}
+
+/** One-time move from ephemeral data/photo-training → durable volume path. */
+function migrateLegacyCorpusIfNeeded() {
+  if (migratedLegacy) return;
+  migratedLegacy = true;
+  try {
+    if (!fs.existsSync(LEGACY_ROOT)) return;
+    const legacyManifestPath = path.join(LEGACY_ROOT, 'manifest.json');
+    if (!fs.existsSync(legacyManifestPath)) return;
+
+    let legacy;
+    try {
+      legacy = JSON.parse(fs.readFileSync(legacyManifestPath, 'utf8'));
+    } catch {
+      return;
+    }
+    const legacyCount = (legacy.examples || []).length;
+    if (!legacyCount) return;
+
+    let durableCount = 0;
+    if (fs.existsSync(MANIFEST)) {
+      try {
+        durableCount = (JSON.parse(fs.readFileSync(MANIFEST, 'utf8')).examples || []).length;
+      } catch {
+        durableCount = 0;
+      }
+    }
+    // Only auto-migrate when durable store is empty — never clobber newer volume data.
+    if (durableCount > 0) return;
+
+    copyRecursive(LEGACY_ROOT, ROOT);
+    if (!fs.existsSync(MANIFEST)) return;
+    const m = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+    m.examples = (m.examples || []).map((ex) => ({
+      ...ex,
+      path: String(ex.path || '').startsWith(LEGACY_PREFIX)
+        ? DURABLE_PREFIX + String(ex.path).slice(LEGACY_PREFIX.length)
+        : ex.path,
+    }));
+    m.updatedAt = new Date().toISOString();
+    m.migratedFrom = 'data/photo-training';
+    fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2));
+    console.log(
+      `[photo-training] migrated ${legacyCount} example(s) to durable volume path ${DURABLE_PREFIX}`
+    );
+  } catch (err) {
+    console.warn('[photo-training] legacy migrate skipped:', err.message);
+  }
+}
+
 function ensureRoot() {
+  migrateLegacyCorpusIfNeeded();
   fs.mkdirSync(ROOT, { recursive: true });
   if (!fs.existsSync(MANIFEST)) {
     writeManifest({ version: 1, updatedAt: null, examples: [] });
@@ -59,6 +137,7 @@ function listExamples({ categoryId } = {}) {
     examples,
     recommendedPerCategory: 5,
     minUsefulPerCategory: 3,
+    storageRoot: DURABLE_PREFIX,
   };
 }
 
@@ -80,7 +159,7 @@ function addExample({ categoryId, buffer, originalName, notes = '', mimeType = '
   const abs = path.join(dir, filename);
   fs.writeFileSync(abs, buffer);
 
-  const relPath = path.relative(path.join(__dirname, '../..'), abs).split(path.sep).join('/');
+  const relPath = path.relative(REPO_ROOT, abs).split(path.sep).join('/');
   const example = {
     id,
     categoryId,
@@ -109,7 +188,7 @@ function removeExample(exampleId) {
   const [removed] = manifest.examples.splice(idx, 1);
   writeManifest(manifest);
 
-  const abs = path.resolve(path.join(__dirname, '../..'), removed.path);
+  const abs = path.resolve(REPO_ROOT, removed.path);
   const rootAbs = path.resolve(ROOT);
   if (abs.startsWith(rootAbs) && fs.existsSync(abs)) {
     try {
@@ -125,7 +204,7 @@ function resolveExampleFile(exampleId) {
   const manifest = readManifest();
   const example = (manifest.examples || []).find((e) => e.id === exampleId);
   if (!example) return null;
-  const abs = path.resolve(path.join(__dirname, '../..'), example.path);
+  const abs = path.resolve(REPO_ROOT, example.path);
   const rootAbs = path.resolve(ROOT);
   if (!abs.startsWith(rootAbs) || !fs.existsSync(abs)) return null;
   return { absPath: abs, example };
@@ -166,6 +245,7 @@ function trainingReadiness() {
       : `Add more examples — need ${minUsefulPerCategory}+ labeled photos for: ${short
           .map((c) => c.label)
           .join(', ')}.`,
+    storageRoot: DURABLE_PREFIX,
   };
 }
 
@@ -182,6 +262,7 @@ function extFromMimeOrName(mimeType, originalName) {
 
 module.exports = {
   ROOT,
+  LEGACY_ROOT,
   listExamples,
   addExample,
   removeExample,
