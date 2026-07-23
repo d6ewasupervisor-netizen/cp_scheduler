@@ -5,6 +5,7 @@ const path = require('path');
 const {
   STEP,
   buildStepSequence,
+  normalizeCurrentStep,
   tagPhoto,
   surveyAutoFill,
   listUnmetRequirements,
@@ -64,18 +65,35 @@ function getDraft(repKey, date, actualStore) {
 }
 
 /**
- * Drop the old Category Photos step from in-progress drafts. Sorting is
- * backend AI + after-photo coaching now — category_photos is not a UI step.
+ * Migrate in-progress drafts to the simplified four-step mobile flow.
+ * Drops legacy steps (load, checklist, outcome, review) from navigation.
  */
 function migrateDraftSteps(draft) {
-  if (!draft?.steps?.includes(STEP.CATEGORY_PHOTOS)) return draft;
-  const next = {
-    ...draft,
-    steps: draft.steps.filter((s) => s !== STEP.CATEGORY_PHOTOS),
-  };
-  if (next.currentStep === STEP.CATEGORY_PHOTOS) next.currentStep = STEP.AFTER_PHOTOS;
-  // Persist migration so sidebar stays clean
-  if (draft.status !== 'ready_for_prod') {
+  if (!draft) return draft;
+  const canonicalSteps = buildStepSequence({});
+  let changed = false;
+  const next = { ...draft };
+
+  const legacyInSteps =
+    next.steps?.includes(STEP.CATEGORY_PHOTOS) ||
+    next.steps?.includes(STEP.LOAD_CHECK) ||
+    next.steps?.includes(STEP.WRITE_ORDER_CHECKLIST) ||
+    next.steps?.includes(STEP.SHIFT_LOG) ||
+    next.steps?.includes(STEP.REVIEW) ||
+    JSON.stringify(next.steps) !== JSON.stringify(canonicalSteps);
+
+  if (legacyInSteps) {
+    next.steps = canonicalSteps;
+    changed = true;
+  }
+
+  const normalizedStep = normalizeCurrentStep(next.currentStep, next.steps);
+  if (normalizedStep !== next.currentStep) {
+    next.currentStep = normalizedStep;
+    changed = true;
+  }
+
+  if (changed && draft.status !== 'ready_for_prod') {
     try {
       writeDraftFile(next);
     } catch {
@@ -472,8 +490,11 @@ function setNextVisitNote(repKey, date, actualStore, { text } = {}) {
  */
 function goToStep(repKey, date, actualStore, stepId) {
   return mutate(repKey, date, actualStore, (draft) => {
-    if (!draft.steps.includes(stepId)) throw new Error(`Unknown step for this visit: ${stepId}`);
-    draft.currentStep = stepId;
+    const steps = buildStepSequence({});
+    draft.steps = steps;
+    const normalized = normalizeCurrentStep(stepId, steps);
+    if (!steps.includes(normalized)) throw new Error(`Unknown step for this visit: ${stepId}`);
+    draft.currentStep = normalized;
   });
 }
 
@@ -494,7 +515,7 @@ function finishVisit(repKey, date, actualStore) {
   return mutate(repKey, date, actualStore, (d) => {
     d.status = 'ready_for_prod';
     d.sealedAt = new Date().toISOString();
-    d.currentStep = STEP.REVIEW;
+    d.currentStep = STEP.TIME;
   });
 }
 
@@ -508,13 +529,13 @@ function summarize(draft) {
   );
   const checklistChecked = Object.values(draft.checklist || {}).filter((c) => c?.checked).length;
   const STEP_LABELS = {
-    before_photos: 'Before Photos',
+    before_photos: 'Before photos',
     load_check: 'Load',
     write_order_checklist: 'Order Checklist',
     category_photos: 'Category Photos',
-    survey: 'Survey',
-    after_photos: 'After Photos',
-    time: 'Time',
+    survey: 'Questions',
+    after_photos: 'After photos',
+    time: 'Confirm time',
     shift_log: 'Outcome & Notes',
     review: 'Review & Finish',
   };

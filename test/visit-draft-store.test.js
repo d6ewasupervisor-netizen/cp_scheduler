@@ -19,21 +19,10 @@ function cleanup() {
   }
 }
 
-/** Fill every Stage 3 seal requirement for a draft (any order is fine). */
-function fillSealRequirements(repKey, date, actualStore, { workLoad = false, writeOrder = false } = {}) {
+/** Fill every finish requirement for a draft (any order is fine). */
+function fillSealRequirements(repKey, date, actualStore) {
   store.recordBeforePhoto(repKey, date, actualStore, { photoPath: 'fake/before.jpg' });
-  if (workLoad) {
-    store.setLoadCheck(repKey, date, actualStore, { status: 'no_escalated' });
-  }
-  if (writeOrder) {
-    for (const item of visitFlow.writeOrderChecklistItems()) {
-      store.setChecklistItem(repKey, date, actualStore, item.id, { checked: true });
-      if (item.photoRequired) {
-        store.recordChecklistPhoto(repKey, date, actualStore, item.id, { photoPath: `fake/cl-${item.id}.jpg` });
-      }
-    }
-  }
-  for (const cat of visitFlow.CATEGORY_PHOTO_TARGETS) {
+  for (const cat of visitFlow.CATEGORY_PHOTO_TARGETS.filter((c) => !c.optional)) {
     store.recordCategoryPhoto(repKey, date, actualStore, cat.id, { photoPath: `fake/cat-${cat.id}.jpg` });
   }
   store.setSurveyAnswers(repKey, date, actualStore, {
@@ -50,9 +39,6 @@ function fillSealRequirements(repKey, date, actualStore, { workLoad = false, wri
   store.setTimes(repKey, date, actualStore, { stopActual: `${date}T18:00:00Z` });
   store.setMileage(repKey, date, actualStore, {
     leg: { from: 'home', to: String(actualStore), miles: 1.5, source: 'home-to-store', warning: null },
-  });
-  store.setShiftLog(repKey, date, actualStore, {
-    outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }],
   });
 }
 
@@ -75,16 +61,7 @@ describe('startVisit / resume', () => {
     assert.equal(draft.status, 'in_progress');
     assert.equal(draft.actualStore, 215);
     assert.equal(draft.scheduledStore, 391);
-    assert.deepEqual(draft.steps, [
-      'before_photos',
-      'load_check',
-      'write_order_checklist',
-      'after_photos',
-      'survey',
-      'time',
-      'shift_log',
-      'review',
-    ]);
+    assert.deepEqual(draft.steps, ['before_photos', 'survey', 'after_photos', 'time']);
     assert.equal(draft.currentStep, 'before_photos');
     assert.ok(draft.startedAt);
     assert.equal(draft.visitStart.source, 'start_tap');
@@ -190,20 +167,15 @@ describe('autosave after every discrete action + resume mid-branch', () => {
     assert.equal(reopened.currentStep, 'after_photos');
   });
 
-  it('resumes correctly after simulating an interrupt inside the load-check branch', () => {
+  it('resumes correctly after simulating an interrupt inside the questions step', () => {
     const date = '2026-07-11';
     store.startVisit({ repKey: REP_A, date, actualStore: 682, writeOrder: false, workLoad: true });
-    store.goToStep(REP_A, date, 682, 'load_check');
-    store.setLoadCheck(REP_A, date, 682, { status: 'no_found_later' });
+    store.goToStep(REP_A, date, 682, 'survey');
+    store.setSurveyAnswers(REP_A, date, 682, { q2: 'Yes' });
 
-    // "Interrupt" — nothing more happens until the app is reopened.
     const resumed = store.getDraft(REP_A, date, 682);
-    assert.equal(resumed.currentStep, 'load_check');
-    assert.equal(resumed.loadCheck.status, 'no_found_later');
-
-    // Rep escalates on the next attempt.
-    store.setLoadCheck(REP_A, date, 682, { status: 'no_escalated' });
-    assert.equal(store.getDraft(REP_A, date, 682).loadCheck.status, 'no_escalated');
+    assert.equal(resumed.currentStep, 'survey');
+    assert.equal(resumed.survey.q2, 'Yes');
   });
 
   it('resumes correctly after simulating an interrupt inside the time step', () => {
@@ -332,20 +304,13 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
       q11: 'survey first',
     });
 
-    // Load escalation (valid complete outcome) before before-photos
-    store.goToStep(REP_A, date, S, 'load_check');
-    store.setLoadCheck(REP_A, date, S, { status: 'no_escalated' });
-
     // Then photos + categories (still free order)
-    store.goToStep(REP_A, date, S, 'review'); // Review anytime, even incomplete
+    store.goToStep(REP_A, date, S, 'after_photos');
     store.recordBeforePhoto(REP_A, date, S, { photoPath: 'fake/before-ooo.jpg' });
-    for (const cat of visitFlow.CATEGORY_PHOTO_TARGETS) {
+    for (const cat of visitFlow.CATEGORY_PHOTO_TARGETS.filter((c) => !c.optional)) {
       store.recordCategoryPhoto(REP_A, date, S, cat.id, { photoPath: `fake/${cat.id}.jpg` });
     }
     store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-ooo.jpg' });
-    store.setShiftLog(REP_A, date, S, {
-      outcomes: [{ optionId: 'cleaned_up_section', kind: 'outcome', label: 'Cleaned up the section' }],
-    });
 
     const d = store.getDraft(REP_A, date, S);
     assert.equal(d.survey.q1, 'yes'); // auto-filled from before photo
@@ -409,8 +374,6 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     // Jump to survey, answer one question, jump to checklist, tick one item, capture a category photo
     store.goToStep(REP_A, date, S, 'survey');
     store.setSurveyAnswers(REP_A, date, S, { q2: 'Service day only (no new order)' });
-    store.goToStep(REP_A, date, S, 'write_order_checklist');
-    store.setChecklistItem(REP_A, date, S, 'ewc-01', { checked: true });
     store.goToStep(REP_A, date, S, 'after_photos');
     store.recordAfterPhoto(REP_A, date, S, { photoPath: 'fake/after-1.jpg' });
     store.assignCategoryFromAfter(REP_A, date, S, 'endcaps', { afterSeq: 1 });
@@ -421,7 +384,6 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     const resumed = store.getDraft(REP_A, date, S);
     assert.equal(resumed.currentStep, 'time');
     assert.equal(resumed.survey.q2, 'Service day only (no new order)');
-    assert.equal(resumed.checklist['ewc-01'].checked, true);
     assert.equal(resumed.categoryPhotos.endcaps.length, 1);
     assert.equal(resumed.visitStop.actual, `${date}T14:30:00Z`);
   });
@@ -430,7 +392,7 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     const date = '2026-07-23';
     const S = 658;
     store.startVisit({ repKey: REP_A, date, actualStore: S, writeOrder: false, workLoad: false });
-    store.goToStep(REP_A, date, S, 'review');
+    store.goToStep(REP_A, date, S, 'time');
 
     let blocked;
     try {
@@ -448,10 +410,10 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     assert.ok(sections.has('after_photos'));
     assert.ok(sections.has('time'));
     // Missing fixture coverage surfaces on after_photos (AI sort / coaching), not a separate step
-    assert.ok(blocked.unmet.some((u) => u.section === 'after_photos' && /end caps/i.test(u.message)));
+    assert.ok(blocked.unmet.some((u) => u.section === 'after_photos' && /clip strips/i.test(u.message)));
 
     for (const u of blocked.unmet) {
-      assert.ok(u.section && u.anchor && u.message, 'each unmet row needs section+anchor+message for Review deep links');
+      assert.ok(u.section && u.anchor && u.message, 'each unmet row needs section+anchor+message for deep links');
     }
 
     // Still in progress — not sealed
@@ -467,11 +429,13 @@ describe('free-nav: out-of-order completion, edit-after-later, interrupt, seal g
     const date = '2026-07-24';
     const S = 111;
     store.startVisit({ repKey: REP_A, date, actualStore: S, writeOrder: true, workLoad: true });
-    const order = ['review', 'time', 'survey', 'load_check', 'before_photos', 'write_order_checklist', 'after_photos'];
+    const order = ['time', 'survey', 'before_photos', 'after_photos'];
     for (const step of order) {
       const d = store.goToStep(REP_A, date, S, step);
       assert.equal(d.currentStep, step);
     }
+    assert.equal(store.goToStep(REP_A, date, S, 'load_check').currentStep, 'survey');
+    assert.equal(store.goToStep(REP_A, date, S, 'review').currentStep, 'time');
   });
 });
 
@@ -518,7 +482,7 @@ describe('scope enforcement — reps never see each other\'s drafts', () => {
     const sum = store.summarize(draft);
     assert.equal(sum.beforePhotoCount, 1);
     assert.equal(sum.afterPhotoCount, 0);
-    assert.equal(sum.currentStepLabel, 'Before Photos');
+    assert.equal(sum.currentStepLabel, 'Before photos');
     assert.ok(sum.updatedAt);
     assert.equal(sum.surveyAnswerCount >= 0, true);
   });

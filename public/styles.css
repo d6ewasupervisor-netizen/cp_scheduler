@@ -619,14 +619,139 @@ body.visit-workspace-open .sticky-bar {
 
 .visit-workspace-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  padding-top: calc(0.75rem + env(safe-area-inset-top));
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  padding-top: calc(0.45rem + env(safe-area-inset-top));
   border-bottom: 1px solid var(--border-strong);
   background: var(--surface);
   flex-shrink: 0;
+  min-height: 48px;
+}
+
+.visit-workspace-header-compact {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.vf-back-icon {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.35rem 0.55rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.vf-store-compact {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vf-hamburger {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.35rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vf-hamburger-bars {
+  display: block;
+  width: 1.15rem;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
+}
+
+.vf-sidebar-meta {
+  padding: 0.65rem 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+
+.vf-sidebar-date {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.vf-sidebar-status {
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.vf-sidebar-sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.vf-sidebar-footer {
+  margin-top: auto;
+  padding: 0.65rem 0.55rem calc(0.65rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.vf-sidebar-discard {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.vf-step-continue {
+  margin-top: 0.5rem;
+  width: 100%;
+  min-height: 48px;
+  font-weight: 700;
+}
+
+.vf-time-unmet {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--warn-soft, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.vf-time-unmet h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+}
+
+.vf-time-unmet ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.vf-time-unmet button.vf-deep-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .visit-workspace-titleblock {
@@ -1505,15 +1630,16 @@ body.mode-admin .day-col.eligible .day-head::after {
 .vf-sidebar {
   display: none;
   flex-direction: column;
-  gap: 0.35rem;
-  width: 13.5rem;
+  gap: 0;
+  width: min(80vw, 16rem);
   flex-shrink: 0;
-  padding-right: 0.75rem;
-  margin-right: 0.75rem;
+  padding-right: 0;
+  margin-right: 0;
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
   max-height: none;
   height: 100%;
+  background: var(--surface);
 }
 
 .vf-main {
@@ -1566,6 +1692,8 @@ body.mode-admin .day-col.eligible .day-head::after {
   width: 100%;
   text-align: left;
   padding: 0.5rem 0.55rem;
+  margin: 0 0.35rem;
+  width: calc(100% - 0.7rem);
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
@@ -1629,7 +1757,7 @@ body.mode-admin .day-col.eligible .day-head::after {
     bottom: 0;
     width: min(80vw, 16rem);
     max-height: none;
-    padding: 0.75rem;
+    padding: 0;
     margin: 0;
     background: var(--surface);
     border-right: 1px solid var(--border-strong);
@@ -2012,14 +2140,9 @@ body.visit-workspace-open {
   white-space: nowrap;
 }
 
-/* Visit guided rail + burst + Amp */
+/* Visit guided rail — removed from mobile flow */
 .vf-guided-nav {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
+  display: none !important;
 }
 
 .vf-rail-dots {
@@ -2235,9 +2358,114 @@ body.visit-workspace-open {
 .vf-live-video {
   flex: 1;
   width: 100%;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
   background: #111;
   min-height: 0;
+}
+.vf-live-zoom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  pointer-events: auto;
+  z-index: 2;
+}
+.vf-live-zoom-btn {
+  flex: 0 0 auto;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.35);
+  background: rgba(0,0,0,0.45);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.vf-live-zoom-range {
+  flex: 1;
+  accent-color: #fff;
+}
+.vf-live-photo-toggle {
+  position: absolute;
+  top: max(0.65rem, env(safe-area-inset-top));
+  right: 0.75rem;
+  z-index: 3;
+  min-height: 40px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.35);
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vf-live-photo-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(42vw, 9rem);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.82);
+  border-left: 1px solid rgba(255,255,255,0.15);
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  pointer-events: auto;
+  padding-top: max(3.25rem, calc(env(safe-area-inset-top) + 2.5rem));
+  padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+}
+.vf-live-photo-drawer.open {
+  transform: translateX(0);
+}
+.vf-live-photo-drawer-title {
+  padding: 0.35rem 0.55rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.vf-live-thumbs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0 0.55rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.vf-live-thumb {
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 2px solid rgba(255,255,255,0.75);
+  background-size: cover;
+  background-position: center;
+  background-color: #333;
+}
+.vf-live-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.88);
+  z-index: 3;
 }
 .vf-live-top {
   position: absolute;
@@ -2250,41 +2478,26 @@ body.visit-workspace-open {
   gap: 0.5rem;
   padding: 0.65rem 0.85rem;
   padding-top: max(0.65rem, env(safe-area-inset-top));
+  padding-right: 6.5rem;
   background: linear-gradient(to bottom, rgba(0,0,0,0.65), transparent);
   color: #fff;
   pointer-events: none;
+  z-index: 1;
 }
 .vf-live-title { font-weight: 700; font-size: 0.95rem; }
 .vf-live-count { font-size: 0.85rem; opacity: 0.9; }
-.vf-live-thumbs {
+.vf-live-hint {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 5.5rem;
-  display: flex;
-  gap: 0.35rem;
-  padding: 0 0.75rem;
-  overflow-x: auto;
+  bottom: 5.25rem;
+  margin: 0;
+  padding: 0 1rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.75);
   pointer-events: none;
-}
-.vf-live-thumb {
-  flex: 0 0 52px;
-  width: 52px;
-  height: 52px;
-  border-radius: 8px;
-  border: 2px solid #fff;
-  background-size: cover;
-  background-position: center;
-  background-color: #333;
-}
-.vf-live-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.88);
+  z-index: 1;
 }
 .vf-live-controls .subtle,
 .vf-live-controls .primary {
@@ -2301,14 +2514,6 @@ body.visit-workspace-open {
   line-height: 1;
   padding: 0 !important;
   flex: 0 0 auto;
-}
-.vf-live-hint {
-  margin: 0;
-  padding: 0 1rem 0.65rem;
-  font-size: 0.78rem;
-  color: #c8d0dc;
-  background: rgba(0, 0, 0, 0.88);
-  text-align: center;
 }
 .vf-live-open-btn {
   flex: 1;

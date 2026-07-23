@@ -119,24 +119,31 @@ const STEP = {
   REVIEW: 'review',
 };
 
+/** Survey questions shown to reps (Q1/Q12 are the before/after photo steps). */
+const REP_SURVEY_QUESTION_IDS = new Set(['q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q11']);
+
+/** Legacy step ids from older drafts — map to the simplified four-step flow. */
+const LEGACY_STEP_REDIRECT = {
+  [STEP.LOAD_CHECK]: STEP.SURVEY,
+  [STEP.WRITE_ORDER_CHECKLIST]: STEP.SURVEY,
+  [STEP.CATEGORY_PHOTOS]: STEP.AFTER_PHOTOS,
+  [STEP.SHIFT_LOG]: STEP.TIME,
+  [STEP.REVIEW]: STEP.TIME,
+};
+
 /**
- * Build the ordered step sequence for a visit given its decoded flags.
- * Step order:
- *  1. before photos (always) — burst on arrival
- *  2. load check (only if workLoad)
- *  3. write-order checklist (only if writeOrder)
- *  4. after photos (always) — burst when finished; AI sorts into categories
- *  5. survey (always)
- *  6. time (always)
- *  7. outcome & notes (always)
- *  8. review (always)
+ * Build the ordered step sequence for a visit.
+ * Mobile flow: before photos → questions → after photos → confirm time.
+ * workLoad / writeOrder are ignored (reps work load/order outside the app).
  */
-function buildStepSequence({ workLoad, writeOrder }) {
-  const steps = [STEP.BEFORE_PHOTOS];
-  if (workLoad) steps.push(STEP.LOAD_CHECK);
-  if (writeOrder) steps.push(STEP.WRITE_ORDER_CHECKLIST);
-  steps.push(STEP.AFTER_PHOTOS, STEP.SURVEY, STEP.TIME, STEP.SHIFT_LOG, STEP.REVIEW);
-  return steps;
+function buildStepSequence(/* { workLoad, writeOrder } */) {
+  return [STEP.BEFORE_PHOTOS, STEP.SURVEY, STEP.AFTER_PHOTOS, STEP.TIME];
+}
+
+function normalizeCurrentStep(currentStep, steps = buildStepSequence({})) {
+  if (steps.includes(currentStep)) return currentStep;
+  if (LEGACY_STEP_REDIRECT[currentStep]) return LEGACY_STEP_REDIRECT[currentStep];
+  return steps[0];
 }
 
 function nextStep(sequence, currentStep) {
@@ -250,6 +257,16 @@ function isSurveyComplete(answers = {}) {
   return visibility.every(({ id, visible }) => !visible || answers[id] != null);
 }
 
+/** Rep-facing survey complete — Q2–Q11 only (Q1/Q12 come from photo steps). */
+function isRepSurveyComplete(answers = {}) {
+  const visibility = surveyVisibility(answers);
+  return visibility.every(({ id, visible }) => {
+    if (!visible || !REP_SURVEY_QUESTION_IDS.has(id)) return true;
+    const val = answers[id];
+    return val != null && val !== '';
+  });
+}
+
 /* ---------- Free-nav section status + seal-time requirements (only gate) ---------- */
 
 const SECTION_STATUS = {
@@ -260,101 +277,45 @@ const SECTION_STATUS = {
 };
 
 const SECTION_LABELS = {
-  [STEP.BEFORE_PHOTOS]: 'Before Photos',
-  [STEP.LOAD_CHECK]: 'Load',
-  [STEP.WRITE_ORDER_CHECKLIST]: 'Order Checklist',
+  [STEP.BEFORE_PHOTOS]: 'Before photos',
+  [STEP.LOAD_CHECK]: 'Load', // legacy drafts only
+  [STEP.WRITE_ORDER_CHECKLIST]: 'Order Checklist', // legacy drafts only
   [STEP.CATEGORY_PHOTOS]: 'Category Photos', // legacy drafts only
-  [STEP.SURVEY]: 'Survey',
-  [STEP.AFTER_PHOTOS]: 'After Photos',
-  [STEP.TIME]: 'Time',
-  [STEP.SHIFT_LOG]: 'Outcome & Notes',
-  [STEP.REVIEW]: 'Review & Finish',
+  [STEP.SURVEY]: 'Questions',
+  [STEP.AFTER_PHOTOS]: 'After photos',
+  [STEP.TIME]: 'Confirm time',
+  [STEP.SHIFT_LOG]: 'Outcome & Notes', // legacy drafts only
+  [STEP.REVIEW]: 'Review & Finish', // legacy drafts only
 };
 
 /**
- * Seal-time requirements for one draft. Unchanged from Stage 3 intent:
- * before/after photos, load outcome (yes+photo OR escalated), full order
- * checklist (+ required photos), every category photo target, complete survey
- * (visible questions only), start/stop times, resolved mileage leg.
- * Load escalation (contacted supervisor) is a valid load outcome.
+ * Finish-time requirements: before/after photos, fixture coverage from after
+ * burst, rep-facing survey (Q2–Q11), start/stop times, mileage.
  *
  * @returns {Array<{section:string, anchor:string, message:string}>}
  */
 function listUnmetRequirements(draft) {
-  if (!draft) return [{ section: STEP.REVIEW, anchor: 'review', message: 'No visit draft' }];
+  if (!draft) return [{ section: STEP.TIME, anchor: 'time', message: 'No visit draft' }];
   const unmet = [];
 
   if (!draft.beforePhotos?.length) {
     unmet.push({
       section: STEP.BEFORE_PHOTOS,
       anchor: 'before-photos',
-      message: 'At least 1 before photo is required',
+      message: 'Take at least one before photo of the Pet Supplies aisle',
     });
   }
 
-  if (draft.workLoad) {
-    const status = draft.loadCheck?.status;
-    if (!status) {
-      unmet.push({
-        section: STEP.LOAD_CHECK,
-        anchor: 'load-check',
-        message: 'Record whether you found the load',
-      });
-    } else if (status === LOAD_FOUND.NO_FOUND_LATER) {
-      unmet.push({
-        section: STEP.LOAD_CHECK,
-        anchor: 'load-check',
-        message: 'Finish the load search (found later, or contact supervisor)',
-      });
-    } else if (status === LOAD_FOUND.YES && !draft.loadCheck?.photo) {
-      unmet.push({
-        section: STEP.LOAD_CHECK,
-        anchor: 'load-photo',
-        message: 'Take a photo of the load',
-      });
-    }
-    // no_escalated (contacted supervisor) is a valid complete outcome — no photo required
-  }
-
-  if (draft.writeOrder) {
-    for (const item of writeOrderChecklistItems()) {
-      const row = draft.checklist?.[item.id];
-      if (!row?.checked) {
-        unmet.push({
-          section: STEP.WRITE_ORDER_CHECKLIST,
-          anchor: `checklist-${item.id}`,
-          message: `Check off: ${item.text.slice(0, 80)}${item.text.length > 80 ? '…' : ''}`,
-        });
-      } else if (item.photoRequired && !row.photo) {
-        unmet.push({
-          section: STEP.WRITE_ORDER_CHECKLIST,
-          anchor: `checklist-photo-${item.id}`,
-          message: `Photo required for checklist item ${item.id}`,
-        });
-      }
-    }
-  }
-
-  for (const cat of requiredCategoryPhotoTargets(draft)) {
-    if (!(draft.categoryPhotos?.[cat.id] || []).length) {
-      unmet.push({
-        section: STEP.AFTER_PHOTOS,
-        anchor: 'after-photos',
-        message: `Need a clear after shot of ${cat.label} (take it in After Photos — the app sorts it automatically)`,
-      });
-    }
-  }
-
-  if (!isSurveyComplete(draft.survey || {})) {
+  if (!isRepSurveyComplete(draft.survey || {})) {
     const vis = surveyVisibility(draft.survey || {});
     for (const { id, visible } of vis) {
-      if (!visible) continue;
+      if (!visible || !REP_SURVEY_QUESTION_IDS.has(id)) continue;
       if (draft.survey?.[id] == null || draft.survey[id] === '') {
         const q = serviceSurvey.questions.find((x) => x.id === id);
         unmet.push({
           section: STEP.SURVEY,
           anchor: `survey-${id}`,
-          message: `Answer survey ${id.toUpperCase()}${q ? `: ${q.text.slice(0, 60)}…` : ''}`,
+          message: q ? q.text : `Answer question ${id.toUpperCase()}`,
         });
       }
     }
@@ -364,44 +325,39 @@ function listUnmetRequirements(draft) {
     unmet.push({
       section: STEP.AFTER_PHOTOS,
       anchor: 'after-photos',
-      message: 'At least 1 after photo is required',
+      message: 'Take at least one after photo when you are finished',
     });
+  }
+
+  for (const cat of requiredCategoryPhotoTargets(draft)) {
+    if (!(draft.categoryPhotos?.[cat.id] || []).length) {
+      unmet.push({
+        section: STEP.AFTER_PHOTOS,
+        anchor: 'after-photos',
+        message: `Still need a photo of ${cat.label}`,
+      });
+    }
   }
 
   if (!draft.visitStart?.actual) {
     unmet.push({
       section: STEP.TIME,
       anchor: 'time-start',
-      message: 'Set actual start time',
+      message: 'Set your start time',
     });
   }
   if (!draft.visitStop?.actual) {
     unmet.push({
       section: STEP.TIME,
       anchor: 'time-stop',
-      message: 'Set stop time',
+      message: 'Set your stop time',
     });
   }
   if (!draft.mileage?.leg) {
     unmet.push({
       section: STEP.TIME,
       anchor: 'time-mileage',
-      message: 'Calculate Mileage for this visit',
-    });
-  }
-
-  const outcomes = draft.shiftLog?.outcomes || [];
-  if (!outcomes.length) {
-    unmet.push({
-      section: STEP.SHIFT_LOG,
-      anchor: 'shift-log',
-      message: 'Record at least one outcome for this shift (what you did and/or any variances)',
-    });
-  } else if (outcomes.some((o) => o.optionId === 'other') && !(draft.shiftLog?.custom || '').trim()) {
-    unmet.push({
-      section: STEP.SHIFT_LOG,
-      anchor: 'shift-log-custom',
-      message: 'Describe the "Other" outcome you selected',
+      message: 'Tap Calculate Mileage',
     });
   }
 
@@ -428,9 +384,7 @@ function sectionStatuses(draft) {
   return draft.steps.map((id) => {
     const unmet = unmetBySection.get(id) || [];
     let status = SECTION_STATUS.EMPTY;
-    if (id === STEP.REVIEW) {
-      status = unmetBySection.size === 0 ? SECTION_STATUS.COMPLETE : SECTION_STATUS.IN_PROGRESS;
-    } else if (unmet.length === 0) {
+    if (unmet.length === 0) {
       status = SECTION_STATUS.COMPLETE;
     } else if (sectionHasAnyProgress(draft, id)) {
       status = SECTION_STATUS.NEEDS_ATTENTION;
@@ -693,6 +647,8 @@ function computeMileageLegs({
 
 module.exports = {
   STEP,
+  REP_SURVEY_QUESTION_IDS,
+  LEGACY_STEP_REDIRECT,
   CATEGORY_PHOTO_TARGETS,
   AFTER_PHOTO_COACH,
   OPTIONAL_FIXTURE_GROUPS,
@@ -703,6 +659,7 @@ module.exports = {
   SECTION_STATUS,
   SECTION_LABELS,
   buildStepSequence,
+  normalizeCurrentStep,
   nextStep,
   prevStep,
   loadCheckInstruction,
@@ -711,6 +668,7 @@ module.exports = {
   surveyVisibility,
   surveyAutoFill,
   isSurveyComplete,
+  isRepSurveyComplete,
   listUnmetRequirements,
   canSeal,
   sectionStatuses,

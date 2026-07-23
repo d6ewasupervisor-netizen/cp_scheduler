@@ -4,70 +4,39 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const visitFlow = require('../src/lib/visit-flow');
 
-describe('buildStepSequence (branch logic)', () => {
-  it('load-only: before → load_check → after → survey → time → review (no category step)', () => {
-    const steps = visitFlow.buildStepSequence({ workLoad: true, writeOrder: false });
-    assert.deepEqual(steps, [
+describe('buildStepSequence (mobile four-step flow)', () => {
+  it('always returns before → survey → after → time regardless of load/order flags', () => {
+    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }), [
       'before_photos',
-      'load_check',
-      'after_photos',
       'survey',
+      'after_photos',
       'time',
-      'shift_log',
-      'review',
     ]);
-  });
-
-  it('order-only: before → write_order_checklist → after → survey → time → review', () => {
-    const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: true });
-    assert.deepEqual(steps, [
+    assert.deepEqual(visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }), [
       'before_photos',
-      'write_order_checklist',
-      'after_photos',
       'survey',
-      'time',
-      'shift_log',
-      'review',
-    ]);
-  });
-
-  it('both: load check comes before the write-order checklist', () => {
-    const steps = visitFlow.buildStepSequence({ workLoad: true, writeOrder: true });
-    const loadIdx = steps.indexOf('load_check');
-    const orderIdx = steps.indexOf('write_order_checklist');
-    assert.ok(loadIdx >= 0 && orderIdx >= 0);
-    assert.ok(loadIdx < orderIdx, 'load_check must precede write_order_checklist');
-    assert.deepEqual(steps, [
-      'before_photos',
-      'load_check',
-      'write_order_checklist',
       'after_photos',
-      'survey',
       'time',
-      'shift_log',
-      'review',
     ]);
-    assert.ok(!steps.includes('category_photos'));
-  });
-
-  it('neither load nor order: skips both conditional steps; after then survey', () => {
-    const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
-    assert.deepEqual(steps, [
-      'before_photos',
-      'after_photos',
-      'survey',
-      'time',
-      'shift_log',
-      'review',
-    ]);
+    assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('load_check'));
+    assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('shift_log'));
+    assert.ok(!visitFlow.buildStepSequence({ workLoad: true, writeOrder: true }).includes('review'));
   });
 
   it('nextStep/prevStep walk the sequence and return null at the ends', () => {
     const steps = visitFlow.buildStepSequence({ workLoad: false, writeOrder: false });
-    assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'after_photos');
-    assert.equal(visitFlow.prevStep(steps, 'survey'), 'after_photos');
+    assert.equal(visitFlow.nextStep(steps, 'before_photos'), 'survey');
+    assert.equal(visitFlow.nextStep(steps, 'survey'), 'after_photos');
+    assert.equal(visitFlow.prevStep(steps, 'survey'), 'before_photos');
     assert.equal(visitFlow.prevStep(steps, 'before_photos'), null);
-    assert.equal(visitFlow.nextStep(steps, 'review'), null);
+    assert.equal(visitFlow.nextStep(steps, 'time'), null);
+  });
+
+  it('normalizeCurrentStep maps legacy steps onto the four-step flow', () => {
+    const steps = visitFlow.buildStepSequence({});
+    assert.equal(visitFlow.normalizeCurrentStep('load_check', steps), 'survey');
+    assert.equal(visitFlow.normalizeCurrentStep('review', steps), 'time');
+    assert.equal(visitFlow.normalizeCurrentStep('category_photos', steps), 'after_photos');
   });
 
   it('AFTER_PHOTO_COACH covers every category target', () => {
@@ -104,7 +73,6 @@ describe('load-check escalation branch (first-person supervisor voice)', () => {
     const msg = visitFlow.loadCheckInstruction(visitFlow.LOAD_FOUND.NO_ESCALATED);
     assert.match(msg, /contact me/i);
     assert.match(msg, /store number you are physically at/i);
-    // Never third person ("the rep should...")
     assert.doesNotMatch(msg, /\bthe rep\b/i);
     assert.doesNotMatch(msg, /\bthey should\b/i);
   });
@@ -197,14 +165,28 @@ describe('survey Q1/Q12 auto-fill', () => {
     assert.equal(patch.q12, null);
   });
 
+  it('isRepSurveyComplete checks Q2–Q11 only', () => {
+    const answers = {
+      q2: 'Yes',
+      q3: 'Fully stocked',
+      q5: 'yes',
+      q7: 'Yes',
+      q9: 'yes',
+      q11: 'looks good',
+    };
+    assert.equal(visitFlow.isRepSurveyComplete(answers), true);
+    assert.equal(visitFlow.isRepSurveyComplete({ ...answers, q3: 'Partially stocked with holes / OOS' }), false);
+    assert.equal(visitFlow.isRepSurveyComplete(answers), true);
+  });
+
   it('isSurveyComplete respects visibility (hidden questions do not block completion)', () => {
     const answers = {
       q1: 'yes',
       q2: 'Yes',
-      q3: 'Fully stocked', // q4 stays hidden
-      q5: 'yes', // q6 stays hidden
-      q7: 'Yes', // q8 stays hidden
-      q9: 'yes', // q10 stays hidden
+      q3: 'Fully stocked',
+      q5: 'yes',
+      q7: 'Yes',
+      q9: 'yes',
       q11: 'looks good',
       q12: 'yes',
     };
@@ -213,7 +195,7 @@ describe('survey Q1/Q12 auto-fill', () => {
   });
 });
 
-describe('free-nav section status + seal requirements (only gate)', () => {
+describe('free-nav section status + finish requirements', () => {
   function baseDraft(overrides = {}) {
     return {
       workLoad: false,
@@ -247,7 +229,7 @@ describe('free-nav section status + seal requirements (only gate)', () => {
     assert.ok(unmet.some((u) => u.section === 'survey' && u.anchor.startsWith('survey-')));
   });
 
-  it('endcaps/wings photos do not gate seal unless the optional section is selected', () => {
+  it('endcaps/wings photos do not gate finish unless the optional section is selected', () => {
     const requiredOnly = Object.fromEntries(
       visitFlow
         .requiredCategoryPhotoTargets({})
@@ -269,10 +251,6 @@ describe('free-nav section status + seal requirements (only gate)', () => {
       },
       visitStop: { actual: '2026-07-08T18:00:00Z' },
       mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
-      shiftLog: {
-        outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }],
-        custom: '',
-      },
     });
     assert.ok(!requiredOnly.endcaps);
     assert.ok(!requiredOnly['wing-panels']);
@@ -295,56 +273,32 @@ describe('free-nav section status + seal requirements (only gate)', () => {
     assert.equal(visitFlow.canSeal(optedIn), true);
   });
 
-  it('load escalation (no_escalated) counts as a valid load outcome', () => {
+  it('load check and outcome notes no longer gate finish', () => {
     const d = baseDraft({
       workLoad: true,
-      steps: visitFlow.buildStepSequence({ workLoad: true, writeOrder: false }),
-      loadCheck: { status: 'no_escalated', photo: null },
-      beforePhotos: [{ path: 'x' }],
-      afterPhotos: [{ path: 'y' }],
-      categoryPhotos: Object.fromEntries(visitFlow.CATEGORY_PHOTO_TARGETS.map((c) => [c.id, [{ path: c.id }]])),
+      loadCheck: null,
+      beforePhotos: [{ path: 'b' }],
+      afterPhotos: [{ path: 'a' }],
+      categoryPhotos: Object.fromEntries(
+        visitFlow.requiredCategoryPhotoTargets({}).map((c) => [c.id, [{ path: c.id }]])
+      ),
       survey: {
-        q1: 'yes', q2: 'Yes', q3: 'Fully stocked', q5: 'yes', q7: 'Yes', q9: 'yes', q11: 'ok', q12: 'yes',
+        q2: 'Yes',
+        q3: 'Fully stocked',
+        q5: 'yes',
+        q7: 'Yes',
+        q9: 'yes',
+        q11: 'ok',
+        q1: 'yes',
+        q12: 'yes',
       },
       visitStop: { actual: '2026-07-08T18:00:00Z' },
       mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
-      shiftLog: { outcomes: [{ optionId: 'worked_load_wrote_order', kind: 'outcome', label: 'Worked load and wrote order' }], custom: '' },
+      shiftLog: { outcomes: [], custom: '' },
     });
     assert.equal(visitFlow.canSeal(d), true);
     assert.ok(!visitFlow.listUnmetRequirements(d).some((u) => u.section === 'load_check'));
-  });
-
-  it('mandatory Outcome & Notes: seal blocked until at least one outcome is logged', () => {
-    const complete = {
-      workLoad: false,
-      writeOrder: false,
-      steps: visitFlow.buildStepSequence({ workLoad: false, writeOrder: false }),
-      currentStep: 'shift_log',
-      beforePhotos: [{ path: 'b' }],
-      afterPhotos: [{ path: 'a' }],
-      loadCheck: null,
-      checklist: {},
-      categoryPhotos: Object.fromEntries(visitFlow.CATEGORY_PHOTO_TARGETS.map((c) => [c.id, [{ path: c.id }]])),
-      survey: { q1: 'yes', q2: 'Yes', q3: 'Fully stocked', q5: 'yes', q7: 'Yes', q9: 'yes', q11: 'ok', q12: 'yes' },
-      visitStart: { actual: '2026-07-08T13:00:00Z', source: 'start_tap' },
-      visitStop: { actual: '2026-07-08T18:00:00Z' },
-      mileage: { leg: { from: 'home', to: '215', miles: 3.6, source: 'home-to-store' } },
-      isLastStopOfDay: false,
-      shiftLog: { outcomes: [], custom: '' },
-    };
-    // Everything else done, but no outcome logged → still blocked, on the shift_log section.
-    assert.equal(visitFlow.canSeal(complete), false);
-    assert.ok(
-      visitFlow.listUnmetRequirements(complete).some((u) => u.section === 'shift_log' && u.anchor === 'shift-log')
-    );
-    // Log one normal outcome → seals.
-    complete.shiftLog.outcomes = [{ optionId: 'cleaned_up_section', kind: 'outcome', label: 'Cleaned up the section' }];
-    assert.equal(visitFlow.canSeal(complete), true);
-    // Picking "Other" requires a custom description.
-    complete.shiftLog.outcomes = [{ optionId: 'other', kind: 'variance', label: 'Other' }];
-    assert.equal(visitFlow.canSeal(complete), false);
-    complete.shiftLog.custom = 'Freezer aisle flooded, worked around it';
-    assert.equal(visitFlow.canSeal(complete), true);
+    assert.ok(!visitFlow.listUnmetRequirements(d).some((u) => u.section === 'shift_log'));
   });
 
   it('sidebar statuses never gate — incomplete sections report chips only', () => {
@@ -354,14 +308,13 @@ describe('free-nav section status + seal requirements (only gate)', () => {
     const before = statuses.find((s) => s.id === 'before_photos');
     assert.equal(before.status, 'empty');
     assert.equal(before.hint, 'BEFORE photos are time-sensitive');
-    // Every section from the step list is present (free-nav order)
     assert.deepEqual(
       statuses.map((s) => s.id),
       d.steps
     );
   });
 
-  it('canSeal is false until all Stage 3 requirements are met', () => {
+  it('canSeal is false until core requirements are met', () => {
     assert.equal(visitFlow.canSeal(baseDraft()), false);
   });
 });
@@ -428,7 +381,7 @@ describe('Central Pet Service Survey wording is locked byte-for-byte (Stage 4 ex
 });
 
 describe('computeMileageLeg', () => {
-  const BRIAN = '800553343'; // in d8_mileage_matrix.json fixture data
+  const BRIAN = '800553343';
 
   it('home → store when no previous stop today and not last stop', () => {
     const leg = visitFlow.computeMileageLeg({ workdayGivenId: BRIAN, actualStore: 215 });

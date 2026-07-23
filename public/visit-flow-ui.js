@@ -1,9 +1,6 @@
-// visit-flow-ui.js — Stage 3 free-navigation visit sections (Shift Day surface).
+// visit-flow-ui.js — mobile visit flow (Shift Day surface).
 // STILL READ-ONLY vs prod: every call here hits /shift-day/visit/* which only
 // touches the local JSON draft store — no SAS writes.
-//
-// Navigation is free: any section is tappable any time. Seal-time (Finish Visit
-// on Review) is the only gate. Guided Continue + burst photo + offline IDB.
 
 import { toast } from '/shared.js';
 import { createPhotoUploadQueue } from '/photo-upload-queue.js';
@@ -18,6 +15,37 @@ import {
   listDraftPatches,
   deleteDraftPatch,
 } from '/ux/offline-store.js';
+
+const REP_SURVEY_IDS = new Set(['q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q11']);
+
+const LEGACY_STEP_REDIRECT = {
+  load_check: 'survey',
+  write_order_checklist: 'survey',
+  category_photos: 'after_photos',
+  shift_log: 'time',
+  review: 'time',
+};
+
+const STEP_HINTS = {
+  before_photos:
+    'Photograph the Pet Supplies aisle when you arrive. Two 4ft sections per photo. Open the camera once and take every before shot.',
+  survey: 'Answer these the same way you would in SAS.',
+  after_photos:
+    'Photograph the finished aisle plus clip strips, cat litter top shelf, and Butcher Block. The app places photos for you.',
+  time: 'Set your start and stop times, then calculate mileage.',
+};
+
+const STEP_LABELS = {
+  before_photos: 'Before photos',
+  load_check: 'Load',
+  write_order_checklist: 'Order Checklist',
+  category_photos: 'Category Photos',
+  survey: 'Questions',
+  after_photos: 'After photos',
+  time: 'Confirm time',
+  shift_log: 'Outcome & Notes',
+  review: 'Review & Finish',
+};
 
 const API = '/api/central-pet';
 
@@ -35,31 +63,6 @@ async function apiCall(path, opts = {}) {
   }
   return data;
 }
-
-const STEP_HINTS = {
-  before_photos: 'Arrive and photograph the Pet Supplies aisle (two 4ft sections per shot). Keep the camera open and capture all befores in one go.',
-  load_check: 'Find the load, photograph it if present, then work it to the shelf.',
-  write_order_checklist: 'Open Amp by Movista, write the order from product tags, then check off scope items.',
-  category_photos: 'Category sorting is automatic — take clear after photos of each fixture instead.',
-  survey: 'Answer the service survey. Some questions appear based on earlier answers.',
-  after_photos:
-    'Finished work? Photograph the aisle, clip strips, litter liners, and Butcher Block in one burst. End caps / wings are optional — turn that section on only if you serviced them. The app sorts photos for the survey.',
-  time: 'Set actual start/stop times and Calculate Mileage — Home To Store, Store To Store, or Store To Home.',
-  shift_log: 'Log what happened on this shift — pick everything that applies, add any variances, and leave a note for the next visit.',
-  review: 'Fix any unmet items, then seal the visit.',
-};
-
-const STEP_LABELS = {
-  before_photos: 'Before Photos',
-  load_check: 'Load',
-  write_order_checklist: 'Order Checklist',
-  category_photos: 'Category Photos',
-  survey: 'Survey',
-  after_photos: 'After Photos',
-  time: 'Time',
-  shift_log: 'Outcome & Notes',
-  review: 'Review & Finish',
-};
 
 const STATUS_LABELS = {
   empty: 'Empty',
@@ -188,7 +191,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             updateBurstStatus();
             updateLiveCameraChrome();
             updateFinishButton();
-            updateGuidedNav();
           }
         }
       }
@@ -425,13 +427,22 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           <span id="vfLiveTitle" class="vf-live-title">Camera</span>
           <span id="vfLiveCount" class="vf-live-count">0 captured</span>
         </div>
-        <div class="vf-live-thumbs" id="vfLiveThumbs"></div>
+        <button type="button" class="vf-live-photo-toggle" id="vfLivePhotoToggle" aria-expanded="false">Photos (0)</button>
+        <div class="vf-live-photo-drawer" id="vfLivePhotoDrawer">
+          <div class="vf-live-photo-drawer-title">Captured</div>
+          <div class="vf-live-thumbs" id="vfLiveThumbs"></div>
+        </div>
+        <div class="vf-live-zoom" id="vfLiveZoomBar">
+          <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomOut" aria-label="Zoom out">−</button>
+          <input type="range" class="vf-live-zoom-range" id="vfLiveZoomRange" min="1" max="3" step="0.05" value="1">
+          <button type="button" class="vf-live-zoom-btn" id="vfLiveZoomIn" aria-label="Zoom in">+</button>
+        </div>
         <div class="vf-live-controls">
           <button type="button" class="subtle" id="vfLiveClose">Close</button>
           <button type="button" class="primary vf-live-shutter" id="vfLiveShutter" aria-label="Take photo">●</button>
           <button type="button" class="primary" id="vfLiveDone">Done</button>
         </div>
-        <p class="vf-live-hint" id="vfLiveHint">Keep this open — tap the shutter for each photo, then Done.</p>
+        <p class="vf-live-hint" id="vfLiveHint">Tap the shutter for each photo, then Done. Turn your phone sideways if needed.</p>
       </div>`;
     document.body.appendChild(overlay);
 
@@ -447,7 +458,62 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       if (wasAfter) await classifyAfterPhotosQuiet();
     });
     overlay.querySelector('#vfLiveShutter').addEventListener('click', () => captureLiveFrame());
+    overlay.querySelector('#vfLivePhotoToggle')?.addEventListener('click', () => toggleLivePhotoDrawer());
+    overlay.querySelector('#vfLiveZoomRange')?.addEventListener('input', (e) =>
+      applyLiveZoom(Number(e.target.value))
+    );
+    overlay.querySelector('#vfLiveZoomOut')?.addEventListener('click', () => nudgeLiveZoom(-0.15));
+    overlay.querySelector('#vfLiveZoomIn')?.addEventListener('click', () => nudgeLiveZoom(0.15));
     return overlay;
+  }
+
+  function toggleLivePhotoDrawer(forceOpen) {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const drawer = document.getElementById('vfLivePhotoDrawer');
+    const toggle = document.getElementById('vfLivePhotoToggle');
+    if (!drawer || !toggle) return;
+    const open = forceOpen != null ? forceOpen : !cam.photoDrawerOpen;
+    cam.photoDrawerOpen = open;
+    drawer.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  async function applyLiveZoom(value) {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const clamped = Math.min(cam.zoomMax, Math.max(cam.zoomMin, value));
+    cam.zoom = clamped;
+    if (!cam.hardwareZoom) cam.digitalZoom = clamped;
+    const range = document.getElementById('vfLiveZoomRange');
+    if (range) range.value = String(clamped);
+    if (cam.hardwareZoom && cam.track?.applyConstraints) {
+      try {
+        await cam.track.applyConstraints({ advanced: [{ zoom: clamped }] });
+      } catch {
+        cam.hardwareZoom = false;
+        cam.digitalZoom = clamped;
+      }
+    }
+  }
+
+  function nudgeLiveZoom(delta) {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    applyLiveZoom((cam.hardwareZoom ? cam.zoom : cam.digitalZoom) + delta);
+  }
+
+  function setupLiveCameraZoom() {
+    const cam = vf.liveCam;
+    if (!cam) return;
+    const bar = document.getElementById('vfLiveZoomBar');
+    const range = document.getElementById('vfLiveZoomRange');
+    if (!bar || !range) return;
+    bar.hidden = false;
+    range.min = String(cam.zoomMin);
+    range.max = String(cam.zoomMax);
+    range.step = cam.hardwareZoom ? '0.1' : '0.05';
+    range.value = String(cam.hardwareZoom ? cam.zoom : cam.digitalZoom);
   }
 
   function updateLiveCameraChrome() {
@@ -463,6 +529,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (countEl) {
       countEl.textContent = `${cam.count} captured${q.inFlight ? ` · ${q.inFlight} uploading` : ''}`;
     }
+    const toggle = document.getElementById('vfLivePhotoToggle');
+    if (toggle) toggle.textContent = `Photos (${cam.count})`;
   }
 
   async function captureLiveFrame() {
@@ -477,10 +545,15 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       toast('Camera not ready yet — wait a moment', 'warn', 2500);
       return;
     }
+    const zoomLevel = cam.hardwareZoom ? cam.zoom : cam.digitalZoom || 1;
+    const cropW = w / zoomLevel;
+    const cropH = h / zoomLevel;
+    const sx = (w - cropW) / 2;
+    const sy = (h - cropH) / 2;
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, w, h);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
     if (!blob) {
       toast('Could not capture frame', 'bad', 3000);
@@ -500,6 +573,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         el.style.backgroundImage = `url('${url}')`;
         thumbs.prepend(el);
       }
+      toggleLivePhotoDrawer(true);
     } catch (err) {
       toast(`Could not queue photo: ${err.message}`, 'bad', 4000);
     }
@@ -519,12 +593,40 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         audio: false,
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
         },
       });
+      const track = stream.getVideoTracks()[0];
+      let zoomMin = 1;
+      let zoomMax = 3;
+      let zoom = 1;
+      let hardwareZoom = false;
+      try {
+        const caps = track.getCapabilities?.();
+        if (caps?.zoom) {
+          hardwareZoom = true;
+          zoomMin = caps.zoom.min ?? 1;
+          zoomMax = caps.zoom.max ?? Math.max(caps.zoom.min ?? 1, 3);
+          zoom = track.getSettings?.().zoom ?? caps.zoom.min ?? 1;
+        }
+      } catch {
+        /* digital zoom fallback */
+      }
       const extra = { target: kind };
-      vf.liveCam = { kind, stream, count: 0, extra };
+      vf.liveCam = {
+        kind,
+        stream,
+        track,
+        count: 0,
+        extra,
+        zoomMin,
+        zoomMax,
+        zoom,
+        digitalZoom: hardwareZoom ? 1 : 1,
+        hardwareZoom,
+        photoDrawerOpen: false,
+      };
       const video = document.getElementById('vfLiveVideo');
       video.srcObject = stream;
       try {
@@ -534,6 +636,8 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
       const thumbs = document.getElementById('vfLiveThumbs');
       if (thumbs) thumbs.innerHTML = '';
+      toggleLivePhotoDrawer(false);
+      setupLiveCameraZoom();
       updateLiveCameraChrome();
       overlay.hidden = false;
     } catch (err) {
@@ -799,7 +903,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
       if (result.classification?.skipped) return;
       if (result.classification?.ok) {
-        toast('After photos sorted for the survey', 'ok', 2200);
+        toast('After photos placed for you', 'ok', 2200);
       }
     } catch (err) {
       // Non-blocking — seal-time classify + unmet list still apply
@@ -809,6 +913,44 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   /* ---------- Section renderers ---------- */
 
+  function nextStepInSequence() {
+    if (!vf.draft?.steps) return null;
+    const steps = vf.draft.steps;
+    const idx = steps.indexOf(vf.draft.currentStep);
+    if (idx === -1 || idx >= steps.length - 1) return null;
+    return steps[idx + 1];
+  }
+
+  function appendStepContinue(body) {
+    const next = nextStepInSequence();
+    if (!next || vf.draft.currentStep === 'time') return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'primary vf-step-continue';
+    btn.textContent = 'Continue';
+    btn.addEventListener('click', () => goToSection(next));
+    body.appendChild(btn);
+  }
+
+  function renderTimeUnmet(body) {
+    const unmet = vf.draft.unmetRequirements || [];
+    if (!unmet.length) return;
+    const box = document.createElement('div');
+    box.className = 'vf-time-unmet';
+    box.innerHTML = `<h3>Still need</h3><ul>${unmet
+      .map(
+        (u) =>
+          `<li><button type="button" class="vf-deep-link" data-section="${escapeHtml(
+            u.section
+          )}" data-anchor="${escapeHtml(u.anchor || '')}">${escapeHtml(u.message)}</button></li>`
+      )
+      .join('')}</ul>`;
+    box.querySelectorAll('.vf-deep-link').forEach((btn) => {
+      btn.addEventListener('click', () => goToSection(btn.dataset.section, btn.dataset.anchor || null));
+    });
+    body.appendChild(box);
+  }
+
   function renderBeforeAfter(kind) {
     const body = $('vfBody');
     body.innerHTML = '';
@@ -817,10 +959,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     p.className = 'overlay-meta';
     p.textContent =
       kind === 'before'
-        ? 'Photograph the Pet Supplies aisle — two 4ft sections per photo. At least 1 photo required; more is better coverage. Open the camera once and take every before shot without leaving.'
-        : 'One after burst covers the required fixtures. Shoot the finished aisle plus each item below — the app places photos into the survey for you.';
+        ? 'Take BEFORE photos of the Pet Supplies aisle when you arrive. Two 4ft sections per photo.'
+        : 'Take AFTER photos when you are finished. Include the aisle plus clip strips, cat litter top shelf, and Butcher Block — the app places them for you.';
     body.appendChild(p);
-    const extra = { target: kind };
     const guide = document.createElement('p');
     guide.className = 'vf-step-guide';
     guide.textContent = STEP_HINTS[kind === 'before' ? 'before_photos' : 'after_photos'];
@@ -884,8 +1025,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       list.id = 'after-photos-coach';
       list.innerHTML = `
         <div class="vf-photo-head">
-          <strong>Hit these in your after burst</strong>
-          <span class="vf-photo-count">No separate category step — just shoot clearly</span>
+          <strong>Include in your after photos</strong>
         </div>
         <ul class="vf-coach-list">
           ${coach
@@ -898,20 +1038,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
             .join('')}
         </ul>`;
       body.appendChild(list);
-
-      const sorted = vf.draft.photoClassification?.bestMatchByCategory;
-      if (sorted && Object.keys(sorted).length) {
-        const status = document.createElement('p');
-        status.className = 'overlay-meta vf-classify-status';
-        const requiredIds = new Set(coach.map((c) => c.id));
-        const filled = Object.entries(sorted).filter(
-          ([id, seq]) => seq != null && requiredIds.has(id)
-        ).length;
-        status.textContent = `Auto-sorted ${filled} of ${coach.length} required fixture types from your afters.`;
-        body.appendChild(status);
-      }
     }
 
+    const extra = { target: kind };
     body.appendChild(
       photoCaptureBlock({
         label: kind === 'before' ? 'Before photos' : 'After photos',
@@ -925,6 +1054,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         onRemove: (seq) => removePhoto(kind, seq),
       })
     );
+    appendStepContinue(body);
   }
 
   function renderLoadCheck() {
@@ -1101,31 +1231,29 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   function renderSurvey() {
     const body = $('vfBody');
     body.innerHTML = '';
-    if (vf.survey._meta?.pending) {
-      const warn = document.createElement('p');
-      warn.className = 'overlay-flag';
-      warn.textContent = 'Survey wording pending — placeholder questions shown until exact text is supplied.';
-      body.appendChild(warn);
-    }
+    const head = document.createElement('h2');
+    head.className = 'vf-section-head';
+    head.textContent = 'Questions';
+    body.appendChild(head);
+    const helper = document.createElement('p');
+    helper.className = 'overlay-meta';
+    helper.textContent = STEP_HINTS.survey;
+    body.appendChild(helper);
+
     const visibility = surveyVisibility();
     const answers = vf.draft.survey || {};
-    // Follow-ups hide/show reactively; hidden answers stay in the draft (not deleted).
     for (const q of vf.survey.questions.slice().sort((a, b) => a.order - b.order)) {
+      if (!REP_SURVEY_IDS.has(q.id)) continue;
       if (!visibility[q.id]) continue;
       const wrap = document.createElement('div');
       wrap.className = 'vf-survey-q';
       wrap.id = `survey-${q.id}`;
       const label = document.createElement('div');
       label.className = 'vf-survey-label';
-      label.textContent = `Q${q.order}. ${q.text}`;
+      label.textContent = q.text;
       wrap.appendChild(label);
 
-      if (q.autoFill && answers[q.id] != null) {
-        const badge = document.createElement('span');
-        badge.className = 'sd-badge order';
-        badge.textContent = `Auto-filled: ${answers[q.id]}`;
-        wrap.appendChild(badge);
-      } else if (q.type === 'yesno' || q.type === 'single-select') {
+      if (q.type === 'yesno' || q.type === 'single-select') {
         const row = document.createElement('div');
         row.className = 'vf-btn-row';
         for (const opt of q.options) {
@@ -1170,6 +1298,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
       body.appendChild(wrap);
     }
+    appendStepContinue(body);
   }
 
   function toLocalInput(iso) {
@@ -1200,10 +1329,12 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         </label>
         <button type="button" id="vfCalcMileage" class="primary">Calculate Mileage</button>
         <div id="time-mileage" class="overlay-meta" style="margin-top:.5rem"></div>
-        <label class="field">Note (if the mileage looks wrong — don't recalculate, just note it)
+        <label class="field">Note if mileage looks wrong
           <textarea id="vfMileageNote" rows="2">${vf.draft.mileage?.repNote || ''}</textarea>
         </label>
       </div>`;
+
+    renderTimeUnmet(body);
 
     const renderMileage = () => {
       $('time-mileage').textContent = formatMileageTravel(vf.draft.mileage?.leg);
@@ -1223,7 +1354,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         })
       );
       renderSidebar();
-      updateGuidedNav();
+      updateFinishButton();
     }
     async function saveStop(iso) {
       await autosave(() =>
@@ -1238,7 +1369,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
         })
       );
       renderSidebar();
-      updateGuidedNav();
+      updateFinishButton();
     }
 
     $('vfStart').addEventListener('change', (e) => saveStart(new Date(e.target.value).toISOString()));
@@ -1275,6 +1406,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       ).then(() => {
         renderMileage();
         renderSidebar();
+        updateFinishButton();
+        if (vf.draft.currentStep === 'time') {
+          $('vfBody')?.querySelector('.vf-time-unmet')?.remove();
+          renderTimeUnmet($('vfBody'));
+        }
       })
     );
     $('vfMileageNote').addEventListener('blur', (e) =>
@@ -1371,7 +1507,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   /* ---------- Sidebar + shell ---------- */
 
   function renderSidebar() {
-    const nav = $('vfSidebar');
+    const nav = $('vfSidebarSections') || $('vfSidebar');
     const d = vf.draft;
     const statuses = d.sectionStatuses || d.steps.map((id) => ({ id, label: STEP_LABELS[id], status: 'empty', hint: null }));
     nav.innerHTML = statuses
@@ -1396,88 +1532,63 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     });
 
     updateFinishButton();
-    updateGuidedNav();
+    updateSidebarMeta();
   }
 
-  function nextIncompleteStep() {
-    if (!vf.draft) return null;
-    const statuses = vf.draft.sectionStatuses || [];
-    const byId = Object.fromEntries(statuses.map((s) => [s.id, s]));
-    const steps = vf.draft.steps || [];
-    const cur = vf.draft.currentStep;
-    const curIdx = steps.indexOf(cur);
-    // Prefer next after current that is not complete
-    for (let i = curIdx + 1; i < steps.length; i++) {
-      const st = byId[steps[i]];
-      if (!st || st.status !== 'complete') return steps[i];
+  function updateSidebarMeta() {
+    const meta = $('vfSidebarMeta');
+    if (!meta || !vf.draft) return;
+    const d = vf.draft;
+    const day = d.date
+      ? new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : '—';
+    const status = d.status === 'ready_for_prod' ? 'Finished' : 'In progress';
+    const scheduled =
+      d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore)
+        ? `<div class="vf-sidebar-status">Scheduled as store ${d.scheduledStore}</div>`
+        : '';
+    meta.innerHTML = `<div class="vf-sidebar-date">${escapeHtml(day)}</div><div class="vf-sidebar-status">${escapeHtml(
+      status
+    )}</div>${scheduled}`;
+    const abandon = $('vfAbandon');
+    if (abandon) abandon.hidden = d.status === 'ready_for_prod';
+    updateOnlineBadge();
+  }
+
+  function updateOnlineBadge() {
+    const meta = $('vfSidebarMeta');
+    if (!meta || !vf.draft) return;
+    let el = document.getElementById('vfOnlineBadge');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'vfOnlineBadge';
+      el.className = 'vf-sidebar-status vf-online-badge';
+      meta.appendChild(el);
     }
-    // Or first incomplete before end
-    for (const id of steps) {
-      const st = byId[id];
-      if (!st || st.status !== 'complete') return id;
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    const q = photoQueue.snapshot();
+    if (!online) {
+      el.dataset.state = 'offline';
+      el.textContent = 'Offline — photos saved on this phone';
+    } else if (q.inFlight > 0) {
+      el.dataset.state = 'syncing';
+      el.textContent = `Syncing ${q.inFlight} photo(s)…`;
+    } else {
+      el.dataset.state = 'online';
+      el.textContent = 'Online';
     }
-    return steps[steps.length - 1] || null;
-  }
-
-  function updateGuidedNav() {
-    const nav = document.getElementById('vfGuidedNav');
-    if (!nav || !vf.draft) return;
-    const steps = vf.draft.steps || [];
-    const cur = vf.draft.currentStep;
-    const statuses = Object.fromEntries((vf.draft.sectionStatuses || []).map((s) => [s.id, s]));
-    const dots = steps
-      .map((id) => {
-        const st = statuses[id]?.status || 'empty';
-        const active = id === cur ? 'active' : '';
-        return `<button type="button" class="vf-rail-dot status-${st} ${active}" data-section="${id}" title="${escapeHtml(
-          STEP_LABELS[id] || id
-        )}" aria-label="${escapeHtml(STEP_LABELS[id] || id)}"></button>`;
-      })
-      .join('');
-    const curIdx = steps.indexOf(cur);
-    const prevId = curIdx > 0 ? steps[curIdx - 1] : null;
-    const nextId = nextIncompleteStep();
-    const onReview = cur === 'review';
-    nav.innerHTML = `
-      <div class="vf-rail-dots" role="tablist" aria-label="Visit steps">${dots}</div>
-      <div class="vf-rail-actions">
-        <button type="button" class="subtle" id="vfGuidedBack" ${prevId ? '' : 'disabled'}>Back</button>
-        ${
-          onReview
-            ? ''
-            : `<button type="button" class="primary" id="vfGuidedContinue">Continue</button>`
-        }
-      </div>
-      <p class="vf-rail-hint">${escapeHtml(STEP_HINTS[cur] || '')}</p>`;
-    nav.querySelectorAll('.vf-rail-dot').forEach((btn) => {
-      btn.addEventListener('click', () => goToSection(btn.dataset.section));
-    });
-    nav.querySelector('#vfGuidedBack')?.addEventListener('click', () => {
-      if (prevId) goToSection(prevId);
-    });
-    nav.querySelector('#vfGuidedContinue')?.addEventListener('click', () => {
-      if (nextId && nextId !== cur) goToSection(nextId);
-      else if (curIdx < steps.length - 1) goToSection(steps[curIdx + 1]);
-    });
-  }
-
-  function ensureGuidedNav() {
-    let nav = document.getElementById('vfGuidedNav');
-    if (nav) return nav;
-    nav = document.createElement('div');
-    nav.id = 'vfGuidedNav';
-    nav.className = 'vf-guided-nav';
-    const vfNav = document.querySelector('.vf-nav');
-    if (vfNav) vfNav.parentNode.insertBefore(nav, vfNav);
-    else document.querySelector('.vf-main')?.appendChild(nav);
-    return nav;
   }
 
   function updateFinishButton() {
     const btn = $('vfFinish');
     if (!btn || !vf.draft) return;
-    const onReview = vf.draft.currentStep === 'review';
-    btn.hidden = !onReview;
+    const onTime = vf.draft.currentStep === 'time';
+    btn.hidden = !onTime;
     const q = photoQueue.snapshot();
     const uploadsBlocking = q.inFlight > 0 || q.failed > 0;
     const can = !!vf.draft.canSeal && !uploadsBlocking;
@@ -1485,11 +1596,11 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     if (q.inFlight > 0) {
       btn.title = `Wait for ${q.inFlight} photo upload(s) to finish`;
     } else if (q.failed > 0) {
-      btn.title = `${q.failed} photo upload(s) failed — retry or remove before sealing`;
+      btn.title = `${q.failed} photo upload(s) failed — tap Retry before finishing`;
     } else if (can) {
-      btn.title = 'Seal this visit for Stage 4';
+      btn.title = 'Finish this visit';
     } else {
-      btn.title = `${(vf.draft.unmetRequirements || []).length} requirement(s) still unmet — see Review list`;
+      btn.title = 'Complete the items listed above before finishing';
     }
   }
 
@@ -1517,7 +1628,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
           outcomes: currentOutcomes(),
           custom: customEl ? customEl.value : d.shiftLog?.custom || '',
         },
-        { after: () => { renderSidebar(); updateGuidedNav(); } }
+        { after: () => { renderSidebar(); updateFinishButton(); } }
       );
 
     const groups = [
@@ -1669,25 +1780,19 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   function renderSectionBody() {
     const d = vf.draft;
-    $('vfStoreTitle').textContent = `Store ${d.actualStore} — Visit`;
-    $('vfStepLabel').textContent = STEP_LABELS[d.currentStep] || d.currentStep;
+    $('vfStoreTitle').textContent = `Store ${d.actualStore}`;
+
+    if (LEGACY_STEP_REDIRECT[d.currentStep]) {
+      goToSection(LEGACY_STEP_REDIRECT[d.currentStep]);
+      return;
+    }
 
     if (d.currentStep === 'before_photos') renderBeforeAfter('before');
-    else if (d.currentStep === 'load_check') renderLoadCheck();
-    else if (d.currentStep === 'write_order_checklist') renderChecklist();
-    else if (d.currentStep === 'category_photos') renderCategoryPhotos();
     else if (d.currentStep === 'survey') renderSurvey();
     else if (d.currentStep === 'after_photos') renderBeforeAfter('after');
     else if (d.currentStep === 'time') renderTime();
-    else if (d.currentStep === 'shift_log') renderShiftLog();
-    else if (d.currentStep === 'review') renderReview();
+    else goToSection(d.steps?.[0] || 'before_photos');
 
-    // Universal per-stage note on every working step (not on Review or the
-    // Outcome & Notes step, which have their own richer note fields).
-    if (d.currentStep !== 'review' && d.currentStep !== 'shift_log') {
-      renderStageNote(d.currentStep);
-    }
-    // Store attribution + carry-forward notes pinned to the top of the body.
     renderStoreContext();
 
     if (vf.pendingAnchor) {
@@ -1705,35 +1810,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
   }
 
   function renderAll() {
-    ensureGuidedNav();
     renderSidebar();
     renderSectionBody();
-    updateVisitMeta();
-    updateOnlineBadge();
-  }
-
-  function updateOnlineBadge() {
-    let el = document.getElementById('vfOnlineBadge');
-    if (!el) {
-      const header = document.querySelector('.vf-header-actions');
-      if (!header) return;
-      el = document.createElement('span');
-      el.id = 'vfOnlineBadge';
-      el.className = 'vf-online-badge';
-      header.insertBefore(el, header.firstChild);
-    }
-    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-    const q = photoQueue.snapshot();
-    if (!online) {
-      el.dataset.state = 'offline';
-      el.textContent = 'Offline — photos safe locally';
-    } else if (q.inFlight > 0) {
-      el.dataset.state = 'syncing';
-      el.textContent = `Syncing ${q.inFlight}…`;
-    } else {
-      el.dataset.state = 'online';
-      el.textContent = 'Online';
-    }
+    updateSidebarMeta();
   }
 
   async function restoreOfflinePhotos() {
@@ -1768,6 +1847,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
 
   async function goToSection(sectionId, anchor = null) {
     if (!sectionId || !vf.draft) return;
+    if (LEGACY_STEP_REDIRECT[sectionId]) sectionId = LEGACY_STEP_REDIRECT[sectionId];
     if (!vf.draft.steps.includes(sectionId)) return;
     vf.pendingAnchor = anchor;
     if (sectionId === vf.draft.currentStep) {
@@ -1801,8 +1881,9 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     // Sort afters into category buckets before the local canSeal gate
     await classifyAfterPhotosQuiet();
     if (!vf.draft.canSeal) {
-      toast('Finish blocked — fix the unmet list on Review first', 'bad', 4000);
-      renderReview();
+      toast('Finish blocked — see what is still needed on Confirm time', 'bad', 4000);
+      if (vf.draft.currentStep !== 'time') await goToSection('time');
+      else renderSectionBody();
       return;
     }
     try {
@@ -1818,19 +1899,19 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
               }),
             })
           ),
-        'Sealing visit…',
+        'Finishing visit…',
         { force: true }
       );
-      toast('Visit sealed — ready for Stage 4', 'ok');
+      toast('Visit finished', 'ok');
       stopBurst();
       close();
     } catch (err) {
       if (err.code === 'SEAL_BLOCKED' && err.unmet) {
         vf.draft.unmetRequirements = err.unmet;
         vf.draft.canSeal = false;
-        toast('Seal blocked — see unmet requirements', 'bad', 4500);
-        if (vf.draft.currentStep !== 'review') await goToSection('review');
-        else renderReview();
+        toast('Still need a few things before you can finish', 'bad', 4500);
+        if (vf.draft.currentStep !== 'time') await goToSection('time');
+        else renderSectionBody();
         updateFinishButton();
       } else {
         throw err;
@@ -1891,27 +1972,6 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
     return true;
   }
 
-  function updateVisitMeta() {
-    const meta = $('vfVisitMeta');
-    if (!meta || !vf.draft) return;
-    const d = vf.draft;
-    const day = d.date
-      ? new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        })
-      : '—';
-    meta.textContent = `${day} · Store ${d.actualStore}${
-      d.scheduledStore != null && Number(d.scheduledStore) !== Number(d.actualStore)
-        ? ` (scheduled ${d.scheduledStore})`
-        : ''
-    } · ${d.status === 'ready_for_prod' ? 'Sealed' : 'In progress'}`;
-    const abandon = $('vfAbandon');
-    if (abandon) abandon.hidden = d.status === 'ready_for_prod';
-  }
-
   async function open(shift) {
     vf.shift = shift;
     stopBurst();
@@ -1952,7 +2012,7 @@ export function createVisitFlowController({ $, getRepKey, onDraftChanged }) {
       }
     }, 'Opening visit…', { force: true });
     onDraftChanged?.(vf.draft);
-    updateVisitMeta();
+    updateSidebarMeta();
     setVisitShellOpen(true);
     closeSidebarDrawer();
     window.scrollTo(0, 0);

@@ -142,28 +142,26 @@
   <!-- Full-page visit workspace (not a floating overlay) -->
   <div id="visitWorkspace" class="visit-workspace" hidden>
     <div id="vfAssistBanner" class="vf-assist-banner" hidden></div>
-    <header class="visit-workspace-header">
-      <div class="visit-workspace-titleblock">
-        <button type="button" id="vfBackToSchedule" class="subtle vf-back">← Schedule</button>
-        <div>
-          <h1 id="vfStoreTitle">Visit</h1>
-          <p id="vfStepLabel" class="visit-workspace-sub"></p>
-          <p id="vfVisitMeta" class="visit-workspace-meta"></p>
-        </div>
-      </div>
-      <div class="vf-header-actions">
-        <button type="button" id="vfSidebarToggle" class="subtle vf-sidebar-toggle" aria-label="Sections">Sections</button>
-        <button type="button" id="vfAbandon" class="subtle danger-text" hidden>Discard visit</button>
-      </div>
+    <header class="visit-workspace-header visit-workspace-header-compact">
+      <button type="button" id="vfBackToSchedule" class="subtle vf-back-icon" aria-label="Back to schedule">←</button>
+      <h1 id="vfStoreTitle" class="vf-store-compact">Visit</h1>
+      <button type="button" id="vfSidebarToggle" class="vf-hamburger subtle" aria-label="Menu">
+        <span class="vf-hamburger-bars" aria-hidden="true"></span>
+      </button>
     </header>
     <div class="vf-layout">
-      <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit sections"></nav>
+      <nav class="vf-sidebar" id="vfSidebar" aria-label="Visit menu">
+        <div class="vf-sidebar-meta" id="vfSidebarMeta"></div>
+        <div class="vf-sidebar-sections" id="vfSidebarSections"></div>
+        <div class="vf-sidebar-footer">
+          <button type="button" id="vfAbandon" class="subtle danger-text vf-sidebar-discard" hidden>Discard visit</button>
+        </div>
+      </nav>
       <div class="vf-main">
         <div id="vfBody" class="vf-body"></div>
-        <div id="vfGuidedNav" class="vf-guided-nav" aria-label="Guided visit steps"></div>
         <div class="vf-nav">
           <span id="vfSaveState" class="save-state" data-state="saved">Saved</span>
-          <button type="button" id="vfFinish" class="primary" disabled>Finish &amp; seal visit</button>
+          <button type="button" id="vfFinish" class="primary" disabled hidden>Finish visit</button>
         </div>
       </div>
     </div>
