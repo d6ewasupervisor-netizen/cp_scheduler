@@ -95,7 +95,8 @@ function ensureRoot() {
   migrateLegacyCorpusIfNeeded();
   fs.mkdirSync(ROOT, { recursive: true });
   if (!fs.existsSync(MANIFEST)) {
-    writeManifest({ version: 1, updatedAt: null, examples: [] });
+    const seed = { version: 1, updatedAt: new Date().toISOString(), examples: [] };
+    fs.writeFileSync(MANIFEST, JSON.stringify(seed, null, 2));
   }
 }
 
@@ -109,7 +110,7 @@ function readManifest() {
 }
 
 function writeManifest(manifest) {
-  ensureRoot();
+  fs.mkdirSync(ROOT, { recursive: true });
   manifest.updatedAt = new Date().toISOString();
   fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));
   return manifest;
